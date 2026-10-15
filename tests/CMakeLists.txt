@@ -1,0 +1,18 @@
+include(FetchContent)
+
+set(CATCH_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(CATCH_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+set(CATCH_INSTALL_EXTRAS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(Catch2
+    URL https://codeload.github.com/catchorg/Catch2/tar.gz/refs/tags/v3.16.1
+    URL_HASH SHA256=d16bd1b8b2364918bd472cb216394acb93bde6784890df0d91bccfb3f28d777d
+    SYSTEM
+    EXCLUDE_FROM_ALL
+)
+FetchContent_MakeAvailable(Catch2)
+
+inputnext_configure_sanitizer(Catch2)
+inputnext_configure_sanitizer(Catch2WithMain)
+
+include("${catch2_SOURCE_DIR}/extras/Catch.cmake")
+add_subdirectory(harness)

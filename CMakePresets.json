@@ -1,0 +1,187 @@
+{
+  "version": 12,
+  "cmakeMinimumRequired": {
+    "major": 4,
+    "minor": 4,
+    "patch": 4
+  },
+  "configurePresets": [
+    {
+      "name": "windows-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "environment": {
+        "VSLANG": "1033"
+      },
+      "errors": {
+        "author": true
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "INPUTNEXT_NATIVE_PROFILE": "Default",
+        "CMAKE_CXX_COMPILER": "cl"
+      }
+    },
+    {
+      "name": "windows-x64",
+      "displayName": "Windows x64 Debug",
+      "inherits": "windows-base",
+      "cacheVariables": {
+        "INPUTNEXT_TARGET_ARCHITECTURE": "x64"
+      },
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      }
+    },
+    {
+      "name": "windows-x86",
+      "displayName": "Windows x86 Debug",
+      "inherits": "windows-base",
+      "cacheVariables": {
+        "INPUTNEXT_TARGET_ARCHITECTURE": "x86"
+      },
+      "architecture": {
+        "value": "x86",
+        "strategy": "external"
+      }
+    },
+    {
+      "name": "windows-x64-analyze",
+      "displayName": "Windows x64 MSVC Analysis",
+      "inherits": "windows-x64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "INPUTNEXT_NATIVE_PROFILE": "Analyze"
+      }
+    },
+    {
+      "name": "windows-x64-analyze-production",
+      "displayName": "Windows x64 MSVC Analysis, Production",
+      "inherits": "windows-x64-analyze",
+      "cacheVariables": {
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "windows-x64-asan",
+      "displayName": "Windows x64 AddressSanitizer",
+      "inherits": "windows-x64",
+      "cacheVariables": {
+        "INPUTNEXT_NATIVE_PROFILE": "Address"
+      }
+    },
+    {
+      "name": "windows-x86-asan",
+      "displayName": "Windows x86 AddressSanitizer",
+      "inherits": "windows-x86",
+      "cacheVariables": {
+        "INPUTNEXT_NATIVE_PROFILE": "Address"
+      }
+    },
+    {
+      "name": "windows-x64-ubsan",
+      "displayName": "Windows x64 UndefinedBehaviorSanitizer",
+      "inherits": "windows-x64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "INPUTNEXT_NATIVE_PROFILE": "Undefined"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-x64",
+      "configurePreset": "windows-x64"
+    },
+    {
+      "name": "windows-x86",
+      "configurePreset": "windows-x86"
+    },
+    {
+      "name": "windows-x64-analyze",
+      "configurePreset": "windows-x64-analyze"
+    },
+    {
+      "name": "windows-x64-analyze-production",
+      "configurePreset": "windows-x64-analyze-production"
+    },
+    {
+      "name": "windows-x64-asan",
+      "configurePreset": "windows-x64-asan"
+    },
+    {
+      "name": "windows-x86-asan",
+      "configurePreset": "windows-x86-asan"
+    },
+    {
+      "name": "windows-x64-ubsan",
+      "configurePreset": "windows-x64-ubsan"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-x64",
+      "configurePreset": "windows-x64",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "windows-x86",
+      "configurePreset": "windows-x86",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "windows-x64-analyze",
+      "configurePreset": "windows-x64-analyze",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "windows-x64-asan",
+      "configurePreset": "windows-x64-asan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "windows-x86-asan",
+      "configurePreset": "windows-x86-asan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "windows-x64-ubsan",
+      "configurePreset": "windows-x64-ubsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    }
+  ]
+}

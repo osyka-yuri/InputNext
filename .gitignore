@@ -1,0 +1,11 @@
+/build/
+/out/
+/.vs/
+/.idea/
+/CMakeUserPresets.json
+__pycache__/
+*.pyc
+*.obj
+*.pdb
+.env
+.env.*
