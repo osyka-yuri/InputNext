@@ -39,6 +39,8 @@ include(cmake/Sanitizers.cmake)
 inputnext_validate_native_analysis_profile()
 inputnext_validate_sanitizer_configuration()
 
+add_subdirectory(src/input)
+add_subdirectory(src/devices)
 include(CTest)
 
 if(BUILD_TESTING)

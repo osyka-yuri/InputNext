@@ -9,7 +9,7 @@
 - clang-cl 23.1.3 on `PATH` for the Undefined native profile.
 - PSScriptAnalyzer 1.25.0 or newer for PowerShell analysis and formatting.
 
-Use a Visual Studio Developer PowerShell configured for x64 or x86. Configure defaults to `cl` when no compiler is supplied, using the compiler and SDK from that environment. It preserves the resolved compiler on subsequent configurations and rejects a target that does not match the preset. C++23, the static MSVC runtime, strict conformance, and warnings as errors apply to project targets. Dependency sources do not inherit project warning options.
+Use a Visual Studio Developer PowerShell configured for x64 or x86. Configure defaults to `cl` when no compiler is supplied, using the compiler and SDK from that environment. It preserves the resolved compiler on subsequent configurations and rejects a target that does not match the preset. C++23, standard C++ exception handling (`/EHsc`), the static MSVC runtime, strict conformance, and warnings as errors apply to project targets. Dependency sources do not inherit project warning options.
 
 Project C++ targets define `NOMINMAX`; dependency targets retain their own compile definitions.
 
@@ -33,7 +33,7 @@ For x86, open an x86 Developer PowerShell and run:
 ./tools/verify.ps1 -Architecture x86
 ```
 
-The script configures, builds, and runs CTest. Any failed step returns an error. Logs and a CTest JUnit report are saved under `build/windows-<architecture>/verification/<run>/`. CTest output for each discovered Catch2 case is stored under the harness build directory's `results/` directory.
+The script configures, builds, and runs CTest. Any failed step returns an error. Logs and a CTest JUnit report are saved under `build/windows-<architecture>/verification/<run>/`. CTest output for each discovered Catch2 case is stored in its test target's build directory under `results/`.
 
 Run the quality gates as well:
 
@@ -77,6 +77,14 @@ cmake --build --preset windows-x64-asan
 ctest --preset windows-x64-asan
 ```
 
+Stress tests are optional and are built only when explicitly enabled:
+
+```powershell
+./tools/verify.ps1 -Architecture x64 -CheckQuality -IncludeStress
+```
+
+Use `-IncludeStress -TestRegex '^devices\.stress\.'` to run only the device stress cases. The script explicitly disables their build option on ordinary runs, so a previous stress run does not change the next run's selection.
+
 The equivalent native commands are:
 
 ```powershell
@@ -92,6 +100,13 @@ ctest --preset windows-x64 --show-only
 ./tools/verify.ps1 -Architecture x64 -TestRegex '^harness\.cpp23_is_enabled$'
 ```
 
+Catch2 tags also provide CTest labels. Run one test level after building:
+
+```powershell
+ctest --preset windows-x64 -L '^unit$'
+ctest --preset windows-x64 -L '^component$'
+```
+
 An empty selection is an error. The harness checks C++23 support and verifies that an intentional assertion failure returns a nonzero status and releases its fixture resource. The intentional failure runs only inside its parent check; it is excluded from ordinary Catch2 discovery.
 
 Configure without tests to omit Catch2 entirely:
@@ -101,7 +116,7 @@ cmake --preset windows-x64 -B build/windows-x64-no-tests -DBUILD_TESTING=OFF
 cmake --build build/windows-x64-no-tests
 ```
 
-There are no runtime targets yet, so a test-disabled build currently has no compilation work.
+This builds the production input and device libraries without downloading Catch2. The libraries require no GameInput package or controller hardware.
 
 ## Formatting
 
@@ -133,4 +148,11 @@ The formatting check compares normalized line endings. Both formatting and stati
 
 ## Test organization
 
-Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2 tags become CTest labels. Use a descriptive case name and classify tests by their actual dependency boundary. Harness checks live in `tests/harness`; domain tests and their fixtures are added with the corresponding components.
+Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2 tags become CTest labels. Use a descriptive case name and classify tests by their actual dependency boundary:
+
+- `tests/cpp/unit/input` checks gamepad value validation.
+- `tests/cpp/component/input` checks coherent publication through the production input library.
+- `tests/cpp/component/devices` checks connection ownership, retirement, and concurrency through the production device library. Stress cases have a separate executable and build option.
+- `tests/harness` checks the test runner and its failure cleanup.
+
+Concurrency is a test property, not a separate integration level. Workers collect outcomes; assertions run after cleanup and join. Tests use explicit synchronization to reach the required interleaving, with bounded timeouts for failure isolation.

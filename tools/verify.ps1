@@ -5,7 +5,8 @@ param(
     [ValidateSet('x64', 'x86')][string]$Architecture = 'x64',
     [ValidateSet('Default', 'Analyze', 'Address', 'Undefined')][string]$NativeProfile = 'Default',
     [string]$TestRegex,
-    [switch]$CheckQuality
+    [switch]$CheckQuality,
+    [switch]$IncludeStress
 )
 
 $ErrorActionPreference = 'Stop'
@@ -58,12 +59,14 @@ try {
         & (Join-Path $PSScriptRoot 'check_quality.ps1') *>&1 | Tee-Object -FilePath (Join-Path $resultRoot 'quality.log')
     }
     $tidy = ($CheckQuality -and $NativeProfile -eq 'Default') ? 'ON' : 'OFF'
+    $stress = $IncludeStress ? 'ON' : 'OFF'
     $nativePath = $env:PATH
     try {
         foreach ($nativePreset in $nativePresets) {
             $configureArguments = @(
                 '--preset', $nativePreset,
-                "-DINPUTNEXT_ENABLE_CLANG_TIDY=$tidy"
+                "-DINPUTNEXT_ENABLE_CLANG_TIDY=$tidy",
+                "-DINPUTNEXT_BUILD_STRESS_TESTS=$stress"
             )
             $configureLog = "configure-$($nativePreset.Substring('windows-'.Length)).log"
             Invoke-VerificationStep -Program cmake -Arguments $configureArguments -LogName $configureLog

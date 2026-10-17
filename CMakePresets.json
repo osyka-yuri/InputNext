@@ -54,7 +54,8 @@
       "inherits": "windows-x64",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "INPUTNEXT_NATIVE_PROFILE": "Analyze"
+        "INPUTNEXT_NATIVE_PROFILE": "Analyze",
+        "INPUTNEXT_BUILD_STRESS_TESTS": "OFF"
       }
     },
     {
@@ -70,7 +71,8 @@
       "displayName": "Windows x64 AddressSanitizer",
       "inherits": "windows-x64",
       "cacheVariables": {
-        "INPUTNEXT_NATIVE_PROFILE": "Address"
+        "INPUTNEXT_NATIVE_PROFILE": "Address",
+        "INPUTNEXT_BUILD_STRESS_TESTS": "OFF"
       }
     },
     {
@@ -78,7 +80,8 @@
       "displayName": "Windows x86 AddressSanitizer",
       "inherits": "windows-x86",
       "cacheVariables": {
-        "INPUTNEXT_NATIVE_PROFILE": "Address"
+        "INPUTNEXT_NATIVE_PROFILE": "Address",
+        "INPUTNEXT_BUILD_STRESS_TESTS": "OFF"
       }
     },
     {
@@ -88,7 +91,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_CXX_COMPILER": "clang-cl",
-        "INPUTNEXT_NATIVE_PROFILE": "Undefined"
+        "INPUTNEXT_NATIVE_PROFILE": "Undefined",
+        "INPUTNEXT_BUILD_STRESS_TESTS": "OFF"
       }
     }
   ],

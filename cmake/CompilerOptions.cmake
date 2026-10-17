@@ -11,7 +11,7 @@ if(INPUTNEXT_ENABLE_CLANG_TIDY)
 endif()
 
 function(inputnext_configure_target target)
-    target_compile_features(${target} PRIVATE cxx_std_23)
+    target_compile_features(${target} PUBLIC cxx_std_23)
     target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_compile_options(${target} PRIVATE /W4 /WX /EHsc /permissive- /utf-8 /Zc:__cplusplus)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")

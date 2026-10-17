@@ -1,3 +1,5 @@
+option(INPUTNEXT_BUILD_STRESS_TESTS "Build stress tests" OFF)
+
 include(FetchContent)
 
 set(CATCH_BUILD_TESTING OFF CACHE BOOL "" FORCE)
@@ -16,3 +18,6 @@ inputnext_configure_sanitizer(Catch2WithMain)
 
 include("${catch2_SOURCE_DIR}/extras/Catch.cmake")
 add_subdirectory(harness)
+add_subdirectory(cpp/unit/input)
+add_subdirectory(cpp/component/input)
+add_subdirectory(cpp/component/devices)
