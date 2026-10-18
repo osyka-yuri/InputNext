@@ -4,6 +4,8 @@ InputNext is a Windows controller runtime under development. Its native input co
 
 See [native input components](docs/input.md) for publication, ownership, and shutdown contracts.
 
+The [GameInput runtime](docs/gameinput.md) provides native controller discovery, latest state, metadata queries, and a supervised diagnostic.
+
 See [development setup](docs/development.md) for toolchain requirements and verification commands.
 
-Licensed under the [MIT License](LICENSE). Test dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
+Licensed under the [MIT License](LICENSE). Third-party dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).

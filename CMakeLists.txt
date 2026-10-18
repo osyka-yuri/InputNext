@@ -39,8 +39,16 @@ include(cmake/Sanitizers.cmake)
 inputnext_validate_native_analysis_profile()
 inputnext_validate_sanitizer_configuration()
 
+set(inputnext_gameinput_architecture "${inputnext_compiler_architecture}")
+option(INPUTNEXT_BUILD_GAMEINPUT "Build the native GameInput runtime" ON)
+
 add_subdirectory(src/input)
 add_subdirectory(src/devices)
+add_subdirectory(src/metadata)
+add_subdirectory(src/gameinput)
+if(INPUTNEXT_BUILD_GAMEINPUT)
+    add_subdirectory(tools/gameinput_probe)
+endif()
 include(CTest)
 
 if(BUILD_TESTING)

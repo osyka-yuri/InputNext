@@ -20,8 +20,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "BUILD_TESTING": "ON",
-        "INPUTNEXT_NATIVE_PROFILE": "Default",
-        "CMAKE_CXX_COMPILER": "cl"
+        "INPUTNEXT_NATIVE_PROFILE": "Default"
       }
     },
     {
@@ -41,7 +40,8 @@
       "displayName": "Windows x86 Debug",
       "inherits": "windows-base",
       "cacheVariables": {
-        "INPUTNEXT_TARGET_ARCHITECTURE": "x86"
+        "INPUTNEXT_TARGET_ARCHITECTURE": "x86",
+        "INPUTNEXT_BUILD_GAMEINPUT": "ON"
       },
       "architecture": {
         "value": "x86",
@@ -55,6 +55,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "INPUTNEXT_NATIVE_PROFILE": "Analyze",
+        "INPUTNEXT_BUILD_GAMEINPUT": "ON",
         "INPUTNEXT_BUILD_STRESS_TESTS": "OFF"
       }
     },
@@ -72,6 +73,7 @@
       "inherits": "windows-x64",
       "cacheVariables": {
         "INPUTNEXT_NATIVE_PROFILE": "Address",
+        "INPUTNEXT_BUILD_GAMEINPUT": "ON",
         "INPUTNEXT_BUILD_STRESS_TESTS": "OFF"
       }
     },
@@ -81,6 +83,7 @@
       "inherits": "windows-x86",
       "cacheVariables": {
         "INPUTNEXT_NATIVE_PROFILE": "Address",
+        "INPUTNEXT_BUILD_GAMEINPUT": "ON",
         "INPUTNEXT_BUILD_STRESS_TESTS": "OFF"
       }
     },
@@ -92,6 +95,7 @@
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_CXX_COMPILER": "clang-cl",
         "INPUTNEXT_NATIVE_PROFILE": "Undefined",
+        "INPUTNEXT_BUILD_GAMEINPUT": "ON",
         "INPUTNEXT_BUILD_STRESS_TESTS": "OFF"
       }
     }
