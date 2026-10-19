@@ -1,5 +1,6 @@
 #include "worker.hpp"
 
+#include "history_observer.hpp"
 #include "report.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_registry.hpp>
@@ -113,6 +114,8 @@ struct metadata_query_schedule final {
 struct probe_observation final {
     bool saw_device{};
     bool saw_reading{};
+    bool saw_history{};
+    bool history_closed{true};
     metadata_query_schedule metadata_queries{};
 };
 
@@ -164,14 +167,16 @@ void observe_connections(gameinput_runtime& runtime,
     std::ostream& output) {
     output << format_stop_report(report) << '\n';
     output.flush();
-    if (!report.drained) {
+    if (!report.drained || !observation.history_closed) {
         return 3;
     }
 
     const auto requirements = format_requirements({.device_required = options.require_device,
         .reading_required = options.require_reading,
         .device_observed = observation.saw_device,
-        .reading_observed = observation.saw_reading});
+        .reading_observed = observation.saw_reading,
+        .history_required = options.require_history,
+        .history_observed = observation.saw_history});
     output << requirements.line << '\n';
     return requirements.met ? 0 : 4;
 }
@@ -192,8 +197,12 @@ int run_probe_worker(const probe_options& options, std::ostream& output) {
             return 3;
         }
         output << "start=ok runtime_library=app-local\n";
+        if (options.history || options.require_history) {
+            output << "history_enabled=true\n";
+        }
 
         probe_observation observation{};
+        history_observer history{runtime};
         auto next_report = maintenance_time::clock::now();
         const auto deadline = next_report + std::chrono::milliseconds{options.duration_ms};
 
@@ -202,6 +211,12 @@ int run_probe_worker(const probe_options& options, std::ostream& output) {
             runtime.maintain(now);
             const auto devices = runtime.connections();
             observe_connections(runtime, devices, now, now >= next_report, observation, output);
+            if (options.history || options.require_history) {
+                history.observe(devices,
+                    maintenance_time::clock::now(),
+                    now >= next_report,
+                    output);
+            }
             if (now >= next_report) {
                 output.flush();
                 next_report = now + std::chrono::milliseconds{250};
@@ -211,6 +226,8 @@ int run_probe_worker(const probe_options& options, std::ostream& output) {
             std::this_thread::sleep_until(std::min(deadline, opportunity));
         }
 
+        observation.saw_history = history.native_history_observed();
+        observation.history_closed = history.close_all(output);
         const auto report = runtime.stop(maintenance_time::clock::now());
         return report_completion(options, observation, report, output);
     } catch (const std::exception& error) {

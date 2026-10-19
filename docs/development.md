@@ -123,7 +123,7 @@ cmake --preset windows-x64 -B build/windows-x64-portable -DBUILD_TESTING=OFF -DI
 cmake --build build/windows-x64-portable
 ```
 
-The portable input, registry, publication, and metadata policy libraries require no GameInput package or controller hardware.
+Portable libraries, including history capture and merging, require no GameInput package or controller hardware.
 
 ## Formatting
 
@@ -160,15 +160,18 @@ Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2
 - `tests/cpp/unit/input` checks gamepad value validation.
 - `tests/cpp/component/input` checks coherent publication through the production input library.
 - `tests/cpp/component/devices` checks connection ownership, retirement, and concurrency through the production device library. Stress cases have a separate executable and build option.
+- `tests/cpp/unit/history` and `tests/cpp/unit/gameinput/clock` check retention values and timestamp arithmetic without the SDK.
+- `tests/cpp/component/history` checks reader admission, independent progress, recovery, and reclamation with controlled cursors.
+- `tests/cpp/component/gameinput/history` checks capture and native/Guide merging with a controlled native port. `tests/cpp/component/gameinput/native_history` checks the native cursor through a scripted API seam.
 - `tests/cpp/unit/metadata` checks text bounds, transport policy, and physical capability facts.
 - `tests/cpp/unit/gameinput/native` checks SDK value mapping without loading the native runtime.
-- `tests/cpp/unit/gameinput/probe` checks diagnostic identity formatting and text escaping without the SDK or hardware.
+- `tests/cpp/unit/gameinput/probe` checks diagnostic evidence, formatting, and text escaping without the SDK or hardware.
 - `tests/cpp/component/metadata` checks Windows metadata selection with a controlled OS port.
 - `tests/cpp/integration/gameinput/publication` checks partial reading merge through the production publisher and device registry.
-- `tests/cpp/integration/gameinput/runtime` checks lifecycle and query coordination through production registry and publication components, using a controlled native port.
+- `tests/cpp/integration/gameinput/runtime` checks lifecycle, history, and query coordination through production registry and publication components, using a controlled native port.
 - `tests/cpp/integration/gameinput/probe` checks real child-process supervision and app-local initialization and cleanup.
 - `tests/harness` checks the test runner and its failure cleanup.
 
-The native callback-drain case under `tests/cpp/integration/gameinput/native` requires a physical controller. Run it explicitly as described in [GameInput](gameinput.md). Its exception-handling regression runs an entered callback on a joinable thread in an isolated child process, without a controller. Native runtime, SDK mapping, and process-probe integration tests build for both architectures. Hardware checks remain separate from automatic CTest runs.
+The native callback-drain case under `tests/cpp/integration/gameinput/native` requires a physical controller. Run it explicitly as described in [GameInput](gameinput.md). Its exception-handling regression runs an entered callback on a joinable thread in an isolated child process, without a controller. Native runtime, native history adapter, SDK mapping, and process-probe integration tests build for both architectures. Hardware checks remain separate from automatic CTest runs.
 
 Concurrency is a test property, not a separate integration level. Workers collect outcomes; assertions run after cleanup and join. Tests use explicit synchronization to reach the required interleaving, with bounded timeouts for failure isolation.

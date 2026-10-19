@@ -1,5 +1,6 @@
 #include "publication_source.hpp"
 
+#include "gameinput/history/history_capture.hpp"
 #include "gameinput/reading_parts.hpp"
 #include <inputnext/error.hpp>
 #include <inputnext/gamepad_state.hpp>
@@ -77,6 +78,10 @@ publication_outcome publication_source::on_seed(seed_ticket ticket, const readin
     return apply(parts, ticket, true);
 }
 
+history_capture& publication_source::history() noexcept {
+    return history_;
+}
+
 publication_outcome
 publication_source::apply(const reading_parts& parts, seed_ticket ticket, bool is_seed) {
     std::scoped_lock lock{mutex_};
@@ -88,6 +93,7 @@ publication_source::apply(const reading_parts& parts, seed_ticket ticket, bool i
     }
     if (!producer_.has_value()) {
         closed_ = true;
+        history_.close();
         return publication_outcome::closed;
     }
     if (parts.observation_qpc == 0U) {
@@ -105,7 +111,7 @@ publication_source::apply(const reading_parts& parts, seed_ticket ticket, bool i
     if (!is_seed && !advance_callback_epochs(lanes.pad, lanes.guide)) {
         return publication_outcome::epoch_exhausted;
     }
-    return publish_selected(parts, lanes.pad, lanes.guide);
+    return publish_selected(parts, lanes.pad, lanes.guide, is_seed);
 }
 
 bool publication_source::advance_callback_epochs(bool accept_pad, bool accept_guide) noexcept {
@@ -142,9 +148,17 @@ void publication_source::commit_lanes(const reading_parts& parts,
 
 publication_outcome publication_source::publish_selected(const reading_parts& parts,
     bool accept_pad,
-    bool accept_guide) {
+    bool accept_guide,
+    bool is_seed) {
     if (!pad_known_ && !accept_pad) {
         commit_lanes(parts, false, true);
+        auto accepted = parts;
+        accepted.pad.reset();
+        if (is_seed) {
+            history_.on_seed(accepted);
+        } else {
+            history_.on_callback(accepted);
+        }
         return publication_outcome::partial_only;
     }
 
@@ -163,6 +177,18 @@ publication_outcome publication_source::publish_selected(const reading_parts& pa
     }
 
     commit_lanes(parts, accept_pad, accept_guide);
+    auto accepted = parts;
+    if (!accept_pad) {
+        accepted.pad.reset();
+    }
+    if (!accept_guide) {
+        accepted.guide.reset();
+    }
+    if (is_seed) {
+        history_.on_seed(accepted);
+    } else {
+        history_.on_callback(accepted);
+    }
     return publication_outcome::published;
 }
 
@@ -172,6 +198,7 @@ publication_outcome publication_source::map_publication_failure(error failure) n
     }
     if (failure == error::not_connected) {
         closed_ = true;
+        history_.close();
         return publication_outcome::closed;
     }
     return publication_outcome::invalid;
@@ -180,6 +207,7 @@ publication_outcome publication_source::map_publication_failure(error failure) n
 void publication_source::close() {
     std::scoped_lock lock{mutex_};
     closed_ = true;
+    history_.close();
 }
 
 source_status publication_source::status() const {

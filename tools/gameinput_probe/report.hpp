@@ -1,13 +1,12 @@
 #pragma once
 
+#include <inputnext/device_identity.hpp>
 #include <inputnext/device_metadata.hpp>
+#include <inputnext/error.hpp>
 #include <inputnext/gameinput_runtime.hpp>
+#include <inputnext/input_binding.hpp>
 
 #include <string>
-
-#include <inputnext/device_identity.hpp>
-#include <inputnext/error.hpp>
-#include <inputnext/input_binding.hpp>
 
 namespace inputnext::gameinput_detail {
 
@@ -16,6 +15,8 @@ struct probe_requirements final {
     bool reading_required{};
     bool device_observed{};
     bool reading_observed{};
+    bool history_required{};
+    bool history_observed{};
 };
 
 struct requirement_report final {

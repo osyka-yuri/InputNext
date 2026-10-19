@@ -1,5 +1,6 @@
 #pragma once
 
+#include "gameinput/history/history_capture.hpp"
 #include "gameinput/reading_parts.hpp"
 #include <inputnext/error.hpp>
 #include <inputnext/gamepad_state.hpp>
@@ -64,6 +65,7 @@ public:
     [[nodiscard]] seed_ticket before_seed() const;
     [[nodiscard]] publication_outcome on_callback(const reading_parts& parts);
     [[nodiscard]] publication_outcome on_seed(seed_ticket ticket, const reading_parts& parts);
+    [[nodiscard]] history_capture& history() noexcept;
     void close();
     [[nodiscard]] source_status status() const;
 
@@ -73,11 +75,12 @@ private:
     [[nodiscard]] bool advance_callback_epochs(bool accept_pad, bool accept_guide) noexcept;
     void commit_lanes(const reading_parts& parts, bool accept_pad, bool accept_guide) noexcept;
     [[nodiscard]] publication_outcome
-    publish_selected(const reading_parts& parts, bool accept_pad, bool accept_guide);
+    publish_selected(const reading_parts& parts, bool accept_pad, bool accept_guide, bool is_seed);
     [[nodiscard]] publication_outcome map_publication_failure(error failure) noexcept;
 
     mutable std::mutex mutex_;
     std::optional<producer_binding> producer_;
+    history_capture history_;
     gamepad_state pad_state_{};
     bool closed_{};
     bool pad_known_{};

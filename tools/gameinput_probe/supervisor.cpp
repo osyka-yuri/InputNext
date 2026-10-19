@@ -411,6 +411,11 @@ void copy_available_output(HANDLE pipe, std::ostream& output, output_pipe_state&
     if (options.require_reading) {
         arguments.emplace_back(L"--require-reading");
     }
+    if (options.require_history) {
+        arguments.emplace_back(L"--require-history");
+    } else if (options.history) {
+        arguments.emplace_back(L"--history");
+    }
     return arguments;
 }
 

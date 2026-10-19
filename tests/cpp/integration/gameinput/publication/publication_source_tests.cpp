@@ -1,8 +1,12 @@
+#include "gameinput/core/publication_source.hpp"
+
 #include "gameinput/reading_parts.hpp"
+#include "support/history/history_capture_test_access.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_registry.hpp>
 #include <inputnext/error.hpp>
 #include <inputnext/gamepad_state.hpp>
+#include <inputnext/history.hpp>
 #include <inputnext/source_lifetime.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -17,8 +21,6 @@
 #include <optional>
 #include <thread>
 #include <utility>
-
-#include <gameinput/core/publication_source.hpp>
 
 namespace {
 
@@ -131,6 +133,70 @@ private:
 };
 
 } // namespace
+
+TEST_CASE("gameinput.publication.history_records_only_accepted_lanes",
+    "[integration][gameinput][publication][history]") {
+    const publication_fixture fixture;
+    REQUIRE(fixture.ready());
+    fixture.source->history().set_callback_coverage(true);
+    const auto ticket = fixture.source->before_seed();
+    const auto callback_pad = make_pad(static_cast<button_mask>(gamepad_button::south), 0.75F);
+    REQUIRE(fixture.source->on_callback(pad_read(callback_pad)) == publication_outcome::published);
+
+    const reading_parts seed{.pad = make_pad(static_cast<button_mask>(gamepad_button::east)),
+        .guide = true,
+        .source_timestamp_us = 100U,
+        .observation_qpc = 1000U};
+    REQUIRE(fixture.source->on_seed(ticket, seed) == publication_outcome::published);
+    const auto captured = fixture.source->history().snapshot();
+    REQUIRE(captured.fallback_baseline.has_value());
+    auto expected = callback_pad;
+    expected.buttons |= guide_mask;
+    CHECK(captured.fallback_baseline.value_or(history_sample{}).state == expected);
+
+    REQUIRE(fixture.source->on_callback(reading_parts{.guide = false,
+                .source_timestamp_us = 101U,
+                .observation_qpc = 1001U}) == publication_outcome::published);
+    const auto accepted_position = fixture.source->history().snapshot().next_position;
+    CHECK(fixture.source->on_seed(ticket, seed) == publication_outcome::stale_seed);
+    CHECK(fixture.source->history().snapshot().next_position == accepted_position);
+
+    auto invalid = callback_pad;
+    invalid.left_trigger = 2.0F;
+    CHECK(fixture.source->on_callback(pad_read(invalid)) == publication_outcome::invalid);
+    CHECK(fixture.source->history().snapshot().next_position == accepted_position);
+    CHECK(
+        fixture.source->on_callback(reading_parts{.guide = true}) == publication_outcome::invalid);
+    CHECK(fixture.source->history().snapshot().next_position == accepted_position);
+
+    CHECK(fixture.source->on_callback(reading_parts{.pad = invalid,
+              .guide = true,
+              .source_timestamp_us = 102U,
+              .observation_qpc = 1002U}) == publication_outcome::published);
+    const auto after_partial = fixture.source->history().snapshot();
+    CHECK(after_partial.next_position == accepted_position + 1U);
+    CHECK(after_partial.fallback_baseline.value_or(history_sample{}).state == expected);
+}
+
+TEST_CASE("gameinput.publication.capture_exhaustion_preserves_latest_publication",
+    "[integration][gameinput][publication][history]") {
+    const publication_fixture fixture;
+    REQUIRE(fixture.ready());
+    const auto first = make_pad(static_cast<button_mask>(gamepad_button::south), 0.5F);
+    REQUIRE(fixture.source->on_callback(pad_read(first)) == publication_outcome::published);
+    history_capture_test_access::exhaust_log(fixture.source->history());
+    REQUIRE(fixture.source->history().snapshot().exhausted);
+
+    const auto next = make_pad(static_cast<button_mask>(gamepad_button::east), 0.75F);
+    CHECK(
+        fixture.source->on_callback(pad_read(next, 101U, 1001U)) == publication_outcome::published);
+    const auto latest = fixture.connection.reader.read();
+    REQUIRE(latest.has_value());
+    CHECK(latest->sample.state == next);
+    CHECK(latest->sample.revision == 2U);
+    CHECK(latest->sample.source_timestamp_us == 101U);
+    CHECK(fixture.source->history().snapshot().exhausted);
+}
 
 TEST_CASE("gameinput.publication.guide_before_pad_and_unknownness",
     "[integration][gameinput][publication]") {

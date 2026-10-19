@@ -9,6 +9,10 @@
 #include <cstdint>
 #include <memory>
 
+namespace inputnext::history_detail {
+class history_store;
+}
+
 namespace inputnext::gameinput_detail {
 
 struct facts_generation_seed final {
@@ -25,6 +29,11 @@ public:
     [[nodiscard]] static bool seed_facts_generation(gameinput_runtime& runtime,
         connection_target target,
         facts_generation_seed seed);
+    [[nodiscard]] static history_detail::history_store& history_for_test(
+        gameinput_runtime& runtime) noexcept;
+    static void set_before_history_open_test_hook(gameinput_runtime& runtime,
+        void (*hook)(void*) noexcept,
+        void* context) noexcept;
 };
 
 } // namespace inputnext::gameinput_detail

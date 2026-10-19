@@ -9,6 +9,8 @@ struct probe_options final {
     std::uint32_t duration_ms{10'000U};
     bool require_device{};
     bool require_reading{};
+    bool history{};
+    bool require_history{};
 };
 
 [[nodiscard]] int run_probe_worker(const probe_options& options, std::ostream& output);

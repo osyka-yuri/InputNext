@@ -1,5 +1,10 @@
 #include "report.hpp"
 
+#include <inputnext/device_metadata.hpp>
+#include <inputnext/error.hpp>
+#include <inputnext/gameinput_runtime.hpp>
+#include <inputnext/input_binding.hpp>
+
 #include <array>
 #include <cstddef>
 #include <iomanip>
@@ -8,11 +13,6 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-
-#include <inputnext/device_metadata.hpp>
-#include <inputnext/error.hpp>
-#include <inputnext/gameinput_runtime.hpp>
-#include <inputnext/input_binding.hpp>
 
 namespace inputnext::gameinput_detail {
 namespace {
@@ -329,17 +329,24 @@ std::string format_stop_report(gameinput_stop_report report) {
     std::ostringstream output;
     output << "stop=" << (report.drained ? "drained" : "pending")
            << " callbacks_pending=" << report.pending_callback_owners
-           << " metadata_queries=" << report.active_metadata_queries;
+           << " metadata_queries=" << report.active_metadata_queries
+           << " history_calls=" << report.active_history_calls
+           << " history_owners=" << report.pending_history_owners;
     return output.str();
 }
 
 requirement_report format_requirements(probe_requirements requirements) {
-    const bool requirements_met = (!requirements.device_required || requirements.device_observed) &&
-                                  (!requirements.reading_required || requirements.reading_observed);
+    const bool requirements_met =
+        (!requirements.device_required || requirements.device_observed) &&
+        (!requirements.reading_required || requirements.reading_observed) &&
+        (!requirements.history_required || requirements.history_observed);
     std::ostringstream output;
     output << "requirement=" << (requirements_met ? "met" : "not_met")
            << " device=" << boolean_name(requirements.device_observed)
            << " reading=" << boolean_name(requirements.reading_observed);
+    if (requirements.history_required || requirements.history_observed) {
+        output << " native_history=" << boolean_name(requirements.history_observed);
+    }
     return {.met = requirements_met, .line = output.str()};
 }
 

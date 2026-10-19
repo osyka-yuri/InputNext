@@ -8,6 +8,7 @@
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/device_registry.hpp>
 #include <inputnext/gameinput_runtime.hpp>
+#include <inputnext/history.hpp>
 #include <inputnext/input_binding.hpp>
 
 #include <algorithm>
@@ -44,6 +45,9 @@ void include_deadline(std::optional<maintenance_time>& deadline,
     case gameinput_detail::native_failure_cause::registration_failed:
         return gameinput_failure{.code = gameinput_error::registration_failed,
             .native_code = failure.native_code};
+    case gameinput_detail::native_failure_cause::resource_exhausted:
+        return gameinput_failure{.code = gameinput_error::resource_exhausted,
+            .native_code = failure.native_code};
     default:
         return gameinput_failure{.code = gameinput_error::native_failure,
             .native_code = failure.native_code};
@@ -59,7 +63,9 @@ gameinput_runtime::implementation::implementation(device_registry& device_regist
     : registry(device_registry),
       options(std::move(runtime_options)),
       native(std::move(native_port)),
-      metadata(std::move(metadata_port)) {
+      metadata(std::move(metadata_port)),
+      history_provider_port(*this),
+      history(history_provider_port) {
     watch_context =
         gameinput_detail::native_device_callback_context{.owner = this, .deliver = &device_event};
     rescan_context =
@@ -120,7 +126,7 @@ gameinput_runtime::implementation::implementation(device_registry& device_regist
 }
 
 void gameinput_runtime::implementation::maintain(maintenance_time now) {
-    std::scoped_lock service_lock{service_gate};
+    std::unique_lock service_lock{service_gate};
     {
         std::scoped_lock lock{table_gate};
         if (state != phase::running) {
@@ -145,6 +151,8 @@ void gameinput_runtime::implementation::maintain(maintenance_time now) {
             next_maintenance = now + runtime_detail::maintenance_period;
         }
     }
+    service_lock.unlock();
+    static_cast<void>(history.drain_retired());
 }
 
 std::optional<maintenance_time>
@@ -243,36 +251,51 @@ gameinput_runtime::implementation::next_deadline() const {
 }
 
 [[nodiscard]] gameinput_stop_report gameinput_runtime::implementation::stop(maintenance_time now) {
-    std::scoped_lock service_lock{service_gate};
     {
-        std::scoped_lock lock{table_gate};
-        if (state == phase::created || state == phase::drained) {
-            state = phase::drained;
-            return stop_status_locked();
-        }
-        if (state != phase::stopping) {
-            state = phase::stopping;
-            for (auto& owner : owners) {
-                if (owner.state != owner_phase::free) {
-                    owner.retire_requested = true;
+        std::scoped_lock service_lock{service_gate};
+        {
+            std::scoped_lock lock{table_gate};
+            if (state == phase::created || state == phase::drained) {
+                state = phase::drained;
+                return stop_status_locked(0U);
+            }
+            if (state != phase::stopping) {
+                state = phase::stopping;
+                for (auto& owner : owners) {
+                    if (owner.state != owner_phase::free) {
+                        owner.retire_requested = true;
+                    }
                 }
             }
         }
+
+        history.close_all();
+        service_retirements(now);
+        service_reading_drains(now);
+        service_rescan_stop(now);
+        service_watch_stop(now);
+        service_releasable_owners();
+        const auto reclaimed = registry.drain_retired();
+        static_cast<void>(reclaimed);
     }
 
-    service_retirements(now);
-    service_reading_drains(now);
-    service_rescan_stop(now);
-    service_watch_stop(now);
-    service_releasable_owners();
-    const auto reclaimed = registry.drain_retired();
-    static_cast<void>(reclaimed);
-
-    std::scoped_lock lock{table_gate};
-    if (all_native_owners_drained_locked() && active_queries == 0U) {
-        state = phase::drained;
+    static_cast<void>(history.drain_retired());
+    const auto resident_history_banks = history.resident_bank_count();
+    {
+        std::scoped_lock service_lock{service_gate};
+        service_releasable_owners();
+        const auto re_reclaimed = registry.drain_retired();
+        static_cast<void>(re_reclaimed);
     }
-    return stop_status_locked();
+
+    {
+        std::scoped_lock lock{table_gate};
+        if (resident_history_banks == 0U && all_native_owners_drained_locked() &&
+            active_queries == 0U && active_history_calls == 0U) {
+            state = phase::drained;
+        }
+        return stop_status_locked(resident_history_banks);
+    }
 }
 
 void gameinput_runtime::implementation::shutdown() noexcept {
@@ -282,12 +305,7 @@ void gameinput_runtime::implementation::shutdown() noexcept {
             return;
         }
         std::unique_lock lock{table_gate};
-        query_drained.wait_for(lock, runtime_detail::retry_period, [this] {
-            return active_queries == 0U && all_native_owners_drained_locked();
-        });
-        if (active_queries != 0U) {
-            continue;
-        }
+        query_drained.wait_for(lock, runtime_detail::retry_period);
     }
 }
 
@@ -337,6 +355,9 @@ void gameinput_runtime::implementation::service_retirements(maintenance_time now
         }
 
         erase_catalogue(target, generation);
+        if (retire_registry) {
+            history.retire(target);
+        }
         const bool registry_retired = !retire_registry || retire_registry_target(target);
 
         {
@@ -478,7 +499,7 @@ void gameinput_runtime::implementation::service_releasable_owners() {
             auto& owner = owners[index];
             if (owner.state != owner_phase::retiring || !owner.registry_retired ||
                 owner.release_started || owner.reading_token.valid() ||
-                owner.reading_registration_inflight) {
+                owner.reading_registration_inflight || owner.history_leases != 0U) {
                 continue;
             }
             owner.state = owner_phase::releasing;
@@ -521,12 +542,12 @@ gameinput_runtime::implementation::all_native_owners_drained_locked() const noex
            !rescan_registration_inflight &&
            std::ranges::all_of(owners, [](const owner_slot& owner) {
                return owner.state == owner_phase::free && !owner.reading_token.valid() &&
-                      !owner.reading_registration_inflight;
+                      !owner.reading_registration_inflight && owner.history_leases == 0U;
            });
 }
 
-[[nodiscard]] gameinput_stop_report
-gameinput_runtime::implementation::stop_status_locked() const noexcept {
+[[nodiscard]] gameinput_stop_report gameinput_runtime::implementation::stop_status_locked(
+    std::size_t resident_history_banks) const noexcept {
     std::size_t callback_owners{};
     if (watch_token.valid() || watch_registration_inflight) {
         ++callback_owners;
@@ -539,10 +560,15 @@ gameinput_runtime::implementation::stop_status_locked() const noexcept {
             ++callback_owners;
         }
     }
+    const auto pending_history_owners = static_cast<std::size_t>(std::ranges::count_if(owners,
+        [](const owner_slot& owner) { return owner.history_leases != 0U; }));
     return gameinput_stop_report{
-        .drained = state == phase::drained && active_queries == 0U,
+        .drained = state == phase::drained && active_queries == 0U && active_history_calls == 0U &&
+                   pending_history_owners == 0U && resident_history_banks == 0U,
         .pending_callback_owners = callback_owners,
         .active_metadata_queries = active_queries,
+        .active_history_calls = active_history_calls,
+        .pending_history_owners = pending_history_owners,
     };
 }
 
@@ -581,6 +607,19 @@ connection_inventory gameinput_runtime::connections() const {
 
 metadata_result<metadata_snapshot> gameinput_runtime::query_metadata(connection_target target) {
     return implementation_->query_metadata(target);
+}
+
+history_result<history_reader_handle> gameinput_runtime::open_history(connection_target target,
+    history_time now) {
+    return implementation_->open_history(target, now);
+}
+
+history_batch gameinput_runtime::read_history(history_reader_handle reader, history_time now) {
+    return implementation_->read_history(reader, now);
+}
+
+history_result<void> gameinput_runtime::close_history(history_reader_handle reader) {
+    return implementation_->close_history(reader);
 }
 
 gameinput_stop_report gameinput_runtime::stop(maintenance_time now) {

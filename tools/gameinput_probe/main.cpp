@@ -36,7 +36,7 @@ namespace {
 
 [[nodiscard]] int usage() {
     std::wcerr << L"Usage: inputnext_gameinput_probe [--duration-ms N] [--require-device] "
-                  L"[--require-reading]\n"
+                  L"[--require-reading] [--history] [--require-history]\n"
                   L"N must be between 1 and 300000 milliseconds.\n";
     return 2;
 }
@@ -51,6 +51,11 @@ namespace {
             options.require_device = true;
         } else if (argument == L"--require-reading") {
             options.require_reading = true;
+        } else if (argument == L"--history") {
+            options.history = true;
+        } else if (argument == L"--require-history") {
+            options.history = true;
+            options.require_history = true;
         } else if (argument == L"--duration-ms" && index + 1 < argc) {
             if (!parse_duration(argv[++index], options.duration_ms)) {
                 return false;

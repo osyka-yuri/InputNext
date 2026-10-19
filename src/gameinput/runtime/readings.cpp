@@ -131,7 +131,7 @@ void gameinput_runtime::implementation::try_register_readings(std::size_t index,
     maintenance_time now) {
     gameinput_detail::native_device_handle device{};
     gameinput_detail::native_reading_callback_context* context{};
-    gameinput_detail::publication_source const* source{};
+    gameinput_detail::publication_source* source{};
     gameinput_detail::seed_ticket seed{};
     {
         std::scoped_lock lock{table_gate};
@@ -163,6 +163,7 @@ void gameinput_runtime::implementation::try_register_readings(std::size_t index,
         token = registered.error().partial_token;
     }
 
+    bool activate_history{};
     {
         std::scoped_lock lock{table_gate};
         auto& owner = owners[index];
@@ -177,11 +178,12 @@ void gameinput_runtime::implementation::try_register_readings(std::size_t index,
         if (token.valid()) {
             owner.reading_token = token;
         }
-        if (success) {
+        if (success && owner.state == owner_phase::active && !owner.retire_requested) {
             owner.registration_failed = false;
             owner.registration_retry_at.reset();
             owner.reading_drain_retry_at.reset();
             owner.poll_at = now;
+            activate_history = true;
         } else if (!owner.retire_requested && owner.state == owner_phase::active) {
             owner.registration_failed = true;
             owner.registration_retry_at = now + runtime_detail::retry_period;
@@ -192,7 +194,10 @@ void gameinput_runtime::implementation::try_register_readings(std::size_t index,
         }
     }
 
-    if (success) {
+    if (source != nullptr) {
+        source->history().set_callback_coverage(activate_history);
+    }
+    if (activate_history) {
         seed_current(index, generation, seed, now);
     } else if (!registered.has_value() &&
                runtime_detail::is_device_disconnected(registered.error())) {

@@ -10,6 +10,8 @@
 
 namespace inputnext::gameinput_detail {
 
+class native_history_cursor;
+
 struct native_device_handle final {
     void* value{};
 
@@ -64,6 +66,8 @@ enum class native_failure_cause : std::uint8_t {
     registration_failed,
     no_current_reading,
     device_disconnected,
+    resource_exhausted,
+    clock_discontinuity,
     native_failure,
 };
 
@@ -99,6 +103,9 @@ public:
     [[nodiscard]] virtual bool unregister_callback(native_callback_token token) noexcept = 0;
     [[nodiscard]] virtual native_result<reading_parts> current(native_device_handle device,
         native_reading_lane lane) = 0;
+    [[nodiscard]] virtual native_result<std::unique_ptr<native_history_cursor>>
+    create_history_cursor(native_device_handle device) = 0;
+    [[nodiscard]] virtual native_result<std::uint64_t> performance_frequency() noexcept = 0;
     [[nodiscard]] virtual native_result<native_device_facts> facts(native_device_handle device) = 0;
     [[nodiscard]] virtual bool connected(native_device_handle device) noexcept = 0;
     virtual void retain(native_device_handle device) noexcept = 0;

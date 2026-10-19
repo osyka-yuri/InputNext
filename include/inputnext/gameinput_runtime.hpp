@@ -2,6 +2,7 @@
 
 #include "device_metadata.hpp"
 #include "device_registry.hpp"
+#include "history.hpp"
 
 #include <array>
 #include <chrono>
@@ -69,14 +70,17 @@ struct gameinput_stop_report final {
     bool drained{};
     std::size_t pending_callback_owners{};
     std::size_t active_metadata_queries{};
+    std::size_t active_history_calls{};
+    std::size_t pending_history_owners{};
 };
 
 namespace gameinput_detail {
 class runtime_factory;
 }
 
-// Caller-driven GameInput lifecycle and latest-state consumer. The registry must outlive this
-// runtime, all returned read bindings, and every metadata query. No worker is started internally.
+// Caller-driven GameInput lifecycle with latest-state and bounded history consumers. The registry
+// must outlive this runtime, all returned read bindings, and every admitted query. No worker is
+// started internally.
 class gameinput_runtime final {
 public:
     gameinput_runtime(device_registry& registry, gameinput_options options);
@@ -92,6 +96,10 @@ public:
     [[nodiscard]] std::optional<maintenance_time> next_deadline() const;
     [[nodiscard]] connection_inventory connections() const;
     [[nodiscard]] metadata_result<metadata_snapshot> query_metadata(connection_target target);
+    [[nodiscard]] history_result<history_reader_handle> open_history(connection_target target,
+        history_time now);
+    [[nodiscard]] history_batch read_history(history_reader_handle reader, history_time now);
+    [[nodiscard]] history_result<void> close_history(history_reader_handle reader);
     [[nodiscard]] gameinput_stop_report stop(maintenance_time now);
 
 private:

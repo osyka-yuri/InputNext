@@ -133,3 +133,22 @@ TEST_CASE("gameinput.probe.smoke_and_argument_validation", "[integration][gamein
     CHECK(invalid.cleanup_confirmed);
     CHECK(invalid.exit_code == 2U);
 }
+
+TEST_CASE("gameinput.probe.supervisor_forwards_history_option", "[integration][gameinput][probe]") {
+    const auto executable = sibling_executable(L"inputnext_gameinput_probe.exe");
+    REQUIRE_FALSE(executable.empty());
+    std::ostringstream output;
+    std::ostringstream errors;
+    const auto result = inputnext::gameinput_detail::run_owned_process(
+        {.executable = executable,
+            .working_directory = executable.parent_path(),
+            .arguments = {L"--duration-ms", L"25", L"--history"},
+            .timeout = std::chrono::seconds{20}},
+        {.output = output, .errors = errors});
+    CHECK_FALSE(result.timed_out);
+    CHECK(result.cleanup_confirmed);
+    CHECK(result.exit_code == 0U);
+    CHECK(output.str().contains("start=ok"));
+    CHECK(output.str().contains("history_enabled=true"));
+    CHECK(output.str().contains("stop=drained"));
+}

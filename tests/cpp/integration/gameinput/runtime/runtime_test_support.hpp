@@ -3,6 +3,7 @@
 #include "gameinput/reading_parts.hpp"
 #include "gameinput/runtime/factory.hpp"
 #include "metadata/provider.hpp"
+#include "runtime_history_test_support.hpp"
 #include "runtime_metadata_test_support.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_metadata.hpp>
@@ -86,6 +87,7 @@ public:
         std::optional<native_device_facts> facts;
         std::optional<reading_parts> gamepad_reading;
         std::optional<reading_parts> system_button_reading;
+        std::shared_ptr<native_history_script> history_script;
     };
 
     static constexpr std::size_t device_capacity = 144U;
@@ -229,6 +231,46 @@ public:
         return **current;
     }
 
+    [[nodiscard]] native_result<std::unique_ptr<native_history_cursor>> create_history_cursor(
+        native_device_handle device) override {
+        std::shared_ptr<native_history_script> script;
+        {
+            std::scoped_lock lock{mutex_};
+            const auto* state = find_device(devices, device);
+            script = state != nullptr ? state->history_script : nullptr;
+            if (script == nullptr) {
+                script = history_script;
+            }
+        }
+        if (script == nullptr) {
+            return std::unexpected(
+                native_failure{.cause = native_failure_cause::resource_exhausted});
+        }
+        script->cursor_factories.fetch_add(1U, std::memory_order_relaxed);
+        return std::unique_ptr<native_history_cursor>{
+            new scripted_native_history_cursor{std::move(script)}};
+    }
+
+    [[nodiscard]] native_result<std::uint64_t> performance_frequency() noexcept override {
+        std::shared_ptr<native_history_script> script;
+        {
+            std::scoped_lock lock{mutex_};
+            script = history_script;
+            if (script == nullptr) {
+                const auto configured = std::ranges::find_if(devices,
+                    [](const auto& state) { return state.history_script != nullptr; });
+                if (configured != devices.end()) {
+                    script = configured->history_script;
+                }
+            }
+        }
+        if (script == nullptr || script->qpc_frequency == 0U) {
+            return std::unexpected(
+                native_failure{.cause = native_failure_cause::resource_exhausted});
+        }
+        return script->qpc_frequency;
+    }
+
     [[nodiscard]] native_result<native_device_facts> facts(native_device_handle device) override {
         native_device_facts result{};
         {
@@ -284,6 +326,20 @@ public:
         auto& current = lane == native_reading_lane::gamepad ? state->gamepad_reading
                                                              : state->system_button_reading;
         current = parts;
+    }
+
+    void configure_history(std::shared_ptr<native_history_script> script) {
+        std::scoped_lock lock{mutex_};
+        history_script = std::move(script);
+    }
+
+    void configure_history(native_device_handle device,
+        std::shared_ptr<native_history_script> script) {
+        std::scoped_lock lock{mutex_};
+        auto* state = ensure_device(device);
+        if (state != nullptr) {
+            state->history_script = std::move(script);
+        }
     }
 
     void update_facts(native_device_facts facts) {
@@ -489,6 +545,7 @@ private:
     std::size_t facts_failures{};
     std::size_t rescan_registration_failures{};
     std::optional<reading_parts> reading_during_registration;
+    std::shared_ptr<native_history_script> history_script;
     std::atomic<bool> block_next_facts_;
     std::counting_semaphore<1> facts_blocked_{0};
     std::counting_semaphore<1> facts_release_{0};

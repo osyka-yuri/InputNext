@@ -2,11 +2,14 @@
 
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/reading_parts.hpp"
+#include "history/cursor.hpp"
+#include "history/store.hpp"
 #include "metadata/provider.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/device_registry.hpp>
 #include <inputnext/gameinput_runtime.hpp>
+#include <inputnext/history.hpp>
 #include <inputnext/input_binding.hpp>
 
 #include <array>
@@ -17,9 +20,13 @@
 #include <mutex>
 #include <optional>
 
-#include "../core/publication_source.hpp"
-
 namespace inputnext {
+
+namespace gameinput_detail {
+class publication_source;
+class source_history_cursor;
+struct seed_ticket;
+} // namespace gameinput_detail
 
 namespace runtime_detail {
 inline constexpr std::size_t native_owner_capacity = 128U;
@@ -33,6 +40,11 @@ inline constexpr auto retry_period = std::chrono::seconds{1};
 } // namespace runtime_detail
 
 struct gameinput_runtime::implementation final {
+    struct history_open_hook_snapshot final {
+        void (*hook)(void*) noexcept {};
+        void* context{};
+    };
+
     enum class phase : std::uint8_t { created, starting, running, stopping, drained, failed };
     enum class owner_phase : std::uint8_t {
         free,
@@ -63,6 +75,7 @@ struct gameinput_runtime::implementation final {
         owner_phase state{owner_phase::free};
         gameinput_detail::native_device_handle device{};
         std::uint64_t generation{};
+        std::size_t history_leases{};
         bool retire_requested{};
         bool registry_retire_started{};
         bool registry_retired{};
@@ -95,6 +108,52 @@ struct gameinput_runtime::implementation final {
         native_device_facts facts{};
     };
 
+    struct history_provider final : history_detail::history_provider {
+        explicit history_provider(implementation& runtime) noexcept;
+
+        [[nodiscard]] history_result<std::unique_ptr<history_detail::history_cursor>> open_cursor(
+            connection_target target) override;
+        [[nodiscard]] bool is_live(connection_target target) noexcept override;
+
+        implementation& runtime;
+    };
+
+    struct history_lease final {
+        history_lease(implementation& runtime, owner_identity owner, read_pin residency) noexcept;
+        ~history_lease();
+
+        history_lease(const history_lease&) = delete;
+        history_lease& operator=(const history_lease&) = delete;
+        history_lease(history_lease&& other) noexcept;
+        history_lease& operator=(history_lease&& other) noexcept;
+
+        void release() noexcept;
+
+        implementation* runtime{};
+        owner_identity owner{};
+        read_pin residency;
+    };
+
+    class leased_history_cursor final : public history_detail::history_cursor {
+    public:
+        leased_history_cursor(history_lease lease,
+            std::unique_ptr<gameinput_detail::source_history_cursor> cursor) noexcept;
+        ~leased_history_cursor() override;
+
+        leased_history_cursor(const leased_history_cursor&) = delete;
+        leased_history_cursor& operator=(const leased_history_cursor&) = delete;
+        leased_history_cursor(leased_history_cursor&&) = delete;
+        leased_history_cursor& operator=(leased_history_cursor&&) = delete;
+
+        [[nodiscard]] history_result<history_detail::cursor_seed> start(
+            history_time now) noexcept override;
+        [[nodiscard]] history_detail::cursor_step next(history_time now) noexcept override;
+
+    private:
+        history_lease lease_;
+        std::unique_ptr<gameinput_detail::source_history_cursor> cursor_;
+    };
+
     implementation(device_registry& device_registry,
         gameinput_options runtime_options,
         std::unique_ptr<gameinput_detail::native_gameinput> native_port,
@@ -110,6 +169,14 @@ struct gameinput_runtime::implementation final {
     [[nodiscard]] std::optional<maintenance_time> next_deadline() const;
     [[nodiscard]] connection_inventory connections() const;
     [[nodiscard]] metadata_result<metadata_snapshot> query_metadata(connection_target target);
+    [[nodiscard]] history_result<history_reader_handle> open_history(connection_target target,
+        history_time now);
+    [[nodiscard]] history_batch read_history(history_reader_handle reader, history_time now);
+    [[nodiscard]] history_result<void> close_history(history_reader_handle reader);
+    [[nodiscard]] std::optional<history_failure> begin_history_call(bool allow_stopping,
+        history_open_hook_snapshot* hook_snapshot = nullptr) noexcept;
+    void end_history_call() noexcept;
+    void release_history_lease(owner_identity owner) noexcept;
     [[nodiscard]] gameinput_stop_report stop(maintenance_time now);
     void shutdown() noexcept;
     [[nodiscard]] owner_slot* find_live_owner(connection_target target) noexcept;
@@ -181,12 +248,15 @@ struct gameinput_runtime::implementation final {
         read_pin* residency);
     [[nodiscard]] bool retire_registry_target(connection_target target);
     [[nodiscard]] bool all_native_owners_drained_locked() const noexcept;
-    [[nodiscard]] gameinput_stop_report stop_status_locked() const noexcept;
+    [[nodiscard]] gameinput_stop_report stop_status_locked(
+        std::size_t resident_history_banks) const noexcept;
 
     device_registry& registry;
     gameinput_options options;
     std::unique_ptr<gameinput_detail::native_gameinput> native;
     std::unique_ptr<metadata_provider> metadata;
+    history_provider history_provider_port;
+    history_detail::history_store history;
     mutable std::mutex table_gate;
     std::mutex catalogue_gate;
     std::mutex service_gate;
@@ -211,6 +281,9 @@ struct gameinput_runtime::implementation final {
     bool rescan_exhausted{};
     std::uint64_t catalogue_generation{};
     std::size_t active_queries{};
+    std::size_t active_history_calls{};
+    void (*before_history_open_test_hook)(void*) noexcept {};
+    void* before_history_open_test_context{};
     std::optional<maintenance_time> next_maintenance;
 };
 

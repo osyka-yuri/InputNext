@@ -2,6 +2,7 @@
 
 #include "gameinput/reading_parts.hpp"
 #include "gameinput_value_mapping.hpp"
+#include "windows_history_cursor.hpp"
 #include <inputnext/device_metadata.hpp>
 
 #include <GameInput.h>
@@ -18,6 +19,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <new>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -36,6 +38,11 @@ using initialize_gameinput = HRESULT(WINAPI*)(REFIID interface_id, void** instan
 
 [[nodiscard]] std::uint32_t native_code(HRESULT result) noexcept {
     return static_cast<std::uint32_t>(result);
+}
+
+[[nodiscard]] HRESULT clock_error() noexcept {
+    const auto error = GetLastError();
+    return HRESULT_FROM_WIN32(error == ERROR_SUCCESS ? ERROR_INVALID_DATA : error);
 }
 
 [[nodiscard]] native_failure failure(native_failure_cause cause, HRESULT result = E_FAIL) noexcept {
@@ -198,6 +205,28 @@ public:
 
         const gameinput_reading reading{raw_reading};
         return extract_parts(reading.get(), lane);
+    }
+
+    [[nodiscard]] native_result<std::unique_ptr<native_history_cursor>> create_history_cursor(
+        native_device_handle device) override {
+        if (game_input_ == nullptr || !device.valid()) {
+            return std::unexpected(failure(native_failure_cause::no_current_reading, E_INVALIDARG));
+        }
+        try {
+            return create_windows_history_cursor(game_input_, device);
+        } catch (const std::bad_alloc&) {
+            return std::unexpected(
+                failure(native_failure_cause::resource_exhausted, E_OUTOFMEMORY));
+        }
+    }
+
+    [[nodiscard]] native_result<std::uint64_t> performance_frequency() noexcept override {
+        LARGE_INTEGER frequency{};
+        if (QueryPerformanceFrequency(&frequency) == FALSE || frequency.QuadPart <= 0) {
+            return std::unexpected(
+                failure(native_failure_cause::clock_discontinuity, clock_error()));
+        }
+        return static_cast<std::uint64_t>(frequency.QuadPart);
     }
 
     [[nodiscard]] native_result<native_device_facts> facts(native_device_handle device) override {

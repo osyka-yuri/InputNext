@@ -1,6 +1,6 @@
 # GameInput
 
-The x86 and x64 GameInput runtimes discover physical controllers and publish their latest state through the [device registry](input.md). They use Microsoft GameInput 4.0.300, API version 4, loaded from an absolute app-local path. The build copies the matching `GameInputRedist.dll` and `GameInputRawInputProxy.exe` beside the diagnostic executable.
+The x86 and x64 GameInput runtimes discover physical controllers and provide latest state through the [device registry](input.md) and independent readers through [input history](history.md). They use Microsoft GameInput 4.0.300, API version 4, loaded from an absolute app-local path. The build copies the matching `GameInputRedist.dll` and `GameInputRawInputProxy.exe` beside the diagnostic executable.
 
 ## Ownership and maintenance
 
@@ -14,11 +14,11 @@ Reading callback registration failure enables 4 ms polling with a registration r
 
 ## Shutdown
 
-Finish external calls and metadata queries before destroying the runtime. The registry must outlive the runtime, its borrowed bindings, and its pins.
+Finish external calls, history calls, and metadata queries before destroying the runtime. The registry must outlive the runtime, its borrowed bindings, and its pins.
 
 Retirement closes publication and removes the exact registry connection before unregistering callbacks. Callback contexts, device references, residency pins, and the loaded module remain alive until native unregister succeeds.
 
-`stop()` may block inside synchronous GameInput calls. When it returns, its report gives pending callback-owner and metadata-query counts. The destructor keeps draining until completion. Neither has a completion deadline; the one-second retry interval applies only to failed unregister attempts.
+`stop()` may block inside synchronous GameInput calls. Its report separates pending callback owners, metadata queries, active history calls, and retained history owners. The destructor keeps draining until completion. Neither has a completion deadline; the one-second unregister retry interval does not bound native completion.
 
 ## Metadata
 
@@ -41,6 +41,14 @@ Build with the x64 preset and run:
 For the 32-bit diagnostic, use the `windows-x86` preset and its build directory in these commands.
 
 The diagnostic accepts durations from 1 through 300,000 ms. `--require-device` requires observing an admitted connection during the run; `--require-reading` requires a pad sample. It reports connections, samples, Guide availability, metadata, and shutdown.
+
+Add `--history` to open independent [history readers](history.md). `--require-history` also requires a native baseline followed by a native Pad record or a qualified native checkpoint:
+
+```powershell
+./build/windows-x64/tools/gameinput_probe/inputnext_gameinput_probe.exe --duration-ms 10000 --require-device --require-reading --require-history
+```
+
+History output distinguishes record origins, baselines, checkpoints, resets, loss, and failures. `native_readings` counts native Pad readings and excludes baselines and captured Guide observations. A qualified checkpoint can satisfy `--require-history` while the controller is stationary. Readers close before shutdown, and the final report includes retained history owners. Empty inventory cannot satisfy `--require-history`.
 
 Metadata queries run synchronously, at most once per live connection per second and one query per coordinator pass; they can delay that pass. Reconnected identities are queried immediately.
 
