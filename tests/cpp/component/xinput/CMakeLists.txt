@@ -1,4 +1,7 @@
 add_executable(inputnext_xinput_component_tests
+    events_tests.cpp
+    retrieval_tests.cpp
+    guide_wait_tests.cpp
     service_packet_tests.cpp
     service_assignment_tests.cpp
     service_focus_tests.cpp

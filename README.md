@@ -6,7 +6,7 @@ See [native input components](docs/input.md) for publication, ownership, and shu
 
 The [GameInput runtime](docs/gameinput.md) provides native controller discovery, latest state, [independent history readers](docs/history.md), metadata queries, and a supervised diagnostic.
 
-The C++ [XInput presentation](docs/xinput.md) maps connections to four positions with packet tracking, [focus observation](docs/focus.md), logical Enable, and metadata queries.
+The C++ [XInput presentation](docs/xinput.md) maps connections to four positions with packet tracking, [focus observation](docs/focus.md), logical Enable, metadata queries, and [keystrokes and Guide waits](docs/xinput-events.md).
 
 See [development setup](docs/development.md) for toolchain requirements and verification commands.
 

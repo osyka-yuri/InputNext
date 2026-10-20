@@ -78,6 +78,8 @@ namespace gameinput_detail {
 class runtime_factory;
 }
 
+class gameinput_xinput;
+
 // Caller-driven GameInput lifecycle with latest-state and bounded history consumers. The registry
 // must outlive this runtime, all returned read bindings, and every admitted query. No worker is
 // started internally.
@@ -107,8 +109,12 @@ private:
     explicit gameinput_runtime(std::unique_ptr<implementation> implementation) noexcept;
 
     friend class gameinput_detail::runtime_factory;
+    friend class gameinput_xinput;
 
     std::unique_ptr<implementation> implementation_;
+
+    [[nodiscard]] history_result<history_reader_handle>
+    open_xinput_history(std::uint32_t position, connection_target target, history_time now);
 };
 
 } // namespace inputnext

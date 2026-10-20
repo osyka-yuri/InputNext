@@ -354,9 +354,10 @@ history_detail::cursor_step source_history_cursor::merge_native_step() noexcept 
         return step;
     }
 
+    timeline_floor_qpc_ = max_qpc(timeline_floor_qpc_, checkpoint);
     return history_detail::cursor_step{
         .kind = cursor_step_kind::caught_up,
-        .checkpoint_qpc = max_qpc(checkpoint, timeline_floor_qpc_),
+        .checkpoint_qpc = timeline_floor_qpc_,
     };
 }
 

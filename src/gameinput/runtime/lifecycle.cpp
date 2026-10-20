@@ -614,6 +614,12 @@ history_result<history_reader_handle> gameinput_runtime::open_history(connection
     return implementation_->open_history(target, now);
 }
 
+history_result<history_reader_handle> gameinput_runtime::open_xinput_history(std::uint32_t position,
+    connection_target target,
+    history_time now) {
+    return implementation_->open_history(target, now, position);
+}
+
 history_batch gameinput_runtime::read_history(history_reader_handle reader, history_time now) {
     return implementation_->read_history(reader, now);
 }

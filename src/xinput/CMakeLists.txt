@@ -1,8 +1,13 @@
 add_library(inputnext_xinput STATIC
     service.cpp
+    events.cpp
+    event_retrieval.cpp
+    guide_wait.cpp
     queries.cpp
     query_projection.cpp
     translation.cpp
+    keystroke_mapping.cpp
+    keystroke_tracker.cpp
 )
 target_include_directories(inputnext_xinput
     PUBLIC "${PROJECT_SOURCE_DIR}/include"

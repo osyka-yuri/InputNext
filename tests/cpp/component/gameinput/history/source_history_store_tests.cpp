@@ -160,5 +160,48 @@ TEST_CASE("gameinput.history.store_preserves_mixed_origins_and_selected_baseline
     CHECK_FALSE(selected_evidence.native_history_observed());
 }
 
+TEST_CASE("gameinput.history.store_accepts_late_guide_after_native_checkpoint",
+    "[component][gameinput][history][source]") {
+    scripted_now = history_time{};
+    cursor_fixture fixture;
+    fixture.qualify_guide();
+    fixture.native.history.seed.baseline.observation_qpc = 100U;
+    fixture.native.history.quiet_checkpoint_qpc = 150U;
+    auto provider = source_history_provider{fixture};
+    const auto store_storage = std::make_unique<history_detail::history_store>(provider);
+    auto& store = *store_storage;
+    const auto target = source_cursor_target();
+
+    const auto opened = store.open(target, history_time{});
+    REQUIRE(opened.has_value());
+    const auto baseline = std::make_unique<history_batch>(store.read(*opened, history_time{}));
+    REQUIRE(baseline->count == 1U);
+    CHECK(baseline->records[0U].baseline);
+    CHECK(baseline->records[0U].sample.effective_qpc == 100U);
+
+    const auto checkpoint = std::make_unique<history_batch>(store.read(*opened, history_time{}));
+    CHECK(checkpoint->count == 0U);
+    CHECK(!checkpoint->failure.has_value());
+    CHECK(checkpoint->caught_up);
+    CHECK(checkpoint->checkpoint_qpc == 150U);
+
+    fixture.capture->on_callback(reading_parts{
+        .guide = true,
+        .source_timestamp_us = 40U,
+        .observation_qpc = 90U,
+    });
+    const auto late_guide = std::make_unique<history_batch>(store.read(*opened, history_time{}));
+    REQUIRE(late_guide->count == 1U);
+    CHECK(!late_guide->failure.has_value());
+    CHECK(late_guide->records[0U].origin == history_record_origin::callback_guide);
+    CHECK(late_guide->records[0U].sequence == 2U);
+    CHECK(late_guide->records[0U].sample.source_timestamp_us == 40U);
+    CHECK(late_guide->records[0U].sample.effective_qpc == 150U);
+    CHECK(late_guide->records[0U].sample.guide_known);
+    CHECK(late_guide->records[0U].sample.state.buttons == guide_mask);
+    CHECK(late_guide->caught_up);
+    CHECK(late_guide->checkpoint_qpc == 150U);
+}
+
 } // namespace
 } // namespace inputnext::gameinput_detail

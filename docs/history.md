@@ -12,7 +12,7 @@ Source timestamps use microseconds. Effective timestamps and checkpoints use Que
 
 `source` describes acquisition mode. Each record's `origin` identifies its emitting operation: `baseline`, `native_pad`, `callback_pad`, or `callback_guide`. A native-mode batch can contain captured Guide observations; the composed state preserves the other lane's last known value. Every baseline has `baseline` origin, including one selected from a retained reading.
 
-`caught_up` qualifies the returned checkpoint after all preceding records have been consumed. A zero checkpoint is unqualified. A native checkpoint also requires callback coverage and fresh Guide knowledge.
+`caught_up` qualifies the returned checkpoint after all preceding records have been consumed. A zero checkpoint is unqualified. A native checkpoint also requires callback coverage and fresh Guide knowledge. Later Guide observations retain their source timestamps and are clamped to at least that accepted checkpoint in effective QPC.
 
 ## Acquisition and recovery
 
@@ -22,7 +22,7 @@ Retention overrun resets the lagging reader to the latest retained state. `lost_
 
 Source or callback coverage loss inserts an ordered recovery boundary; earlier records remain available within retention capacity. A reset preserves unknown loss across both retained and evicted boundaries. Unknown loss also covers accounting overflow and callback fallback overwrite, and always has `lost_count = 0`.
 
-History retains 256 entries per bank, including baselines. The runtime admits 28 public readers and holds at most 32 resident banks, including opening, retiring, and destroying banks. Each read processes at most 64 cursor steps. These limits bound local work and storage, without bounding synchronous native completion time.
+History retains 256 entries per bank, including baselines. The runtime admits 28 public readers and reserves one additional reader for each of the four XInput positions. Both groups share at most 32 resident banks, including opening, retiring, and destroying banks. Reserved reader capacity does not guarantee a free bank. Each read processes at most 64 cursor steps. These limits bound local work and storage, without bounding synchronous native completion time.
 
 ## Ownership and concurrency
 

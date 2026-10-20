@@ -7,6 +7,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <limits>
 #include <memory>
@@ -63,8 +64,10 @@ void gameinput_runtime::implementation::release_history_lease(owner_identity own
     query_drained.notify_all();
 }
 
-history_result<history_reader_handle>
-gameinput_runtime::implementation::open_history(connection_target target, history_time now) {
+history_result<history_reader_handle> gameinput_runtime::implementation::open_history(
+    connection_target target,
+    history_time now,
+    std::optional<std::uint32_t> reserved_position) {
     history_open_hook_snapshot hook_snapshot{};
     if (const auto failure = begin_history_call(false, &hook_snapshot); failure.has_value()) {
         return std::unexpected(*failure);
@@ -79,6 +82,9 @@ gameinput_runtime::implementation::open_history(connection_target target, histor
     }
 
     try {
+        if (reserved_position.has_value()) {
+            return history.open_xinput_reader(*reserved_position, target, now);
+        }
         return history.open(target, now);
     } catch (const std::bad_alloc&) {
         return std::unexpected(history_failure{.code = history_error::capacity_exceeded});

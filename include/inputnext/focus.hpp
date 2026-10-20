@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 namespace inputnext::focus {
 
@@ -45,6 +46,15 @@ struct snapshot final {
     // These fields are diagnostic and do not affect the evidence revision.
     std::uint64_t completed_observations{};
     std::uint32_t native_code{};
+};
+
+// Identifies one foreground evidence revision without retaining that observation's short lease.
+struct foreground_epoch final {
+    runtime_id observer_incarnation{};
+    process_instance process{};
+    std::uint64_t revision{};
+
+    friend bool operator==(const foreground_epoch&, const foreground_epoch&) = default;
 };
 
 class source {
@@ -110,6 +120,9 @@ public:
     // Captured and current evidence must both be fresh, with identity, evidence, revision, and
     // openness matching.
     [[nodiscard]] bool matches_foreground(const snapshot& captured) const noexcept;
+    // Current foreground evidence can remain the same epoch across timestamp refreshes.
+    [[nodiscard]] std::optional<foreground_epoch> current_foreground_epoch() const noexcept;
+    [[nodiscard]] bool matches_foreground_epoch(const foreground_epoch& epoch) const noexcept;
 
 private:
     friend class observer;

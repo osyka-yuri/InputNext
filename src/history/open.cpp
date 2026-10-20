@@ -120,18 +120,38 @@ void release_opening_bank_locked(history_store_state& state,
 }
 
 [[nodiscard]] history_result<open_reservation> reserve_open(history_store_state& state,
-    connection_target target) noexcept {
+    connection_target target,
+    std::optional<std::uint32_t> reserved_position) noexcept {
     std::scoped_lock lock{state.gate};
     if (state.closed) {
         return std::unexpected(failure(history_error::closed));
     }
 
     auto reservation = open_reservation{};
+    if (reserved_position.has_value()) {
+        const auto reader_index =
+            public_history_reader_capacity + static_cast<std::size_t>(*reserved_position);
+        if (reader_index >= state.readers.size()) {
+            return std::unexpected(failure(history_error::invalid_argument));
+        }
+        if (state.readers[reader_index].used) {
+            return std::unexpected(failure(history_error::busy));
+        }
+    }
+
     if (find_opening_bank_locked(state, target).has_value()) {
         return std::unexpected(failure(history_error::busy));
     }
 
-    if (!allocate_reader_locked(state, target, reservation.reader_index, reservation.handle)) {
+    const auto allocated =
+        reserved_position.has_value()
+            ? allocate_xinput_reader_locked(state,
+                  *reserved_position,
+                  target,
+                  reservation.reader_index,
+                  reservation.handle)
+            : allocate_reader_locked(state, target, reservation.reader_index, reservation.handle);
+    if (!allocated) {
         const auto identities_exhausted = state.next_reader_id == 0U || state.next_stream_id == 0U;
         return std::unexpected(failure(identities_exhausted ? history_error::identity_exhausted
                                                             : history_error::capacity_exceeded));
@@ -349,42 +369,63 @@ void select_open_baseline(history_bank const& bank, open_selection& selection) n
 
 } // namespace
 
-history_result<history_reader_handle> history_store::open(connection_target target,
-    [[maybe_unused]] history_time now) {
+namespace {
+
+[[nodiscard]] history_result<history_reader_handle> open_reader(history_store_state& state,
+    connection_target target,
+    [[maybe_unused]] history_time now,
+    std::optional<std::uint32_t> reserved_position) {
     if (!target.valid()) {
         return std::unexpected(failure(history_error::invalid_argument));
     }
+    if (reserved_position.has_value() &&
+        *reserved_position >= reserved_xinput_history_reader_capacity) {
+        return std::unexpected(failure(history_error::invalid_argument));
+    }
 
-    auto reserved = reserve_open(state_, target);
+    auto reserved = reserve_open(state, target, reserved_position);
     if (!reserved.has_value()) {
         return std::unexpected(reserved.error());
     }
     const auto reservation = *reserved;
-    [[maybe_unused]] const auto open_guard = open_call_guard{state_};
+    [[maybe_unused]] const auto open_guard = open_call_guard{state};
 
     if (reservation.existing_bank.has_value()) {
-        return finish_open(state_, reservation, *reservation.existing_bank);
+        return finish_open(state, reservation, *reservation.existing_bank);
     }
 
-    auto cursor = create_cursor(state_.provider, target);
+    auto cursor = create_cursor(state.provider, target);
     if (!cursor.has_value() || cursor.value() == nullptr) {
         const auto cursor_error =
             cursor.has_value() ? failure(history_error::capacity_exceeded) : cursor.error();
-        return std::unexpected(abandon_open(state_, reservation, cursor_error));
+        return std::unexpected(abandon_open(state, reservation, cursor_error));
     }
 
     auto candidate = make_bank(target, std::move(cursor.value()));
     if (!candidate.has_value()) {
-        return std::unexpected(abandon_open(state_, reservation, candidate.error()));
+        return std::unexpected(abandon_open(state, reservation, candidate.error()));
     }
 
-    auto bank_index = admit_candidate(state_, reservation, *candidate);
+    auto bank_index = admit_candidate(state, reservation, *candidate);
     if (!bank_index.has_value()) {
         candidate->reset();
-        return std::unexpected(abandon_open(state_, reservation, bank_index.error()));
+        return std::unexpected(abandon_open(state, reservation, bank_index.error()));
     }
     candidate->reset();
-    return finish_open(state_, reservation, *bank_index);
+    return finish_open(state, reservation, *bank_index);
+}
+
+} // namespace
+
+history_result<history_reader_handle> history_store::open(connection_target target,
+    [[maybe_unused]] history_time now) {
+    return open_reader(state_, target, now, std::nullopt);
+}
+
+history_result<history_reader_handle> history_store::open_xinput_reader(std::uint32_t position,
+    connection_target target,
+    history_time now) {
+    return open_reader(state_, target, now, position);
 }
 
 } // namespace inputnext::history_detail

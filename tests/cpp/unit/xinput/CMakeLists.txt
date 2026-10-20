@@ -1,6 +1,7 @@
 add_executable(inputnext_xinput_unit_tests
     query_projection_tests.cpp
     translation_tests.cpp
+    keystroke_tests.cpp
 )
 target_link_libraries(inputnext_xinput_unit_tests PRIVATE inputnext_xinput Catch2::Catch2WithMain)
 target_include_directories(inputnext_xinput_unit_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")

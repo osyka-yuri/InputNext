@@ -170,7 +170,8 @@ struct gameinput_runtime::implementation final {
     [[nodiscard]] connection_inventory connections() const;
     [[nodiscard]] metadata_result<metadata_snapshot> query_metadata(connection_target target);
     [[nodiscard]] history_result<history_reader_handle> open_history(connection_target target,
-        history_time now);
+        history_time now,
+        std::optional<std::uint32_t> reserved_position = std::nullopt);
     [[nodiscard]] history_batch read_history(history_reader_handle reader, history_time now);
     [[nodiscard]] history_result<void> close_history(history_reader_handle reader);
     [[nodiscard]] std::optional<history_failure> begin_history_call(bool allow_stopping,

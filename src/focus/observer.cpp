@@ -10,6 +10,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <stop_token>
 #include <system_error>
@@ -323,6 +324,29 @@ bool observer::presentation_guard::matches_foreground(const snapshot& captured) 
 
     return captured.observer_incarnation == current.observer_incarnation &&
            captured.process == current.process && captured.revision == current.revision;
+}
+
+std::optional<foreground_epoch>
+observer::presentation_guard::current_foreground_epoch() const noexcept {
+    if (implementation_ == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto current = implementation_->read_publication();
+    if (!current.open || current.exhausted || current.state != evidence::foreground ||
+        current.revision == 0U) {
+        return std::nullopt;
+    }
+
+    return foreground_epoch{.observer_incarnation = current.observer_incarnation,
+        .process = current.process,
+        .revision = current.revision};
+}
+
+bool observer::presentation_guard::matches_foreground_epoch(
+    const foreground_epoch& epoch) const noexcept {
+    const auto current_epoch = current_foreground_epoch();
+    return current_epoch.has_value() && *current_epoch == epoch;
 }
 
 std::unique_ptr<observer> detail::observer_test_access::make_with_clock(runtime_id incarnation,

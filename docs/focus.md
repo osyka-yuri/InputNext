@@ -10,6 +10,8 @@ Initial evidence is unavailable. A missing foreground window, failed process loo
 
 Evidence expires 250 ms after the observation starts; an age of exactly 250 ms is expired. Reading publication or checking presentation eligibility applies expiry under the presentation gate, even while the source is blocked. Results aged 250 ms or more at publication cannot renew evidence. Recovery advances the revision, so it cannot authorize a read captured before expiry. A captured snapshot must itself remain fresh even when subsequent observations preserve the same revision.
 
+`foreground_epoch` identifies the observer, process, and foreground revision without retaining an observation timestamp. Guard checks match it against current fresh evidence. Long-lived event consumers use this identity; their in-flight operations still retain the captured snapshot's freshness requirement.
+
 The worker waits nominally 4 ms after each completed observation. The freshness budget allows scheduling margin over this interval; it is a presentation policy, not an OS scheduling or completion deadline.
 
 ## Synchronization and ownership

@@ -36,7 +36,8 @@ namespace {
 
 [[nodiscard]] int usage() {
     std::wcerr << L"Usage: inputnext_gameinput_probe [--duration-ms N] [--require-device] "
-                  L"[--require-reading] [--history] [--require-history] [--xinput]\n"
+                  L"[--require-reading] [--history] [--require-history] [--xinput] "
+                  L"[--xinput-events]\n"
                   L"N must be between 1 and 300000 milliseconds.\n";
     return 2;
 }
@@ -58,6 +59,9 @@ namespace {
             options.require_history = true;
         } else if (argument == L"--xinput") {
             options.xinput = true;
+        } else if (argument == L"--xinput-events") {
+            options.xinput = true;
+            options.xinput_events = true;
         } else if (argument == L"--duration-ms" && index + 1 < argc) {
             if (!parse_duration(argv[++index], options.duration_ms)) {
                 return false;

@@ -6,6 +6,7 @@
 #include <inputnext/history.hpp>
 
 #include <cstddef>
+#include <cstdint>
 
 namespace inputnext::history_detail {
 
@@ -23,6 +24,8 @@ public:
 
     [[nodiscard]] history_result<history_reader_handle> open(connection_target target,
         history_time now);
+    [[nodiscard]] history_result<history_reader_handle>
+    open_xinput_reader(std::uint32_t position, connection_target target, history_time now);
     [[nodiscard]] history_batch read(history_reader_handle reader, history_time now);
     [[nodiscard]] history_result<void> close(history_reader_handle reader);
 

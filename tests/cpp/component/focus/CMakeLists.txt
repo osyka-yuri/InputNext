@@ -1,4 +1,5 @@
 add_executable(inputnext_focus_component_tests
+    epoch_tests.cpp
     freshness_tests.cpp
     observer_tests.cpp
 )

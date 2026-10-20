@@ -106,6 +106,68 @@ TEST_CASE("history.store.serializes_readers_and_close_waits_for_active_read",
     CHECK(retained_reading->records[0U].sequence == 2U);
 }
 
+TEST_CASE("history.store.reserved_reader_stays_claimed_through_read_and_stale_close",
+    "[component][history][capacity][concurrency]") {
+    auto provider = fake_history_provider{};
+    const auto store_storage = std::make_unique<history_store>(provider);
+    auto& store = *store_storage;
+    const auto target = make_target(23U);
+    const auto reserved = store.open_xinput_reader(0U, target, test_now);
+    const auto public_reader = store.open(target, test_now);
+    REQUIRE(reserved.has_value());
+    REQUIRE(public_reader.has_value());
+
+    const auto cursor = provider.cursor_state(target);
+    REQUIRE(cursor != nullptr);
+    REQUIRE(store.read(*reserved, test_now).count == 1U);
+    REQUIRE(store.read(*public_reader, test_now).count == 1U);
+    cursor->enqueue_reading(make_sample(510U, 11U, 2U));
+    cursor->block_next();
+    auto active_read = pending_read{store, *reserved, cursor};
+    REQUIRE(active_read.wait_until_blocked());
+
+    REQUIRE(store.close(*reserved).has_value());
+    const auto duplicate_position = store.open_xinput_reader(0U, target, test_now);
+    REQUIRE(!duplicate_position.has_value());
+    CHECK(duplicate_position.error().code == history_error::busy);
+    CHECK(store.read(*public_reader, test_now).failure ==
+          history_failure{.code = history_error::busy});
+
+    const auto other_target = make_target(24U);
+    const auto other_position = store.open_xinput_reader(1U, other_target, test_now);
+    REQUIRE(other_position.has_value());
+    const auto unrelated_baseline =
+        std::make_unique<history_batch>(store.read(*other_position, test_now));
+    REQUIRE(unrelated_baseline->count == 1U);
+    CHECK(unrelated_baseline->records[0U].baseline);
+    CHECK(unrelated_baseline->records[0U].sample == make_sample(100U, 10U));
+
+    const auto cancelled_read = std::make_unique<history_batch>(active_read.finish());
+    CHECK(cancelled_read->count == 0U);
+    CHECK(cancelled_read->failure == history_failure{.code = history_error::closed});
+    const auto stale_close = store.close(*reserved);
+    REQUIRE(!stale_close.has_value());
+    CHECK(stale_close.error().code == history_error::invalid_reader);
+
+    const auto reopened = store.open_xinput_reader(0U, target, test_now);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->value != reserved->value);
+    const auto stale_close_after_reopen = store.close(*reserved);
+    REQUIRE(!stale_close_after_reopen.has_value());
+    CHECK(stale_close_after_reopen.error().code == history_error::invalid_reader);
+    const auto reopened_baseline = std::make_unique<history_batch>(store.read(*reopened, test_now));
+    REQUIRE(reopened_baseline->count == 1U);
+    CHECK(reopened_baseline->records[0U].baseline);
+
+    const auto public_events =
+        std::make_unique<history_batch>(store.read(*public_reader, test_now));
+    REQUIRE(public_events->count == 1U);
+    CHECK(public_events->records[0U].sample == make_sample(510U, 11U, 2U));
+    REQUIRE(store.close(*public_reader).has_value());
+    REQUIRE(store.close(*other_position).has_value());
+    REQUIRE(store.close(*reopened).has_value());
+}
+
 TEST_CASE("history.store.snapshots_read_commit_hook_at_reservation",
     "[component][history][concurrency]") {
     auto provider = fake_history_provider{};

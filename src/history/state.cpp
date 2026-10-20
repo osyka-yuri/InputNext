@@ -15,6 +15,38 @@ namespace {
 
 constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
 
+[[nodiscard]] bool allocate_reader_at_locked(history_store_state& state,
+    std::size_t index,
+    connection_target target,
+    std::size_t& reader_index,
+    history_reader_handle& handle) noexcept {
+    if (index >= state.readers.size() || state.readers[index].used || state.next_reader_id == 0U ||
+        state.next_stream_id == 0U ||
+        state.active_open_calls == std::numeric_limits<std::size_t>::max()) {
+        return false;
+    }
+
+    reader_index = index;
+    const auto reader_id = state.next_reader_id;
+    const auto stream_id = state.next_stream_id;
+    state.next_reader_id = reader_id == maximum ? 0U : reader_id + 1U;
+    state.next_stream_id = stream_id == maximum ? 0U : stream_id + 1U;
+    handle = history_reader_handle{.target = target, .value = reader_id};
+
+    auto& reader = state.readers[index];
+    reader = history_reader_state{
+        .handle = handle,
+        .bank_index = invalid_bank_index,
+        .stream_id = stream_id,
+        .next_output_sequence = 1U,
+        .terminal_failure = history_failure{.code = history_error::closed},
+        .used = true,
+        .opening = true,
+    };
+    ++state.active_open_calls;
+    return true;
+}
+
 } // namespace
 
 std::optional<std::size_t> find_reader_locked(const history_store_state& state,
@@ -121,33 +153,29 @@ bool allocate_reader_locked(history_store_state& state,
     connection_target target,
     std::size_t& reader_index,
     history_reader_handle& handle) noexcept {
-    const auto free_reader = std::ranges::find_if(state.readers,
+    const auto first_reserved =
+        state.readers.begin() + static_cast<std::ptrdiff_t>(public_history_reader_capacity);
+    const auto free_reader = std::ranges::find_if(state.readers.begin(),
+        first_reserved,
         [](const history_reader_state& reader) { return !reader.used; });
-    if (free_reader == state.readers.end() || state.next_reader_id == 0U ||
-        state.next_stream_id == 0U ||
-        state.active_open_calls == std::numeric_limits<std::size_t>::max()) {
+    if (free_reader == first_reserved) {
         return false;
     }
 
-    reader_index = static_cast<std::size_t>(free_reader - state.readers.begin());
-    const auto reader_id = state.next_reader_id;
-    const auto stream_id = state.next_stream_id;
-    state.next_reader_id = reader_id == maximum ? 0U : reader_id + 1U;
-    state.next_stream_id = stream_id == maximum ? 0U : stream_id + 1U;
-    handle = history_reader_handle{.target = target, .value = reader_id};
+    const auto index = static_cast<std::size_t>(free_reader - state.readers.begin());
+    return allocate_reader_at_locked(state, index, target, reader_index, handle);
+}
 
-    auto& reader = state.readers[reader_index];
-    reader = history_reader_state{
-        .handle = handle,
-        .bank_index = invalid_bank_index,
-        .stream_id = stream_id,
-        .next_output_sequence = 1U,
-        .terminal_failure = history_failure{.code = history_error::closed},
-        .used = true,
-        .opening = true,
-    };
-    ++state.active_open_calls;
-    return true;
+bool allocate_xinput_reader_locked(history_store_state& state,
+    std::uint32_t position,
+    connection_target target,
+    std::size_t& reader_index,
+    history_reader_handle& handle) noexcept {
+    if (position >= reserved_xinput_history_reader_capacity) {
+        return false;
+    }
+    const auto index = public_history_reader_capacity + static_cast<std::size_t>(position);
+    return allocate_reader_at_locked(state, index, target, reader_index, handle);
 }
 
 } // namespace inputnext::history_detail

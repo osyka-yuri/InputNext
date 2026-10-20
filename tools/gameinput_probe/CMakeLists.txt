@@ -10,6 +10,8 @@ add_executable(inputnext_gameinput_probe
     history_report.cpp
     xinput_observer.cpp
     xinput_report.cpp
+    xinput_event_observer.cpp
+    xinput_event_report.cpp
 )
 set_target_properties(inputnext_gameinput_probe PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/tools/gameinput_probe"

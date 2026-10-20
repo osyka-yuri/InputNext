@@ -212,6 +212,10 @@ TEST_CASE("gameinput.history.source_cursor_clamps_late_guide_without_rewriting_s
     fixture.native.history.quiet_checkpoint_qpc = 150U;
 
     REQUIRE(fixture.cursor.start(history_time{}).has_value());
+    const auto checkpoint = fixture.cursor.next(history_time{});
+    CHECK(checkpoint.kind == history_detail::cursor_step_kind::caught_up);
+    CHECK(checkpoint.checkpoint_qpc == 150U);
+
     fixture.capture->on_callback(reading_parts{
         .guide = true,
         .source_timestamp_us = 40U,
@@ -221,7 +225,7 @@ TEST_CASE("gameinput.history.source_cursor_clamps_late_guide_without_rewriting_s
     const auto guide = fixture.cursor.next(history_time{});
     REQUIRE(guide.kind == history_detail::cursor_step_kind::reading);
     CHECK(guide.reading.source_timestamp_us == 40U);
-    CHECK(guide.reading.effective_qpc == 100U);
+    CHECK(guide.reading.effective_qpc == 150U);
     CHECK(guide.reading.guide_known);
 }
 

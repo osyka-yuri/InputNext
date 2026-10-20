@@ -163,7 +163,7 @@ Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2
 - `tests/cpp/component/input` checks coherent publication through the production input library.
 - `tests/cpp/component/devices` checks connection ownership, retirement, and concurrency through the production device library. Stress cases have a separate executable and build option.
 - `tests/cpp/component/focus` checks observation, freshness, publication, and source lifetime with controlled providers. `tests/cpp/integration/focus` checks passive native process observation.
-- `tests/cpp/unit/xinput` checks translation and query projections. `tests/cpp/component/xinput` checks assignments, packets, eligibility, and query validation through production bindings and focus observation.
+- `tests/cpp/unit/xinput` checks translation, query projections, key mapping, and repeat tracking. `tests/cpp/component/xinput` checks assignments, packets, eligibility, prepared event retrieval, Guide waits, and query validation through production bindings and focus observation.
 - `tests/cpp/unit/history` and `tests/cpp/unit/gameinput/clock` check retention values and timestamp arithmetic without the SDK.
 - `tests/cpp/component/history` checks reader admission, independent progress, recovery, and reclamation with controlled cursors.
 - `tests/cpp/component/gameinput/history` checks capture and native/Guide merging with a controlled native port. `tests/cpp/component/gameinput/native_history` checks the native cursor through a scripted API seam.
@@ -173,7 +173,7 @@ Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2
 - `tests/cpp/component/metadata` checks Windows metadata selection with a controlled OS port.
 - `tests/cpp/integration/gameinput/publication` checks partial reading merge through the production publisher and device registry.
 - `tests/cpp/integration/gameinput/runtime` checks lifecycle, history, and query coordination through production registry and publication components, using a controlled native port.
-- `tests/cpp/integration/gameinput/presentation` checks GameInput/XInput composition, metadata, and focus progress during blocked native work, using narrow native and metadata ports.
+- `tests/cpp/integration/gameinput/presentation` checks GameInput/XInput composition, events, waiter shutdown, and metadata and focus progress during blocked native work, using narrow native and metadata ports.
 - `tests/cpp/integration/gameinput/probe` checks real child-process supervision and app-local initialization and cleanup.
 - `tests/harness` checks the test runner and its failure cleanup.
 

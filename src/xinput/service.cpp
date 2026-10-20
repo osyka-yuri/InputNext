@@ -1,9 +1,12 @@
 #include <inputnext/xinput.hpp>
 
+#include "keystroke_tracker.hpp"
 #include "service_state.hpp"
 #include "translation.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/error.hpp>
+#include <inputnext/focus.hpp>
+#include <inputnext/xinput_events.hpp>
 #include <inputnext/xinput_types.hpp>
 
 #include <algorithm>
@@ -14,6 +17,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -32,20 +36,77 @@ constexpr WORD guide_button_mask = 0x0400U;
 
 service::implementation::implementation(focus::observer& focus_observer,
     metadata_source& metadata_provider,
+    event_source* event_provider,
+    std::uint64_t qpc_frequency,
     presentation_seed seed)
     : focus(focus_observer),
       metadata(metadata_provider),
+      event_source_provider(event_provider),
       next_assignment(seed.next_assignment) {
     if (next_assignment == 0U) {
         throw std::invalid_argument{"XInput assignment seed must be nonzero"};
     }
+    if (event_source_provider != nullptr) {
+        const auto timing = detail::keystroke_repeat_timing::from_qpc_frequency(qpc_frequency);
+        if (!timing.has_value()) {
+            throw std::invalid_argument{"XInput event service requires a valid QPC frequency"};
+        }
+        repeat_timing.emplace(*timing);
+    }
+}
+
+void service::implementation::clear_event_stream(event_position_state& events) noexcept {
+    events.qualification.reset();
+    clear_history_state(events);
+    if (events.reader.has_value()) {
+        events.cleanup_pending = true;
+    }
+}
+
+bool service::implementation::invalidate_event_position(position_record& position,
+    guide_wait_state reason) noexcept {
+    auto& events = position.events;
+    auto changed = events.qualification.has_value() || events.domain.has_value();
+    clear_event_stream(events);
+    if (events.guide_wait.has_value() &&
+        (events.guide_wait->state == guide_wait_state::pending ||
+            events.guide_wait->state == guide_wait_state::signalled)) {
+        events.guide_wait->state = reason;
+        changed = true;
+    }
+    return changed;
+}
+
+void service::implementation::notify_guide_waiters() noexcept {
+    std::scoped_lock wait_lock{guide_wait_mutex};
+    guide_wait_changed.notify_all();
+}
+
+bool service::implementation::event_qualification_is_current(const event_position_state& events,
+    const assignment& occupant,
+    const focus::foreground_epoch& epoch) const noexcept {
+    return !event_identity_exhausted && enabled && events.qualification.has_value() &&
+           events.qualification->occupant == occupant &&
+           events.qualification->focus_epoch == epoch &&
+           events.qualification->enable_generation == event_enable_generation;
 }
 
 service::service(focus::observer& focus, metadata_source& metadata, presentation_seed seed)
-    : implementation_(std::make_unique<implementation>(focus, metadata, seed)) {
+    : implementation_(std::make_unique<implementation>(focus, metadata, nullptr, 0U, seed)) {
 }
 
-service::~service() = default;
+service::service(focus::observer& focus,
+    metadata_source& metadata,
+    event_source& events,
+    std::uint64_t qpc_frequency,
+    presentation_seed seed)
+    : implementation_(
+          std::make_unique<implementation>(focus, metadata, &events, qpc_frequency, seed)) {
+}
+
+service::~service() {
+    close();
+}
 
 DWORD service::implementation::prepare_state_read(DWORD user_index,
     bool include_guide,
@@ -148,57 +209,64 @@ result<assignment> service::assign(connection_target target, read_binding reader
     }
 
     std::optional<read_pin> candidate_pin;
-    const auto guard = implementation_->focus.lock_presentation();
-    if (implementation_->closed) {
-        return std::unexpected{error::closed};
-    }
+    std::optional<assignment> result_assignment;
+    {
+        const auto guard = implementation_->focus.lock_presentation();
+        if (implementation_->closed) {
+            return std::unexpected{error::closed};
+        }
 
-    auto captured = reader.capture();
-    if (!captured.has_value()) {
-        return std::unexpected{captured.error() == error::invalid_argument ? error::invalid_argument
-                                                                           : error::not_connected};
-    }
-    candidate_pin.emplace(std::move(*captured));
-    if (candidate_pin->target() != target) {
-        return std::unexpected{error::invalid_argument};
-    }
+        auto captured = reader.capture();
+        if (!captured.has_value()) {
+            return std::unexpected{captured.error() == error::invalid_argument
+                                       ? error::invalid_argument
+                                       : error::not_connected};
+        }
+        candidate_pin.emplace(std::move(*captured));
+        if (candidate_pin->target() != target) {
+            return std::unexpected{error::invalid_argument};
+        }
 
-    const auto existing = std::ranges::find_if(implementation_->positions,
-        [target](const auto& row) { return row.occupant.value_or(assignment{}).target == target; });
-    if (existing != implementation_->positions.end()) {
-        return existing->occupant.value_or(assignment{});
-    }
+        const auto existing =
+            std::ranges::find_if(implementation_->positions, [target](const auto& row) {
+                return row.occupant.value_or(assignment{}).target == target;
+            });
+        if (existing != implementation_->positions.end()) {
+            return existing->occupant.value_or(assignment{});
+        }
 
-    const auto free = std::ranges::find_if(implementation_->positions,
-        [](const auto& row) { return !row.occupant.has_value(); });
-    if (free == implementation_->positions.end()) {
-        return std::unexpected{error::capacity_exceeded};
-    }
-    if (implementation_->assignment_exhausted) {
-        return std::unexpected{error::identity_exhausted};
-    }
+        const auto free = std::ranges::find_if(implementation_->positions,
+            [](const auto& row) { return !row.occupant.has_value(); });
+        if (free == implementation_->positions.end()) {
+            return std::unexpected{error::capacity_exceeded};
+        }
+        if (implementation_->assignment_exhausted) {
+            return std::unexpected{error::identity_exhausted};
+        }
 
-    const auto user_index =
-        static_cast<std::uint32_t>(std::distance(implementation_->positions.begin(), free));
-    const assignment result_assignment{
-        .user_index = user_index,
-        .id = implementation_->next_assignment,
-        .target = target,
-    };
+        const auto user_index =
+            static_cast<std::uint32_t>(std::distance(implementation_->positions.begin(), free));
+        result_assignment = assignment{.user_index = user_index,
+            .id = implementation_->next_assignment,
+            .target = target};
 
-    free->occupant = result_assignment;
-    free->reader = reader;
-    free->packet_initialized = false;
-    free->canonical_gamepad = {};
-    free->packet_number = 0U;
-    free->committed_revision = 0U;
+        free->occupant = *result_assignment;
+        free->reader = reader;
+        free->packet_initialized = false;
+        free->canonical_gamepad = {};
+        free->packet_number = 0U;
+        free->committed_revision = 0U;
+        implementation::clear_event_stream(free->events);
 
-    if (implementation_->next_assignment == std::numeric_limits<std::uint64_t>::max()) {
-        implementation_->assignment_exhausted = true;
-    } else {
-        ++implementation_->next_assignment;
+        if (implementation_->next_assignment == std::numeric_limits<std::uint64_t>::max()) {
+            implementation_->assignment_exhausted = true;
+        } else {
+            ++implementation_->next_assignment;
+        }
     }
-    return result_assignment;
+    implementation_->notify_guide_waiters();
+    implementation_->cleanup_idle_event_reader(result_assignment->user_index);
+    return *result_assignment;
 }
 
 result<void> service::unassign(assignment expected) {
@@ -207,21 +275,28 @@ result<void> service::unassign(assignment expected) {
         return std::unexpected{error::invalid_argument};
     }
 
-    const auto guard = implementation_->focus.lock_presentation();
-    if (implementation_->closed) {
-        return std::unexpected{error::closed};
-    }
-    auto& position = implementation_->positions[expected.user_index];
-    if (!same_assignment(position.occupant, expected)) {
-        return std::unexpected{error::not_connected};
+    {
+        const auto guard = implementation_->focus.lock_presentation();
+        if (implementation_->closed) {
+            return std::unexpected{error::closed};
+        }
+        auto& position = implementation_->positions[expected.user_index];
+        if (!same_assignment(position.occupant, expected)) {
+            return std::unexpected{error::not_connected};
+        }
+
+        static_cast<void>(implementation::invalidate_event_position(position,
+            implementation::guide_wait_state::not_connected));
+        position.reader = {};
+        position.occupant.reset();
+        position.packet_initialized = false;
+        position.canonical_gamepad = {};
+        position.packet_number = 0U;
+        position.committed_revision = 0U;
     }
 
-    position.reader = {};
-    position.occupant.reset();
-    position.packet_initialized = false;
-    position.canonical_gamepad = {};
-    position.packet_number = 0U;
-    position.committed_revision = 0U;
+    implementation_->notify_guide_waiters();
+    implementation_->cleanup_idle_event_reader(expected.user_index);
     return {};
 }
 
@@ -235,25 +310,57 @@ std::array<std::optional<assignment>, 4U> service::positions() const {
 }
 
 void service::close() {
-    const auto guard = implementation_->focus.lock_presentation();
-    if (implementation_->closed) {
-        return;
+    {
+        const auto guard = implementation_->focus.lock_presentation();
+        implementation_->closed = true;
+        for (auto& position : implementation_->positions) {
+            static_cast<void>(implementation::invalidate_event_position(position,
+                implementation::guide_wait_state::closed));
+            position.reader = {};
+            position.occupant.reset();
+            position.packet_initialized = false;
+            position.canonical_gamepad = {};
+            position.packet_number = 0U;
+            position.committed_revision = 0U;
+        }
     }
-    implementation_->closed = true;
-    for (auto& position : implementation_->positions) {
-        position.reader = {};
-        position.occupant.reset();
-        position.packet_initialized = false;
-        position.canonical_gamepad = {};
-        position.packet_number = 0U;
-        position.committed_revision = 0U;
+    implementation_->notify_guide_waiters();
+    for (std::uint32_t index = 0U; index < 4U; ++index) {
+        implementation_->cleanup_idle_event_reader(index);
     }
 }
 
 void service::enable(BOOL enabled) {
-    const auto guard = implementation_->focus.lock_presentation();
-    if (!implementation_->closed) {
-        implementation_->enabled = enabled != FALSE;
+    bool changed{};
+    {
+        const auto guard = implementation_->focus.lock_presentation();
+        if (!implementation_->closed) {
+            const bool next_enabled = enabled != FALSE;
+            if (next_enabled != implementation_->enabled) {
+                implementation_->enabled = next_enabled;
+                changed = true;
+                if (implementation_->event_enable_generation ==
+                    std::numeric_limits<std::uint64_t>::max()) {
+                    implementation_->event_identity_exhausted = true;
+                    for (auto& position : implementation_->positions) {
+                        static_cast<void>(implementation::invalidate_event_position(position,
+                            implementation::guide_wait_state::identity_exhausted));
+                    }
+                } else {
+                    ++implementation_->event_enable_generation;
+                    for (auto& position : implementation_->positions) {
+                        static_cast<void>(implementation::invalidate_event_position(position,
+                            implementation::guide_wait_state::ineligible));
+                    }
+                }
+            }
+        }
+    }
+    if (changed) {
+        implementation_->notify_guide_waiters();
+        for (std::uint32_t index = 0U; index < 4U; ++index) {
+            implementation_->cleanup_idle_event_reader(index);
+        }
     }
 }
 

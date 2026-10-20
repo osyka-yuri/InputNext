@@ -18,6 +18,8 @@ Each assignment also tracks the greatest committed source revision. An overlappi
 
 `enable(FALSE)` disables logical input; any nonzero value enables it. Focus evidence comes from the independent [observer](focus.md).
 
+Independent history consumers provide [keystrokes and typed Guide waits](xinput-events.md).
+
 ## Queries
 
 Queries project owned metadata into XInput values. Blocking metadata work and variable-length output copies run outside the presentation gate. Final assignment and connection validation determines which occupant the result belongs to. A metadata failure or mismatched target returns `ERROR_DEVICE_NOT_CONNECTED` without writing outputs.
@@ -41,12 +43,16 @@ Audio counts use UTF-16 code units and include the terminator for nonempty IDs. 
 
 `gameinput_xinput::synchronize` retains unchanged eligible connections, releases missing or ineligible ones, and fills free positions in inventory order. It presents at most four connections and can apply some changes before returning an error. The composition root serializes synchronization and keeps the runtime and focus observer alive through consumer calls.
 
+For events, the coordinator runs runtime maintenance, synchronizes inventory, then calls `maintain_events` before consumers drain prepared keys. `get_keystroke` performs no history source work; its caller must arrange this explicit maintenance separately from time-sensitive reads.
+
 Run the native diagnostic with:
 
 ```powershell
-./build/windows-x64/tools/gameinput_probe/inputnext_gameinput_probe.exe --duration-ms 10000 --require-device --require-reading --xinput
+./build/windows-x64/tools/gameinput_probe/inputnext_gameinput_probe.exe --duration-ms 10000 --require-device --require-reading --xinput-events
 ```
 
-It reports assignments, standard and extended state, packets, focus evidence, and capability queries. A background probe correctly reports neutral input; that result does not exercise foreground game behavior. The supervisor enforces a process deadline and verifies cleanup.
+`--xinput` reports assignments, standard and extended state, packets, focus evidence, and capability queries. `--xinput-events` also enables bounded keystroke drainage and a typed Guide waiter, with cancellation and completion reports. The waiter runs separately from maintenance and is joined before runtime shutdown.
 
-Stop and join consumer calls before closing presentation and destroying its borrowed ports. Drain the runtime while the observer is still alive, then stop the observer. The registry outlives the runtime and all bindings. See [GameInput](gameinput.md) for native shutdown limits.
+A background probe correctly reports neutral state and ineligible event consumption; foreground input and physical Guide transitions require an eligible process and the corresponding controller actions. The supervisor enforces a process deadline and verifies cleanup.
+
+Stop admitting calls and close presentation to wake Guide waiters, then join consumer calls before destroying its borrowed ports. Drain the runtime while the observer is still alive, then stop the observer. The registry outlives the runtime and all bindings. See [GameInput](gameinput.md) for native shutdown limits.

@@ -4,7 +4,9 @@
 #include "device_metadata.hpp"
 #include "error.hpp"
 #include "input_binding.hpp"
+#include "xinput_events.hpp"
 #include "xinput_types.hpp"
+#include <inputnext/history.hpp>
 
 #include <array>
 #include <cstdint>
@@ -49,11 +51,17 @@ public:
     [[nodiscard]] virtual metadata_result<metadata_snapshot> query(connection_target target) = 0;
 };
 
-// Borrows the observer and metadata source, and retains bindings that borrow their registry.
-// Keep those owners alive and join service callers before destroying the service or registry.
+// Borrows the observer, metadata source, and optional event source, and retains bindings that
+// borrow their registry. Close to wake waiters, then join service callers before destroying any
+// borrowed owner, the service, or its registry.
 class service final {
 public:
     service(focus::observer& focus, metadata_source& metadata, presentation_seed seed = {});
+    service(focus::observer& focus,
+        metadata_source& metadata,
+        event_source& events,
+        std::uint64_t qpc_frequency,
+        presentation_seed seed = {});
     ~service();
 
     service(const service&) = delete;
@@ -67,6 +75,20 @@ public:
     [[nodiscard]] std::array<std::optional<assignment>, 4U> positions() const;
     void close();
     void enable(BOOL enabled);
+
+    // Retrieves prepared keys only; it does not process history or generate repeats/Guide edges. Call
+    // pump_events or composition maintenance explicitly before retrieval when progress is needed.
+    [[nodiscard]] DWORD
+    get_keystroke(flavor version, DWORD user_index, DWORD reserved, XINPUT_KEYSTROKE* keystroke);
+    // Performs event-source work and may wait synchronously in the provider.
+    void pump_events(DWORD user_index, history_time now);
+    // Tickets reserve one position until a waiter consumes the result or release_guide_wait frees it.
+    // A ticket completes on the next committed qualified known released-to-pressed Guide edge;
+    // unread earlier physical history may commit after registration.
+    [[nodiscard]] guide_wait_result<guide_wait_ticket> begin_guide_wait(DWORD user_index);
+    [[nodiscard]] guide_wait_result<void> wait_for_guide_button(guide_wait_ticket ticket);
+    [[nodiscard]] guide_wait_result<bool> cancel_guide_wait(guide_wait_ticket ticket);
+    [[nodiscard]] guide_wait_result<void> release_guide_wait(guide_wait_ticket ticket);
 
     // Packet tracking uses the Guide-inclusive translated state; include_guide only projects the
     // response and does not change the packet number.
