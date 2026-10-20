@@ -416,6 +416,9 @@ void copy_available_output(HANDLE pipe, std::ostream& output, output_pipe_state&
     } else if (options.history) {
         arguments.emplace_back(L"--history");
     }
+    if (options.xinput) {
+        arguments.emplace_back(L"--xinput");
+    }
     return arguments;
 }
 

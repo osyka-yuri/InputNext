@@ -67,4 +67,16 @@ if(INPUTNEXT_BUILD_GAMEINPUT)
     )
     target_include_directories(inputnext_gameinput_runtime PRIVATE "${PROJECT_SOURCE_DIR}/src")
     inputnext_configure_target(inputnext_gameinput_runtime)
+
+    add_library(inputnext_gameinput_xinput STATIC
+        presentation/gameinput_xinput.cpp
+    )
+    target_include_directories(inputnext_gameinput_xinput
+        PUBLIC "${PROJECT_SOURCE_DIR}/include"
+        PRIVATE "${PROJECT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(inputnext_gameinput_xinput
+        PUBLIC inputnext_gameinput_runtime inputnext_focus inputnext_xinput
+    )
+    inputnext_configure_target(inputnext_gameinput_xinput)
 endif()

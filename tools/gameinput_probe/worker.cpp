@@ -2,9 +2,12 @@
 
 #include "history_observer.hpp"
 #include "report.hpp"
+#include "xinput_observer.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_registry.hpp>
+#include <inputnext/focus.hpp>
 #include <inputnext/gameinput_runtime.hpp>
+#include <inputnext/gameinput_xinput.hpp>
 
 #include <Windows.h>
 #include <objbase.h>
@@ -15,10 +18,10 @@
 #include <cstddef>
 #include <cstring>
 #include <exception>
+#include <memory>
 #include <ostream>
 #include <system_error>
 #include <thread>
-
 
 #include <filesystem>
 
@@ -119,6 +122,81 @@ struct probe_observation final {
     metadata_query_schedule metadata_queries{};
 };
 
+class runtime_cleanup final {
+public:
+    runtime_cleanup(gameinput_runtime& runtime,
+        std::unique_ptr<focus::observer>& focus,
+        std::unique_ptr<gameinput_xinput>& presentation) noexcept
+        : runtime_(runtime),
+          focus_(focus),
+          presentation_(presentation) {}
+
+    ~runtime_cleanup() noexcept {
+        if (!stopped_) {
+            static_cast<void>(stop());
+        }
+    }
+
+    runtime_cleanup(const runtime_cleanup&) = delete;
+    runtime_cleanup& operator=(const runtime_cleanup&) = delete;
+    runtime_cleanup(runtime_cleanup&&) = delete;
+    runtime_cleanup& operator=(runtime_cleanup&&) = delete;
+
+    [[nodiscard]] gameinput_stop_report stop() {
+        if (stopped_) {
+            return report_;
+        }
+        if (presentation_) {
+            presentation_->close();
+        }
+        report_ = runtime_.stop(maintenance_time::clock::now());
+        if (report_.drained && focus_) {
+            focus_->stop();
+        }
+        stopped_ = true;
+        return report_;
+    }
+
+private:
+    gameinput_runtime& runtime_;
+    std::unique_ptr<focus::observer>& focus_;
+    std::unique_ptr<gameinput_xinput>& presentation_;
+    gameinput_stop_report report_{};
+    bool stopped_{};
+};
+
+class history_cleanup final {
+public:
+    history_cleanup(history_observer& history, std::ostream& output) noexcept
+        : history_(history),
+          output_(output) {}
+
+    ~history_cleanup() noexcept {
+        if (!closed_) {
+            static_cast<void>(close());
+        }
+    }
+
+    history_cleanup(const history_cleanup&) = delete;
+    history_cleanup& operator=(const history_cleanup&) = delete;
+    history_cleanup(history_cleanup&&) = delete;
+    history_cleanup& operator=(history_cleanup&&) = delete;
+
+    [[nodiscard]] bool close() {
+        if (!closed_) {
+            closed_ = true;
+            clean_ = history_.close_all(output_);
+        }
+        return clean_;
+    }
+
+private:
+    history_observer& history_;
+    std::ostream& output_;
+    bool clean_{true};
+    bool closed_{};
+};
+
 void observe_connection(gameinput_runtime& runtime,
     const gameinput_connection& connection,
     maintenance_time now,
@@ -141,7 +219,7 @@ void observe_connection(gameinput_runtime& runtime,
     }
 }
 
-void observe_connections(gameinput_runtime& runtime,
+[[nodiscard]] bool observe_connections(gameinput_runtime& runtime,
     const connection_inventory& devices,
     maintenance_time now,
     bool report,
@@ -159,6 +237,7 @@ void observe_connections(gameinput_runtime& runtime,
             observation,
             output);
     }
+    return queried_this_pass;
 }
 
 [[nodiscard]] int report_completion(const probe_options& options,
@@ -187,12 +266,16 @@ int run_probe_worker(const probe_options& options, std::ostream& output) {
     try {
         const auto library = executable_path().parent_path() / L"GameInputRedist.dll";
         device_registry registry{make_runtime_id()};
+        std::unique_ptr<focus::observer> focus;
         gameinput_runtime runtime{registry, gameinput_options{.runtime_library = library}};
+        std::unique_ptr<gameinput_xinput> presentation;
+        std::unique_ptr<xinput_observer> xinput;
+        runtime_cleanup cleanup{runtime, focus, presentation};
 
         auto started = runtime.start(maintenance_time::clock::now());
         if (!started.has_value()) {
             output << format_start_failure(started.error()) << '\n'
-                   << format_stop_report(runtime.stop(maintenance_time::clock::now())) << '\n';
+                   << format_stop_report(cleanup.stop()) << '\n';
             output.flush();
             return 3;
         }
@@ -200,24 +283,39 @@ int run_probe_worker(const probe_options& options, std::ostream& output) {
         if (options.history || options.require_history) {
             output << "history_enabled=true\n";
         }
+        if (options.xinput) {
+            focus = std::make_unique<focus::observer>(make_runtime_id(),
+                focus::make_current_process_source());
+            presentation = std::make_unique<gameinput_xinput>(runtime, *focus);
+            xinput = std::make_unique<xinput_observer>(*presentation, *focus);
+            output << "xinput_enabled=true focus_source=current_process\n";
+        }
 
         probe_observation observation{};
         history_observer history{runtime};
+        history_cleanup close_history{history, output};
         auto next_report = maintenance_time::clock::now();
         const auto deadline = next_report + std::chrono::milliseconds{options.duration_ms};
 
         while (maintenance_time::clock::now() < deadline) {
             const auto now = maintenance_time::clock::now();
+            const bool report = now >= next_report;
             runtime.maintain(now);
             const auto devices = runtime.connections();
-            observe_connections(runtime, devices, now, now >= next_report, observation, output);
-            if (options.history || options.require_history) {
-                history.observe(devices,
-                    maintenance_time::clock::now(),
-                    now >= next_report,
-                    output);
+            const bool metadata_queried =
+                observe_connections(runtime, devices, now, report, observation, output);
+            if (presentation) {
+                const auto synchronized = presentation->synchronize(devices);
+                if (!synchronized.has_value() && report) {
+                    output << "xinput_sync=failed error_code="
+                           << static_cast<unsigned int>(synchronized.error()) << '\n';
+                }
+                xinput->observe(devices, now, report, !metadata_queried, output);
             }
-            if (now >= next_report) {
+            if (options.history || options.require_history) {
+                history.observe(devices, maintenance_time::clock::now(), report, output);
+            }
+            if (report) {
                 output.flush();
                 next_report = now + std::chrono::milliseconds{250};
             }
@@ -227,8 +325,8 @@ int run_probe_worker(const probe_options& options, std::ostream& output) {
         }
 
         observation.saw_history = history.native_history_observed();
-        observation.history_closed = history.close_all(output);
-        const auto report = runtime.stop(maintenance_time::clock::now());
+        observation.history_closed = close_history.close();
+        const auto report = cleanup.stop();
         return report_completion(options, observation, report, output);
     } catch (const std::exception& error) {
         output << "worker=failed message=" << error.what() << '\n';

@@ -157,7 +157,8 @@ struct native_device_facts final {
 struct audio_endpoint_metadata final {
     // UTF-16 content is limited to headset_endpoint_content_code_units.
     metadata_field<std::u16string> id{};
-    // Optional DirectSound GUID. Failure to read it does not invalidate a valid endpoint ID.
+    // Independently available identifiers refer to the selected, unambiguous headset endpoint.
+    // An available GUID remains valid when its endpoint ID is unavailable.
     metadata_field<native_guid> direct_sound_guid{};
 };
 
