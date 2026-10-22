@@ -8,6 +8,7 @@
 #include <inputnext/input_binding.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_execution.hpp>
 
 #include <array>
 #include <atomic>
@@ -103,6 +104,7 @@ struct authority::implementation final {
         policy_detail::deadline evaluation_time,
         bool permit_bound,
         std::optional<focus::foreground_epoch> epoch) noexcept;
+    [[nodiscard]] result<logical_snapshot> qualify_snapshot_locked(connection_target target);
     [[nodiscard]] result<logical_snapshot> finish_snapshot_locked(connection_target target,
         policy_detail::deadline evaluation_time,
         std::optional<focus::foreground_epoch> before,
@@ -116,6 +118,8 @@ struct authority::implementation final {
     mutable std::mutex gate;
     std::array<record, 64U> records{};
     std::uint64_t next_context_id{};
+    std::uint64_t next_execution_id{1U};
+    std::optional<execution_owner> attached_execution;
     std::uint64_t logical_version{};
     policy_detail::deadline last_evaluation_time;
     const std::atomic<std::int64_t>* test_clock_ticks{};

@@ -8,7 +8,7 @@ The [GameInput runtime](docs/gameinput.md) provides native controller discovery,
 
 The C++ [XInput presentation](docs/xinput.md) maps connections to four positions with packet tracking, [focus observation](docs/focus.md), logical Enable, metadata queries, and [keystrokes and Guide waits](docs/xinput-events.md).
 
-The C++ [logical output authority](docs/output.md) owns effect contexts, desired-state arbitration, expiry, and acknowledged closure.
+The C++ [output authority](docs/output.md) owns effect contexts, arbitration, expiry, and acknowledged closure. Its [native executor](docs/output-execution.md) schedules qualified attempts and manages retry and sink lifetime.
 
 See [development setup](docs/development.md) for toolchain requirements and verification commands.
 

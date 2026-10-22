@@ -1,11 +1,14 @@
-add_executable(inputnext_output_integration_tests input_progress_tests.cpp)
+add_executable(inputnext_output_integration_tests
+    execution_input_progress_tests.cpp
+    input_progress_tests.cpp
+)
 target_include_directories(inputnext_output_integration_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
     "${PROJECT_SOURCE_DIR}/tests"
     "${PROJECT_SOURCE_DIR}/tests/support"
 )
 target_link_libraries(inputnext_output_integration_tests PRIVATE
-    inputnext_output_authority inputnext_xinput Catch2::Catch2WithMain
+    inputnext_output_execution inputnext_xinput Catch2::Catch2WithMain
 )
 inputnext_configure_target(inputnext_output_integration_tests)
 

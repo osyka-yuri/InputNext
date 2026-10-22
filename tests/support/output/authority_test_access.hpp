@@ -9,6 +9,7 @@
 #include <inputnext/input_binding.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_execution.hpp>
 
 #include <array>
 #include <atomic>
@@ -89,6 +90,21 @@ public:
     static void set_logical_version(authority& value, std::uint64_t version) {
         auto lock = lock_gate(value);
         value.implementation_->logical_version = version;
+    }
+
+    static void set_next_execution_id(authority& value, std::uint64_t next_id) {
+        auto lock = lock_gate(value);
+        value.implementation_->next_execution_id = next_id;
+    }
+
+    [[nodiscard]] static std::uint64_t next_execution_id(authority& value) {
+        auto lock = lock_gate(value);
+        return value.implementation_->next_execution_id;
+    }
+
+    [[nodiscard]] static std::optional<execution_owner> attached_execution(authority& value) {
+        auto lock = lock_gate(value);
+        return value.implementation_->attached_execution;
     }
 
     [[nodiscard]] static bool set_channel_revision(authority& value,

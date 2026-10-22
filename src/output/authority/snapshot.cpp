@@ -206,6 +206,45 @@ result<logical_snapshot> authority::implementation::finish_snapshot_locked(conne
     return compose_snapshot(target, evaluation_time, false, std::nullopt);
 }
 
+result<logical_snapshot> authority::implementation::qualify_snapshot_locked(
+    connection_target target) {
+    const auto evaluation_time = effective_time();
+    static_cast<void>(expire_target(target, evaluation_time));
+    const auto before = fresh_epoch();
+    static_cast<void>(close_bound_mismatches(target, before, close_reason::foreground_revocation));
+
+    const auto has_bound = [this, target] {
+        return std::ranges::any_of(records, [target](const auto& entry) {
+            return entry.state == phase::open && entry.identity.target == target &&
+                   entry.foreground == foreground_policy::foreground_bound;
+        });
+    };
+
+    if (!has_bound()) {
+        auto pin = capture(target);
+        if (!pin.has_value()) {
+            if (pin.error() == inputnext::error::not_connected) {
+                static_cast<void>(retire(target));
+                return std::unexpected{error::not_connected};
+            }
+            return std::unexpected{error::resources};
+        }
+        pin->release();
+        return compose_snapshot(target, evaluation_time, false, std::nullopt);
+    }
+
+    auto first_pin = capture(target);
+    if (!first_pin.has_value()) {
+        if (first_pin.error() == inputnext::error::not_connected) {
+            static_cast<void>(retire(target));
+            return std::unexpected{error::not_connected};
+        }
+        return std::unexpected{error::resources};
+    }
+    const auto after = fresh_epoch();
+    return finish_snapshot_locked(target, evaluation_time, before, after, std::move(*first_pin));
+}
+
 result<logical_snapshot> authority::read_snapshot(connection_target target) {
     if (!target.valid()) {
         return std::unexpected{error::invalid_argument};
@@ -215,47 +254,7 @@ result<logical_snapshot> authority::read_snapshot(connection_target target) {
     }
 
     std::scoped_lock lock{implementation_->gate};
-    const auto evaluation_time = implementation_->effective_time();
-    static_cast<void>(implementation_->expire_target(target, evaluation_time));
-    const auto before = implementation_->fresh_epoch();
-    static_cast<void>(implementation_->close_bound_mismatches(target,
-        before,
-        close_reason::foreground_revocation));
-
-    const auto has_bound = [this, target] {
-        return std::ranges::any_of(implementation_->records, [target](const auto& entry) {
-            return entry.state == implementation::phase::open && entry.identity.target == target &&
-                   entry.foreground == foreground_policy::foreground_bound;
-        });
-    };
-
-    if (!has_bound()) {
-        auto pin = implementation_->capture(target);
-        if (!pin.has_value()) {
-            if (pin.error() == inputnext::error::not_connected) {
-                static_cast<void>(implementation_->retire(target));
-                return std::unexpected{error::not_connected};
-            }
-            return std::unexpected{error::resources};
-        }
-        pin->release();
-        return implementation_->compose_snapshot(target, evaluation_time, false, std::nullopt);
-    }
-
-    auto first_pin = implementation_->capture(target);
-    if (!first_pin.has_value()) {
-        if (first_pin.error() == inputnext::error::not_connected) {
-            static_cast<void>(implementation_->retire(target));
-            return std::unexpected{error::not_connected};
-        }
-        return std::unexpected{error::resources};
-    }
-    const auto after = implementation_->fresh_epoch();
-    return implementation_->finish_snapshot_locked(target,
-        evaluation_time,
-        before,
-        after,
-        std::move(*first_pin));
+    return implementation_->qualify_snapshot_locked(target);
 }
 
 } // namespace inputnext::output

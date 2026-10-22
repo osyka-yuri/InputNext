@@ -24,7 +24,7 @@ struct context_info final {
     std::uint64_t accepted_sequence{};
     channel_revisions revisions{};
     internal_priority priority{internal_priority::game_semantic};
-    std::optional<focus::foreground_epoch> foreground = std::nullopt;
+    std::optional<focus::foreground_epoch> foreground;
 
     friend bool operator==(const context_info&, const context_info&) = default;
 };
@@ -85,6 +85,7 @@ struct maintenance_report final {
 namespace detail {
 class internal_producer;
 class authority_test_access;
+class authority_execution_access;
 enum class incarnation_creation : std::uint8_t;
 } // namespace detail
 
@@ -124,6 +125,7 @@ public:
 private:
     friend class detail::internal_producer;
     friend class detail::authority_test_access;
+    friend class detail::authority_execution_access;
 
     authority(runtime_id runtime,
         device_registry& registry,

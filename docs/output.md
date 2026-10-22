@@ -1,6 +1,6 @@
 # Logical output
 
-The C++ output components own effect contexts and arbitrate their desired state. A successful submission accepts logical state; physical dispatch and hardware completion require a separate execution layer.
+The C++ output components own effect contexts and arbitrate their desired state. A successful submission accepts logical state. The [native execution layer](output-execution.md) separately schedules and qualifies physical attempts; neither acceptance nor a setter result proves a measured hardware effect.
 
 Values and requests are declared in [output.hpp](../include/inputnext/output.hpp); context operations and snapshots are declared in [output_authority.hpp](../include/inputnext/output_authority.hpp).
 
@@ -54,7 +54,7 @@ The authority checks the stored epoch against fresh observations around exact-ta
 
 Each usable snapshot freshly captures its exact target. Successful capture is the logical liveness point; an overlapping retirement may order after it. A call starting after completed retirement cannot capture that connection. Pins are released during the operation and never retained in context records.
 
-`maintain(target)` services expiry, foreground revocation, and observed retirement. Call it after registry retirement or replacement and when servicing deadlines or focus changes. Open also performs a bounded retirement sweep before reporting pool exhaustion. The authority starts no worker; cleanup without another API call depends on explicit maintenance.
+`maintain(target)` services expiry, foreground revocation, and observed retirement. Call it after registry retirement or replacement and when servicing deadlines or focus changes. Open also performs a bounded retirement sweep before reporting pool exhaustion. The authority starts no worker. An attached executor qualifies its registered targets automatically; standalone cleanup depends on another qualifying call or explicit maintenance.
 
 ## Close and acknowledgement
 
