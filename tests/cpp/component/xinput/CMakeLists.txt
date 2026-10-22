@@ -6,6 +6,8 @@ add_executable(inputnext_xinput_component_tests
     service_assignment_tests.cpp
     service_focus_tests.cpp
     service_query_tests.cpp
+    output_tests.cpp
+    output_transaction_tests.cpp
 )
 target_link_libraries(inputnext_xinput_component_tests PRIVATE
     inputnext_xinput Catch2::Catch2WithMain

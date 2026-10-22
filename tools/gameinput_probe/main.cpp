@@ -1,3 +1,4 @@
+#include "rumble_worker.hpp"
 #include "worker.hpp"
 
 #include "supervisor.hpp"
@@ -37,7 +38,9 @@ namespace {
 [[nodiscard]] int usage() {
     std::wcerr << L"Usage: inputnext_gameinput_probe [--duration-ms N] [--require-device] "
                   L"[--require-reading] [--history] [--require-history] [--xinput] "
-                  L"[--xinput-events]\n"
+                  L"[--xinput-events] [--rumble]\n"
+                  L"--rumble opens a foreground diagnostic window; output starts only after its "
+                  L"Start click.\n"
                   L"N must be between 1 and 300000 milliseconds.\n";
     return 2;
 }
@@ -62,6 +65,8 @@ namespace {
         } else if (argument == L"--xinput-events") {
             options.xinput = true;
             options.xinput_events = true;
+        } else if (argument == L"--rumble") {
+            options.rumble = true;
         } else if (argument == L"--duration-ms" && index + 1 < argc) {
             if (!parse_duration(argv[++index], options.duration_ms)) {
                 return false;
@@ -70,7 +75,9 @@ namespace {
             return false;
         }
     }
-    return true;
+    return !options.rumble ||
+           !(options.require_device || options.require_reading || options.history ||
+               options.require_history || options.xinput || options.xinput_events);
 }
 
 } // namespace
@@ -82,6 +89,9 @@ int wmain(int argc, wchar_t** argv) try {
         return usage();
     }
     if (worker) {
+        if (options.rumble) {
+            return inputnext::gameinput_detail::run_rumble_probe_worker(options, std::cout);
+        }
         return inputnext::gameinput_detail::run_probe_worker(options, std::cout);
     }
 

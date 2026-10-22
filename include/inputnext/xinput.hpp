@@ -17,6 +17,10 @@ namespace inputnext::focus {
 class observer;
 }
 
+namespace inputnext::output::detail {
+class xinput_rumble;
+}
+
 namespace inputnext::xinput::detail {
 struct service_test_access;
 }
@@ -33,6 +37,18 @@ struct assignment final {
 
 struct presentation_seed final {
     std::uint64_t next_assignment{1U};
+};
+
+struct rumble_output_status final {
+    bool configured{};
+    bool desired_state_cached{};
+    bool restore_pending{};
+    DWORD last_restore_error{};
+    std::uint64_t request_revision{};
+    std::uint64_t logical_version{};
+
+    friend bool operator==(const rumble_output_status&,
+        const rumble_output_status&) noexcept = default;
 };
 
 class metadata_source {
@@ -62,6 +78,16 @@ public:
         event_source& events,
         std::uint64_t qpc_frequency,
         presentation_seed seed = {});
+    service(focus::observer& focus,
+        metadata_source& metadata,
+        std::unique_ptr<output::detail::xinput_rumble> rumble,
+        presentation_seed seed);
+    service(focus::observer& focus,
+        metadata_source& metadata,
+        event_source& events,
+        std::uint64_t qpc_frequency,
+        std::unique_ptr<output::detail::xinput_rumble> rumble,
+        presentation_seed seed);
     ~service();
 
     service(const service&) = delete;
@@ -75,6 +101,13 @@ public:
     [[nodiscard]] std::array<std::optional<assignment>, 4U> positions() const;
     void close();
     void enable(BOOL enabled);
+
+    [[nodiscard]] DWORD
+    set_state(flavor version, DWORD user_index, const XINPUT_VIBRATION* vibration);
+    [[nodiscard]] DWORD power_off_controller(flavor version, DWORD user_index);
+    void maintain_output() noexcept;
+    [[nodiscard]] std::optional<rumble_output_status> get_rumble_output_status(
+        DWORD user_index) const;
 
     // Retrieves prepared keys only; it does not process history or generate repeats/Guide edges. Call
     // pump_events or composition maintenance explicitly before retrieval when progress is needed.

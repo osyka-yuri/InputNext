@@ -59,20 +59,19 @@ execution_engine::implementation::drive_action execution_engine::implementation:
     drive_action action{};
     action.kind = drive_action_kind::write;
     action.backend = backend->handle;
-    action.publication = backend->publication;
-    action.attempt = attempt_id{backend->next_attempt_id};
+    const auto attempt = attempt_id{backend->next_attempt_id};
     if (backend->next_attempt_id == std::numeric_limits<std::uint64_t>::max()) {
         backend->next_attempt_id = 0U;
     } else {
         ++backend->next_attempt_id;
     }
     action.command = native_command{.backend = action.backend,
-        .publication = action.publication,
-        .attempt = action.attempt,
+        .publication = backend->publication,
+        .attempt = attempt,
         .output = native_values(*backend->projection)};
     action.sink = backend->sink.get();
 
-    backend->last_attempt = action.attempt;
+    backend->last_attempt = attempt;
     backend->write_in_flight = true;
     backend->delivery = delivery_state::in_flight;
     backend->retry_requested = false;
@@ -141,18 +140,19 @@ bool execution_engine::implementation::apply_qualification_result(backend_record
     return false;
 }
 
-void execution_engine::implementation::finish_attempt(const backend_handle handle,
-    const publication_id publication,
-    const attempt_id attempt,
+void execution_engine::implementation::finish_attempt(const native_command& command,
     const native_result result) noexcept {
     std::scoped_lock lock{gate};
-    auto* const backend = find_backend(handle);
-    if (backend == nullptr || backend->last_attempt != attempt || !backend->write_in_flight) {
+    auto* const backend = find_backend(command.backend);
+    if (backend == nullptr || backend->last_attempt != command.attempt ||
+        !backend->write_in_flight) {
         return;
     }
     backend->write_in_flight = false;
-    backend->last_completed_attempt =
-        completed_attempt{.id = attempt, .publication = publication, .result = result};
+    backend->last_completed_attempt = completed_attempt{.id = command.attempt,
+        .publication = command.publication,
+        .result = result,
+        .output = command.output};
 
     if (backend->state != backend_state::current) {
         notify_lane(backend->lane);
@@ -163,7 +163,7 @@ void execution_engine::implementation::finish_attempt(const backend_handle handl
         apply_native_result(*backend, result);
         return;
     }
-    if (backend->publication != publication) {
+    if (backend->publication != command.publication) {
         notify_lane(backend->lane);
         return;
     }
@@ -265,7 +265,7 @@ bool execution_engine::drive_one(const lane_token token) noexcept {
         return true;
     case implementation::drive_action_kind::write: {
         const auto result = action.sink->write(action.command);
-        implementation_->finish_attempt(action.backend, action.publication, action.attempt, result);
+        implementation_->finish_attempt(action.command, result);
         return true;
     }
     }

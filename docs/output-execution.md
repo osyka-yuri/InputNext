@@ -1,6 +1,6 @@
 # Native output execution
 
-`inputnext_output_execution` drives the desired state held by the [output authority](output.md). It schedules qualified native calls and manages retries and sink lifetimes. It builds for x64 and x86 without GameInput. Hardware adapters are separate.
+`inputnext_output_execution` drives the desired state held by the [output authority](output.md). It schedules qualified native calls and manages retries and sink lifetimes. It builds for x64 and x86 without GameInput. The [GameInput rumble adapter](gameinput-output.md) supplies native output separately.
 
 The public interfaces are [output_executor.hpp](../include/inputnext/output_executor.hpp), [native_output.hpp](../include/inputnext/native_output.hpp) and [output_execution.hpp](../include/inputnext/output_execution.hpp).
 
@@ -12,7 +12,7 @@ Successful backend registration transfers ownership of a `native_sink`. A failed
 
 There is at most one current backend per runtime and device key. Replacement accepts the same connection or another live connection with the same runtime and device key. It creates a fresh backend identity. A stale expected handle cannot replace the winner of a competing operation.
 
-Each device has one serial delivery lane across connection and backend replacement. Delivery from a replacement waits for earlier writes and sink destruction on that lane. Registration, retirement and logical mutations do not wait for that physical work. Other devices have independent delivery lanes.
+Each runtime/device key has one serial delivery lane across connection and backend replacement. Delivery from a replacement waits for earlier writes and sink destruction on that lane. Registration, retirement and logical mutations do not wait for that physical work. Different keys have independent delivery lanes.
 
 The limits are 16 current device lanes, 128 resident backends and 128 resident lanes. Reservations, retiring and cleaning backends, unacknowledged drained records and lanes awaiting worker shutdown count toward these limits. Blocked work retains capacity. Admission failure preserves existing registrations.
 
@@ -26,7 +26,7 @@ The coordinator refreshes registered targets at a nominal four-millisecond perio
 
 Immediately before a native call, the engine checks the exact backend and publication, then freshly qualifies the represented state through the authority. This services TTL, foreground epochs and exact connection liveness using the authority's existing rules. A snapshot captured earlier grants no execution permission.
 
-An admitted call may overlap a later logical close, focus loss, retirement or replacement. Its completion confirms delivery only if its backend, publication, serial and freshly qualified projection still match. A late successful call can have affected hardware without confirming the current publication.
+An admitted call may overlap a later logical close, focus loss, retirement or replacement. Its completion confirms delivery only if its backend, publication, attempt and freshly qualified projection still match. A late successful call can have affected hardware without confirming the current publication.
 
 ## Native sink contract
 
@@ -38,7 +38,7 @@ Consecutive qualifying `retryable_failure` results schedule automatic retries af
 
 `request_retry` expedites an attempt, including identical values, without resetting consecutive failures. Requests accepted before successful admission can coalesce into that attempt. Any request accepted after admission requires a later qualified attempt; multiple pending requests can coalesce. Retirement cancels future admission, and replacement starts without an old backend's pending retry.
 
-`progress` reports stored facts without requalifying the connection or foreground. The newest admitted attempt and latest completed attempt are distinct; a completed result carries its own attempt and publication identities. Setter acceptance is historical for its publication.
+`progress` reports stored facts without requalifying the connection or foreground. The newest admitted attempt and latest completed attempt are distinct. Each completion owns its attempt and publication identities, returned result and exact command payload, including failed or stale completions. That payload is independent of later logical changes; setter acceptance remains historical for its publication.
 
 `consecutive_retryable_failures` counts qualifying transient failures for the observed publication and saturates. A qualifying accepted, failed or unsupported result resets it; retirement freezes it. `scheduled_retry_delay` reports the nominal automatic delay while that schedule applies, including after its due time. It is zero during a write, explicit retry, deferred refresh or retirement, and does not report remaining time.
 

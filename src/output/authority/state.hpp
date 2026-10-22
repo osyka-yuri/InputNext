@@ -1,6 +1,7 @@
 #pragma once
 
 #include "output/policy/policy.hpp"
+#include "output/xinput/rumble.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_registry.hpp>
 #include <inputnext/error.hpp>
@@ -46,6 +47,7 @@ struct authority::implementation final {
         ttl_permission ttl{ttl_permission::finite_only};
         foreground_policy foreground{foreground_policy::foreground_bound};
         std::optional<focus::foreground_epoch> opening_epoch;
+        std::optional<detail::xinput_rumble_key> xinput_rumble;
         std::uint64_t accepted_sequence{};
         channel_values accepted_values{};
         std::array<channel_state, channel_count> channels{};

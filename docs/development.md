@@ -125,7 +125,7 @@ cmake --build build/windows-x64-portable
 
 Portable libraries, including history capture and merging, require no GameInput package or controller hardware.
 
-Output policy, authority and native execution also build for both architectures without GameInput. Policy has no device or focus implementation dependency; authority uses the registry and focus observer. Execution adds scheduling and owned native sinks without introducing an output dependency into input or XInput reads.
+Output policy, authority and native execution also build for both architectures without GameInput. Policy has no device or focus implementation dependency; authority uses the registry and focus observer. Execution adds scheduling and owned native sinks. Ready input and XInput reads do not wait for native delivery.
 
 Focus observation and XInput presentation also build for both architectures without GameInput. Their native types and current-process focus source use the Windows SDK.
 
@@ -168,8 +168,9 @@ Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2
 - `tests/cpp/component/output` checks logical ownership and transactions. Separate engine and executor suites cover native admission, retry, replacement, serialized cleanup, and worker lifecycle.
 - `tests/cpp/integration/output` checks input and XInput ready paths while the logical authority gate is held, and input, focus, and XInput progress while a native sink is blocked.
 - `tests/cpp/component/focus` checks observation, freshness, publication, and source lifetime with controlled providers. `tests/cpp/integration/focus` checks passive native process observation.
-- `tests/cpp/unit/xinput` checks translation, query projections, key mapping, and repeat tracking. `tests/cpp/component/xinput` checks assignments, packets, eligibility, prepared event retrieval, Guide waits, and query validation through production bindings and focus observation.
+- `tests/cpp/unit/xinput` checks translation, query projections, key mapping, and repeat tracking. `tests/cpp/component/xinput` checks assignments, packets, eligibility, rumble caching and restoration, prepared event retrieval, Guide waits, and query validation through production bindings and focus observation.
 - `tests/cpp/unit/history` and `tests/cpp/unit/gameinput/clock` check retention values and timestamp arithmetic without the SDK.
+- `tests/cpp/unit/gameinput/output` checks description and creation deadlines without the SDK or workers.
 - `tests/cpp/component/history` checks reader admission, independent progress, recovery, and reclamation with controlled cursors.
 - `tests/cpp/component/gameinput/history` checks capture and native/Guide merging with a controlled native port. `tests/cpp/component/gameinput/native_history` checks the native cursor through a scripted API seam.
 - `tests/cpp/unit/metadata` checks text bounds, transport policy, and physical capability facts.
@@ -179,6 +180,7 @@ Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2
 - `tests/cpp/integration/gameinput/publication` checks partial reading merge through the production publisher and device registry.
 - `tests/cpp/integration/gameinput/runtime` checks lifecycle, history, and query coordination through production registry and publication components, using a controlled native port.
 - `tests/cpp/integration/gameinput/presentation` checks GameInput/XInput composition, events, waiter shutdown, and metadata and focus progress during blocked native work, using narrow native and metadata ports.
+- `tests/cpp/integration/gameinput/output` checks rumble delivery, backend admission and retirement, reconnect, capacity, and diagnostic evidence through production runtime, presentation, authority, and executor components with a controlled native port.
 - `tests/cpp/integration/gameinput/probe` checks real child-process supervision and app-local initialization and cleanup.
 - `tests/harness` checks the test runner and its failure cleanup.
 

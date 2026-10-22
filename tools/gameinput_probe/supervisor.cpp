@@ -421,6 +421,9 @@ void copy_available_output(HANDLE pipe, std::ostream& output, output_pipe_state&
     } else if (options.xinput) {
         arguments.emplace_back(L"--xinput");
     }
+    if (options.rumble) {
+        arguments.emplace_back(L"--rumble");
+    }
     return arguments;
 }
 

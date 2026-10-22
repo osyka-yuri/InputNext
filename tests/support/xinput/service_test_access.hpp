@@ -11,6 +11,7 @@ namespace inputnext::xinput::detail {
 
 struct service_test_access final {
     using prepared_read = service::implementation::prepared_state_read;
+    using prepared_rumble = service::implementation::prepared_rumble_request;
 
     [[nodiscard]] static DWORD
     prepare(service& instance, DWORD user_index, bool include_guide, prepared_read& prepared) {
@@ -20,6 +21,18 @@ struct service_test_access final {
     [[nodiscard]] static DWORD
     commit(service& instance, const prepared_read& prepared, XINPUT_STATE* output) {
         return instance.implementation_->commit_state_read(prepared, output);
+    }
+
+    [[nodiscard]] static DWORD prepare_rumble(service& instance,
+        DWORD user_index,
+        const XINPUT_VIBRATION* vibration,
+        prepared_rumble& prepared) {
+        return instance.implementation_->prepare_rumble_request(user_index, vibration, prepared);
+    }
+
+    [[nodiscard]] static DWORD
+    commit_rumble(service& instance, DWORD user_index, const prepared_rumble& prepared) {
+        return instance.implementation_->commit_rumble_request(user_index, prepared);
     }
 
     [[nodiscard]] static bool seed_packet(service& instance,
@@ -44,6 +57,19 @@ struct service_test_access final {
         const auto guard = instance.implementation_->focus.lock_presentation();
         instance.implementation_->event_enable_generation = generation;
         instance.implementation_->event_identity_exhausted = false;
+    }
+
+    static void seed_rumble_request_revision(service& instance,
+        const assignment& expected,
+        std::uint64_t revision) {
+        const auto guard = instance.implementation_->focus.lock_presentation();
+        if (expected.user_index >= instance.implementation_->positions.size()) {
+            return;
+        }
+        auto& position = instance.implementation_->positions[expected.user_index];
+        if (position.occupant.has_value() && *position.occupant == expected) {
+            position.rumble_request_revision = revision;
+        }
     }
 
     static void seed_guide_ticket_id(service& instance, std::uint64_t next_id) {

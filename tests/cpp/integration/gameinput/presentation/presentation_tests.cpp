@@ -1,5 +1,10 @@
+#include "gameinput/native/native_gameinput.hpp"
+
+#include "gameinput/native/native_history.hpp"
+#include "gameinput/native/native_rumble_endpoint.hpp"
 #include "gameinput/reading_parts.hpp"
 #include "gameinput/runtime/factory.hpp"
+#include "metadata/provider.hpp"
 #include "support/focus/controlled_source.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_metadata.hpp>
@@ -8,6 +13,8 @@
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/gameinput_xinput.hpp>
 #include <inputnext/gamepad_state.hpp>
+#include <inputnext/output.hpp>
+#include <inputnext/output_execution.hpp>
 #include <inputnext/xinput_types.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -29,12 +36,6 @@
 #include <thread>
 #include <utility>
 #include <vector>
-
-#include <gameinput/native/native_gameinput.hpp>
-
-#include <gameinput/native/native_history.hpp>
-
-#include <metadata/provider.hpp>
 
 namespace inputnext::gameinput_detail {
 namespace {
@@ -59,6 +60,14 @@ template <typename Value>
 
 class narrow_native_port final : public native_gameinput {
 public:
+    class endpoint final : public native_rumble_endpoint {
+    public:
+        [[nodiscard]] output::native_result set(output::rumble_value value) noexcept override {
+            static_cast<void>(value);
+            return output::native_result{.status = output::native_status::accepted};
+        }
+    };
+
     [[nodiscard]] native_result<void> initialize(
         const std::filesystem::path& runtime_library) override {
         if (!runtime_library.is_absolute()) {
@@ -167,6 +176,15 @@ public:
         }
         std::scoped_lock lock{mutex_};
         return connected_[index];
+    }
+
+    [[nodiscard]] native_result<std::unique_ptr<native_rumble_endpoint>> create_rumble_endpoint(
+        native_device_handle device) override {
+        if (!device.valid() || !connected(device)) {
+            return std::unexpected(
+                native_failure{.cause = native_failure_cause::device_disconnected});
+        }
+        return std::unique_ptr<native_rumble_endpoint>{std::make_unique<endpoint>()};
     }
 
     void retain(native_device_handle device) noexcept override { static_cast<void>(device); }

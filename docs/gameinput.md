@@ -4,7 +4,7 @@ The x86 and x64 GameInput runtimes discover physical controllers and provide lat
 
 ## Ownership and maintenance
 
-Create `gameinput_runtime` with a registry and `gameinput_options::runtime_library`. One caller serializes `start`, `maintain`, and `stop`. There is no internal worker. While running, provide maintenance opportunities at least every 4 ms and use `next_deadline()` to service recovery. Native calls can delay that caller; this interval is a scheduling requirement, not a native completion guarantee.
+Create `gameinput_runtime` with a registry and `gameinput_options::runtime_library`. One caller serializes `start`, `maintain`, and `stop`. Input-only operation starts no internal worker. The optional [rumble composition](gameinput-output.md) activates separate native cleanup before starting. While running, provide maintenance opportunities at least every 4 ms and use `next_deadline()` to service recovery. Native input calls can delay that caller; this interval is a scheduling requirement, not a native completion guarantee.
 
 `connections()` returns exact connection targets, borrowed read bindings, capture health, and whether pad and Guide state have been observed. Ready reads use the registry's published state without calling GameInput. A disconnect ends that connection's identity; reconnecting creates a new target even when hardware metadata is identical.
 
@@ -14,11 +14,11 @@ Reading callback registration failure enables 4 ms polling with a registration r
 
 ## Shutdown
 
-Finish external calls, history calls, and metadata queries before destroying the runtime. The registry must outlive the runtime, its borrowed bindings, and its pins.
+Finish external calls, history calls, and metadata queries before destroying the runtime. Output-enabled runtimes must also drain their [output consumers](gameinput-output.md#ownership). The registry must outlive the runtime, its borrowed bindings, and its pins.
 
 Retirement closes publication and removes the exact registry connection before unregistering callbacks. Callback contexts, device references, residency pins, and the loaded module remain alive until native unregister succeeds.
 
-`stop()` may block inside synchronous GameInput calls. Its report separates pending callback owners, metadata queries, active history calls, and retained history owners. The destructor keeps draining until completion. Neither has a completion deadline; the one-second unregister retry interval does not bound native completion.
+`stop()` may block inside synchronous GameInput calls. Its report separates pending callback owners, metadata queries, active history calls, and retained history owners. Output-enabled runtimes also report output leases, pending native device releases, and API cleanup. The destructor keeps draining until completion. Neither has a completion deadline; the one-second unregister retry interval does not bound native completion.
 
 ## Metadata
 

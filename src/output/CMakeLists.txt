@@ -15,6 +15,7 @@ add_library(inputnext_output_authority STATIC
     authority/snapshot.cpp
     composition/composition.cpp
     composition/internal_producer.cpp
+    xinput/rumble.cpp
     projection/represented.cpp
 )
 target_include_directories(inputnext_output_authority

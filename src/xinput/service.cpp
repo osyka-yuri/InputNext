@@ -27,22 +27,23 @@ namespace {
 
 constexpr WORD guide_button_mask = 0x0400U;
 
-[[nodiscard]] bool same_assignment(const std::optional<assignment>& current,
-    const assignment& expected) noexcept {
-    return current.has_value() && *current == expected;
-}
-
 } // namespace
 
 service::implementation::implementation(focus::observer& focus_observer,
     metadata_source& metadata_provider,
     event_source* event_provider,
     std::uint64_t qpc_frequency,
+    std::unique_ptr<output::detail::xinput_rumble> rumble_bridge,
     presentation_seed seed)
     : focus(focus_observer),
       metadata(metadata_provider),
       event_source_provider(event_provider),
+      rumble(std::move(rumble_bridge)),
       next_assignment(seed.next_assignment) {
+    if (rumble != nullptr && !rumble->matches_focus(focus)) {
+        throw std::invalid_argument{
+            "configured XInput output must share its authority focus observer"};
+    }
     if (next_assignment == 0U) {
         throw std::invalid_argument{"XInput assignment seed must be nonzero"};
     }
@@ -92,7 +93,8 @@ bool service::implementation::event_qualification_is_current(const event_positio
 }
 
 service::service(focus::observer& focus, metadata_source& metadata, presentation_seed seed)
-    : implementation_(std::make_unique<implementation>(focus, metadata, nullptr, 0U, seed)) {
+    : implementation_(
+          std::make_unique<implementation>(focus, metadata, nullptr, 0U, nullptr, seed)) {
 }
 
 service::service(focus::observer& focus,
@@ -100,8 +102,34 @@ service::service(focus::observer& focus,
     event_source& events,
     std::uint64_t qpc_frequency,
     presentation_seed seed)
+    : implementation_(std::make_unique<implementation>(focus,
+          metadata,
+          &events,
+          qpc_frequency,
+          nullptr,
+          seed)) {
+}
+
+service::service(focus::observer& focus,
+    metadata_source& metadata,
+    std::unique_ptr<output::detail::xinput_rumble> rumble,
+    presentation_seed seed)
     : implementation_(
-          std::make_unique<implementation>(focus, metadata, &events, qpc_frequency, seed)) {
+          std::make_unique<implementation>(focus, metadata, nullptr, 0U, std::move(rumble), seed)) {
+}
+
+service::service(focus::observer& focus,
+    metadata_source& metadata,
+    event_source& events,
+    std::uint64_t qpc_frequency,
+    std::unique_ptr<output::detail::xinput_rumble> rumble,
+    presentation_seed seed)
+    : implementation_(std::make_unique<implementation>(focus,
+          metadata,
+          &events,
+          qpc_frequency,
+          std::move(rumble),
+          seed)) {
 }
 
 service::~service() {
@@ -157,7 +185,7 @@ DWORD service::implementation::commit_state_read(const prepared_state_read& prep
             return ERROR_DEVICE_NOT_CONNECTED;
         }
         auto& position = positions[prepared.occupant.user_index];
-        if (!same_assignment(position.occupant, prepared.occupant)) {
+        if (!implementation::same_assignment(position.occupant, prepared.occupant)) {
             return ERROR_DEVICE_NOT_CONNECTED;
         }
 
@@ -211,7 +239,15 @@ result<assignment> service::assign(connection_target target, read_binding reader
     std::optional<read_pin> candidate_pin;
     std::optional<assignment> result_assignment;
     {
-        const auto guard = implementation_->focus.lock_presentation();
+        std::optional<output::detail::xinput_rumble::transaction> output_turn;
+        std::optional<focus::observer::presentation_guard> presentation_turn;
+        if (implementation_->rumble != nullptr) {
+            output_turn.emplace(implementation_->rumble->begin());
+        } else {
+            presentation_turn.emplace(implementation_->focus.lock_presentation());
+        }
+        [[maybe_unused]] auto const& guard =
+            output_turn.has_value() ? output_turn->presentation() : *presentation_turn;
         if (implementation_->closed) {
             return std::unexpected{error::closed};
         }
@@ -250,6 +286,13 @@ result<assignment> service::assign(connection_target target, read_binding reader
             .id = implementation_->next_assignment,
             .target = target};
 
+        if (output_turn.has_value()) {
+            output_turn->revoke_and_ack(free->rumble_context);
+        }
+        free->desired_rumble.reset();
+        free->rumble_restore_pending = false;
+        free->rumble_restore_error = ERROR_SUCCESS;
+        free->rumble_logical_version = 0U;
         free->occupant = *result_assignment;
         free->reader = reader;
         free->packet_initialized = false;
@@ -276,15 +319,30 @@ result<void> service::unassign(assignment expected) {
     }
 
     {
-        const auto guard = implementation_->focus.lock_presentation();
+        std::optional<output::detail::xinput_rumble::transaction> output_turn;
+        std::optional<focus::observer::presentation_guard> presentation_turn;
+        if (implementation_->rumble != nullptr) {
+            output_turn.emplace(implementation_->rumble->begin());
+        } else {
+            presentation_turn.emplace(implementation_->focus.lock_presentation());
+        }
+        [[maybe_unused]] auto const& guard =
+            output_turn.has_value() ? output_turn->presentation() : *presentation_turn;
         if (implementation_->closed) {
             return std::unexpected{error::closed};
         }
         auto& position = implementation_->positions[expected.user_index];
-        if (!same_assignment(position.occupant, expected)) {
+        if (!implementation::same_assignment(position.occupant, expected)) {
             return std::unexpected{error::not_connected};
         }
 
+        if (output_turn.has_value()) {
+            output_turn->revoke_and_ack(position.rumble_context);
+        }
+        position.desired_rumble.reset();
+        position.rumble_restore_pending = false;
+        position.rumble_restore_error = ERROR_SUCCESS;
+        position.rumble_logical_version = 0U;
         static_cast<void>(implementation::invalidate_event_position(position,
             implementation::guide_wait_state::not_connected));
         position.reader = {};
@@ -311,9 +369,24 @@ std::array<std::optional<assignment>, 4U> service::positions() const {
 
 void service::close() {
     {
-        const auto guard = implementation_->focus.lock_presentation();
+        std::optional<output::detail::xinput_rumble::transaction> output_turn;
+        std::optional<focus::observer::presentation_guard> presentation_turn;
+        if (implementation_->rumble != nullptr) {
+            output_turn.emplace(implementation_->rumble->begin());
+        } else {
+            presentation_turn.emplace(implementation_->focus.lock_presentation());
+        }
+        [[maybe_unused]] auto const& guard =
+            output_turn.has_value() ? output_turn->presentation() : *presentation_turn;
         implementation_->closed = true;
         for (auto& position : implementation_->positions) {
+            if (output_turn.has_value()) {
+                output_turn->revoke_and_ack(position.rumble_context);
+            }
+            position.desired_rumble.reset();
+            position.rumble_restore_pending = false;
+            position.rumble_restore_error = ERROR_SUCCESS;
+            position.rumble_logical_version = 0U;
             static_cast<void>(implementation::invalidate_event_position(position,
                 implementation::guide_wait_state::closed));
             position.reader = {};
@@ -327,40 +400,6 @@ void service::close() {
     implementation_->notify_guide_waiters();
     for (std::uint32_t index = 0U; index < 4U; ++index) {
         implementation_->cleanup_idle_event_reader(index);
-    }
-}
-
-void service::enable(BOOL enabled) {
-    bool changed{};
-    {
-        const auto guard = implementation_->focus.lock_presentation();
-        if (!implementation_->closed) {
-            const bool next_enabled = enabled != FALSE;
-            if (next_enabled != implementation_->enabled) {
-                implementation_->enabled = next_enabled;
-                changed = true;
-                if (implementation_->event_enable_generation ==
-                    std::numeric_limits<std::uint64_t>::max()) {
-                    implementation_->event_identity_exhausted = true;
-                    for (auto& position : implementation_->positions) {
-                        static_cast<void>(implementation::invalidate_event_position(position,
-                            implementation::guide_wait_state::identity_exhausted));
-                    }
-                } else {
-                    ++implementation_->event_enable_generation;
-                    for (auto& position : implementation_->positions) {
-                        static_cast<void>(implementation::invalidate_event_position(position,
-                            implementation::guide_wait_state::ineligible));
-                    }
-                }
-            }
-        }
-    }
-    if (changed) {
-        implementation_->notify_guide_waiters();
-        for (std::uint32_t index = 0U; index < 4U; ++index) {
-            implementation_->cleanup_idle_event_reader(index);
-        }
     }
 }
 

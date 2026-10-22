@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gameinput/reading_parts.hpp"
+#include "native_rumble_endpoint.hpp"
 #include <inputnext/device_metadata.hpp>
 
 #include <cstdint>
@@ -108,6 +109,8 @@ public:
     [[nodiscard]] virtual native_result<std::uint64_t> performance_frequency() noexcept = 0;
     [[nodiscard]] virtual native_result<native_device_facts> facts(native_device_handle device) = 0;
     [[nodiscard]] virtual bool connected(native_device_handle device) noexcept = 0;
+    [[nodiscard]] virtual native_result<std::unique_ptr<native_rumble_endpoint>>
+    create_rumble_endpoint(native_device_handle device) = 0;
     virtual void retain(native_device_handle device) noexcept = 0;
     virtual void release(native_device_handle device) noexcept = 0;
 

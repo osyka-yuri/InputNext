@@ -1,16 +1,20 @@
 #pragma once
 
-#include <inputnext/focus.hpp>
-#include <inputnext/gameinput_runtime.hpp>
-#include <inputnext/xinput.hpp>
-
-#include <cstdint>
-
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/error.hpp>
+#include <inputnext/focus.hpp>
+#include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/history.hpp>
+#include <inputnext/xinput.hpp>
 #include <inputnext/xinput_events.hpp>
+
+#include <cstdint>
+#include <memory>
+
+namespace inputnext::output::detail {
+class xinput_rumble;
+}
 
 namespace inputnext {
 
@@ -24,6 +28,15 @@ public:
     gameinput_xinput(gameinput_runtime& runtime,
         focus::observer& focus,
         std::uint64_t qpc_frequency);
+    gameinput_xinput(gameinput_runtime& runtime,
+        focus::observer& focus,
+        std::unique_ptr<output::detail::xinput_rumble> rumble,
+        xinput::presentation_seed seed = {});
+    gameinput_xinput(gameinput_runtime& runtime,
+        focus::observer& focus,
+        std::uint64_t qpc_frequency,
+        std::unique_ptr<output::detail::xinput_rumble> rumble,
+        xinput::presentation_seed seed = {});
     ~gameinput_xinput() override;
 
     gameinput_xinput(const gameinput_xinput&) = delete;

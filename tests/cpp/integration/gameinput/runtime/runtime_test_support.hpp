@@ -5,6 +5,7 @@
 #include "metadata/provider.hpp"
 #include "runtime_history_test_support.hpp"
 #include "runtime_metadata_test_support.hpp"
+#include "runtime_rumble_test_support.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/gameinput_runtime.hpp>
@@ -71,6 +72,12 @@ class fake_gameinput final : public inputnext::gameinput_detail::native_gameinpu
 public:
     enum class registration_kind : std::uint8_t { device_watch, rescan, reading };
 
+    fake_gameinput() = default;
+    fake_gameinput(const fake_gameinput&) = delete;
+    fake_gameinput& operator=(const fake_gameinput&) = delete;
+    fake_gameinput(fake_gameinput&&) = delete;
+    fake_gameinput& operator=(fake_gameinput&&) = delete;
+
     struct registration final {
         native_callback_token token{};
         registration_kind kind{registration_kind::device_watch};
@@ -92,6 +99,8 @@ public:
 
     static constexpr std::size_t device_capacity = 144U;
     static constexpr std::size_t registration_capacity = 256U;
+
+    ~fake_gameinput() override { rumble_controls->native_adapter_destroyed(); }
 
     [[nodiscard]] native_result<void> initialize(
         const std::filesystem::path& runtime_library) override {
@@ -301,6 +310,15 @@ public:
         return state != nullptr && state->connected;
     }
 
+    [[nodiscard]] native_result<std::unique_ptr<native_rumble_endpoint>> create_rumble_endpoint(
+        native_device_handle device) override {
+        if (!device.valid()) {
+            return std::unexpected(
+                native_failure{.cause = native_failure_cause::device_disconnected});
+        }
+        return rumble_controls->create_endpoint();
+    }
+
     void retain(native_device_handle device) noexcept override {
         static_cast<void>(device);
         ++retained_devices;
@@ -308,6 +326,7 @@ public:
 
     void release(native_device_handle device) noexcept override {
         static_cast<void>(device);
+        rumble_controls->native_device_released();
         ++released_devices;
     }
 
@@ -352,6 +371,10 @@ public:
         if (auto* state = ensure_device(device); state != nullptr) {
             state->facts = std::move(facts);
         }
+    }
+
+    [[nodiscard]] std::shared_ptr<rumble_test_controls> rumble_script() const noexcept {
+        return rumble_controls;
     }
 
     void emit(native_device_handle handle, native_device_event event) {
@@ -546,6 +569,8 @@ private:
     std::size_t rescan_registration_failures{};
     std::optional<reading_parts> reading_during_registration;
     std::shared_ptr<native_history_script> history_script;
+    std::shared_ptr<rumble_test_controls> rumble_controls =
+        std::make_shared<rumble_test_controls>();
     std::atomic<bool> block_next_facts_;
     std::counting_semaphore<1> facts_blocked_{0};
     std::counting_semaphore<1> facts_release_{0};

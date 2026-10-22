@@ -210,7 +210,8 @@ result<internal_context> authority::open_internal(connection_target target,
     for (auto const& entry : implementation_->records) {
         if (entry.state != implementation::phase::open ||
             entry.identity.kind != owner_class::trusted_internal ||
-            entry.identity.target != target || entry.identity.internal_owner != options.owner) {
+            entry.xinput_rumble.has_value() || entry.identity.target != target ||
+            entry.identity.internal_owner != options.owner) {
             continue;
         }
         if (entry.priority != options.priority || entry.ttl != options.ttl ||

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <inputnext/device_identity.hpp>
 #include <inputnext/device_registry.hpp>
 #include <inputnext/focus.hpp>
 #include <inputnext/output.hpp>
@@ -9,8 +10,6 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-
-#include <inputnext/device_identity.hpp>
 
 namespace inputnext::output {
 
@@ -84,6 +83,8 @@ struct maintenance_report final {
 
 namespace detail {
 class internal_producer;
+class xinput_rumble;
+class xinput_rumble_transaction;
 class authority_test_access;
 class authority_execution_access;
 enum class incarnation_creation : std::uint8_t;
@@ -124,6 +125,8 @@ public:
 
 private:
     friend class detail::internal_producer;
+    friend class detail::xinput_rumble;
+    friend class detail::xinput_rumble_transaction;
     friend class detail::authority_test_access;
     friend class detail::authority_execution_access;
 

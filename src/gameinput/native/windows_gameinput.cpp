@@ -2,8 +2,11 @@
 
 #include "gameinput/reading_parts.hpp"
 #include "gameinput_value_mapping.hpp"
+#include "native_rumble_endpoint.hpp"
 #include "windows_history_cursor.hpp"
 #include <inputnext/device_metadata.hpp>
+#include <inputnext/output.hpp>
+#include <inputnext/output_execution.hpp>
 
 #include <GameInput.h>
 
@@ -91,6 +94,35 @@ public:
 
 private:
     gameinput::IGameInputReading* reading_{};
+};
+
+class windows_rumble_endpoint final : public native_rumble_endpoint {
+public:
+    explicit windows_rumble_endpoint(gameinput::IGameInputDevice* device) noexcept
+        : device_(device) {}
+
+    windows_rumble_endpoint(const windows_rumble_endpoint&) = delete;
+    windows_rumble_endpoint& operator=(const windows_rumble_endpoint&) = delete;
+    windows_rumble_endpoint(windows_rumble_endpoint&&) = delete;
+    windows_rumble_endpoint& operator=(windows_rumble_endpoint&&) = delete;
+
+    ~windows_rumble_endpoint() noexcept override {
+        if (device_ != nullptr) {
+            device_->Release();
+        }
+    }
+
+    [[nodiscard]] output::native_result set(output::rumble_value value) noexcept override {
+        if (device_ == nullptr || !device_->IsConnected()) {
+            return output::native_result{.status = output::native_status::disconnected};
+        }
+        const auto params = map_rumble_value(value);
+        device_->SetRumbleState(&params);
+        return output::native_result{.status = output::native_status::accepted};
+    }
+
+private:
+    gameinput::IGameInputDevice* device_{};
 };
 
 class windows_gameinput final : public native_gameinput {
@@ -276,6 +308,29 @@ public:
 
     [[nodiscard]] bool connected(native_device_handle device) noexcept override {
         return device.valid() && as_device(device)->IsConnected();
+    }
+
+    [[nodiscard]] native_result<std::unique_ptr<native_rumble_endpoint>> create_rumble_endpoint(
+        native_device_handle device) override {
+        if (game_input_ == nullptr || !device.valid()) {
+            return std::unexpected(failure(native_failure_cause::api_unavailable, E_INVALIDARG));
+        }
+
+        auto* native_device = as_device(device);
+        if (!native_device->IsConnected()) {
+            return std::unexpected(failure(native_failure_cause::device_disconnected,
+                gameinput::GAMEINPUT_E_DEVICE_DISCONNECTED));
+        }
+
+        native_device->AddRef();
+        try {
+            return std::unique_ptr<native_rumble_endpoint>{
+                std::make_unique<windows_rumble_endpoint>(native_device)};
+        } catch (const std::bad_alloc&) {
+            native_device->Release();
+            return std::unexpected(
+                failure(native_failure_cause::resource_exhausted, E_OUTOFMEMORY));
+        }
     }
 
     void retain(native_device_handle device) noexcept override {

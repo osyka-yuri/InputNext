@@ -55,6 +55,8 @@ if(INPUTNEXT_BUILD_GAMEINPUT)
     add_library(inputnext_gameinput_runtime STATIC
         runtime/admission.cpp
         runtime/lifecycle.cpp
+        runtime/output_access.cpp
+        runtime/native_cleanup.cpp
         runtime/metadata.cpp
         runtime/readings.cpp
         runtime/history.cpp
@@ -67,6 +69,23 @@ if(INPUTNEXT_BUILD_GAMEINPUT)
     )
     target_include_directories(inputnext_gameinput_runtime PRIVATE "${PROJECT_SOURCE_DIR}/src")
     inputnext_configure_target(inputnext_gameinput_runtime)
+
+    add_subdirectory(rumble)
+
+    add_library(inputnext_gameinput_output STATIC
+        output/connections/manager.cpp
+        output/connections/worker.cpp
+        output/connections/admission.cpp
+        output/connections/retirement.cpp
+    )
+    target_include_directories(inputnext_gameinput_output
+        PUBLIC "${PROJECT_SOURCE_DIR}/include"
+        PRIVATE "${PROJECT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(inputnext_gameinput_output
+        PUBLIC inputnext_gameinput_runtime inputnext_gameinput_rumble inputnext_output_execution
+    )
+    inputnext_configure_target(inputnext_gameinput_output)
 
     add_library(inputnext_gameinput_xinput STATIC
         presentation/gameinput_xinput.cpp

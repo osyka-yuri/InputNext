@@ -5,6 +5,7 @@
 #include "history/cursor.hpp"
 #include "history/store.hpp"
 #include "metadata/provider.hpp"
+#include "owner_identity.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/device_registry.hpp>
@@ -19,6 +20,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <thread>
 
 namespace inputnext {
 
@@ -46,6 +48,7 @@ struct gameinput_runtime::implementation final {
     };
 
     enum class phase : std::uint8_t { created, starting, running, stopping, drained, failed };
+    enum class output_cleanup_work : std::uint8_t { release_device, release_native_api };
     enum class owner_phase : std::uint8_t {
         free,
         observed,
@@ -62,10 +65,7 @@ struct gameinput_runtime::implementation final {
         std::uint64_t generation{};
     };
 
-    struct owner_identity final {
-        std::size_t slot_index{};
-        std::uint64_t generation{};
-    };
+    using owner_identity = gameinput_detail::runtime_owner_identity;
 
     struct facts_generation final {
         std::uint64_t value{};
@@ -80,6 +80,8 @@ struct gameinput_runtime::implementation final {
         bool registry_retire_started{};
         bool registry_retired{};
         bool release_started{};
+        bool release_inflight{};
+        std::size_t output_leases{};
         connection_target target{};
         gameinput_detail::publication_source* source{};
         read_binding reader{};
@@ -232,6 +234,18 @@ struct gameinput_runtime::implementation final {
     void service_rescan_stop(maintenance_time now);
     void service_watch_stop(maintenance_time now);
     void service_releasable_owners();
+    void output_cleanup_loop() noexcept;
+    [[nodiscard]] output_cleanup_work wait_for_output_cleanup_work(owner_identity& identity,
+        gameinput_detail::native_device_handle& device,
+        read_pin& residency,
+        std::unique_ptr<gameinput_detail::native_gameinput>& final_native);
+    void finish_output_device_release(owner_identity identity,
+        gameinput_detail::native_device_handle device,
+        read_pin residency) noexcept;
+    void finish_output_native_cleanup(
+        std::unique_ptr<gameinput_detail::native_gameinput> final_native) noexcept;
+    void notify_output_cleanup() noexcept;
+    void release_output_lease(owner_identity identity, read_pin residency) noexcept;
     void retry_admission(owner_identity identity, maintenance_time now) noexcept;
     void process_admission(owner_identity identity,
         gameinput_detail::native_device_handle device,
@@ -262,6 +276,7 @@ struct gameinput_runtime::implementation final {
     std::mutex catalogue_gate;
     std::mutex service_gate;
     std::condition_variable query_drained;
+    std::condition_variable output_cleanup_wake;
     phase state{phase::created};
     std::array<owner_slot, runtime_detail::native_owner_capacity> owners{};
     std::array<bool, runtime_detail::native_owner_capacity> facts_attempted{};
@@ -283,6 +298,12 @@ struct gameinput_runtime::implementation final {
     std::uint64_t catalogue_generation{};
     std::size_t active_queries{};
     std::size_t active_history_calls{};
+    bool output_enabled{};
+    bool output_admission_open{};
+    bool native_cleanup_requested{};
+    bool native_cleanup_started{};
+    bool native_cleanup_finished{};
+    std::thread output_cleanup_worker;
     void (*before_history_open_test_hook)(void*) noexcept {};
     void* before_history_open_test_context{};
     std::optional<maintenance_time> next_maintenance;

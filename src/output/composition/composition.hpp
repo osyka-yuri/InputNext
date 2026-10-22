@@ -1,11 +1,14 @@
 #pragma once
 
 #include "internal_producer.hpp"
+#include "output/xinput/rumble.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_registry.hpp>
 #include <inputnext/focus.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+
+#include <memory>
 
 namespace inputnext::output::detail {
 
@@ -27,6 +30,7 @@ public:
     [[nodiscard]] authority& public_authority() & noexcept;
     [[nodiscard]] result<internal_producer> make_producer(
         const internal_context_options& options) & noexcept;
+    [[nodiscard]] result<std::unique_ptr<xinput_rumble>> make_xinput_rumble() & noexcept;
 
 private:
     authority owner_;

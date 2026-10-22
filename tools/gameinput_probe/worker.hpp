@@ -13,6 +13,7 @@ struct probe_options final {
     bool require_history{};
     bool xinput{};
     bool xinput_events{};
+    bool rumble{};
 };
 
 [[nodiscard]] int run_probe_worker(const probe_options& options, std::ostream& output);

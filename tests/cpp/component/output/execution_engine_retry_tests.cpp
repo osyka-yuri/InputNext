@@ -48,6 +48,7 @@ TEST_CASE("output.execution_retryable_failure_redrives_same_publication_after_ba
     REQUIRE(failed->last_completed_attempt.has_value());
     const auto failed_attempt = failed->last_completed_attempt.value_or(completed_attempt{});
     CHECK(failed_attempt.result.status == native_status::retryable_failure);
+    CHECK(failed_attempt.output == sink_state->call(0U).output);
 
     std::stop_source stop_source;
     std::mutex result_mutex;
@@ -137,6 +138,7 @@ TEST_CASE("output.retry_during_inflight_write_survives_accepted_same_value_compl
     REQUIRE(pending->last_completed_attempt.has_value());
     const auto previous_attempt = pending->last_completed_attempt.value_or(completed_attempt{});
     CHECK(previous_attempt.id == attempt_id{1U});
+    CHECK(previous_attempt.output == sink_state->call(0U).output);
     CHECK(scope.engine().drive_one(*lane));
 
     CHECK(sink_state->call_count() == 2U);
@@ -185,6 +187,11 @@ TEST_CASE("output.retry_during_inflight_failure_is_not_replaced_by_backoff_or_bl
         CHECK(pending->consecutive_retryable_failures ==
               (status == native_status::retryable_failure ? 4U : 0U));
         CHECK(pending->scheduled_retry_delay == std::chrono::milliseconds::zero());
+        REQUIRE(pending->last_completed_attempt.has_value());
+        const auto completed_attempt_value =
+            pending->last_completed_attempt.value_or(completed_attempt{});
+        CHECK(completed_attempt_value.result.status == status);
+        CHECK(completed_attempt_value.output == sink_state->call(0U).output);
         CHECK(scope.engine().drive_one(*lane));
         CHECK(sink_state->call_count() == 2U);
         CHECK(sink_state->call(1U).attempt == attempt_id{2U});
@@ -248,6 +255,7 @@ TEST_CASE("output.retry_during_inflight_disconnection_retires_backend_after_new_
     const auto completed = disconnected->last_completed_attempt.value_or(completed_attempt{});
     CHECK(completed.publication.value == 1U);
     CHECK(completed.result.status == native_status::disconnected);
+    CHECK(completed.output == sink_state->call(0U).output);
 
     auto receipt = scope.engine().retire(*backend);
     REQUIRE(receipt.has_value());

@@ -1,13 +1,12 @@
 #pragma once
 
+#include <inputnext/device_identity.hpp>
 #include <inputnext/output.hpp>
 
 #include <chrono>
 #include <cstdint>
 #include <expected>
 #include <optional>
-
-#include <inputnext/device_identity.hpp>
 
 namespace inputnext::output {
 
@@ -107,10 +106,21 @@ struct native_result final {
     friend constexpr bool operator==(const native_result&, const native_result&) noexcept = default;
 };
 
+// Values supplied to a sink for its represented channels. Absent represented intents are neutral;
+// OFF remains a present logical intent in the publication.
+struct native_output final {
+    channel_mask channels{};
+    channel_values values{};
+
+    friend constexpr bool operator==(const native_output&, const native_output&) noexcept = default;
+};
+
 struct completed_attempt final {
     attempt_id id{};
     publication_id publication{};
     native_result result{};
+    // Exact payload passed to the sink whose synchronous setter returned.
+    native_output output{};
 
     friend constexpr bool operator==(const completed_attempt&,
         const completed_attempt&) noexcept = default;

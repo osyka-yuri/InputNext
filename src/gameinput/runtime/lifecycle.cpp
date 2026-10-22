@@ -20,6 +20,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <utility>
 
 namespace inputnext {
@@ -255,12 +256,14 @@ gameinput_runtime::implementation::next_deadline() const {
         std::scoped_lock service_lock{service_gate};
         {
             std::scoped_lock lock{table_gate};
-            if (state == phase::created || state == phase::drained) {
+            if ((state == phase::created || state == phase::drained) &&
+                (state == phase::drained || !output_enabled)) {
                 state = phase::drained;
                 return stop_status_locked(0U);
             }
             if (state != phase::stopping) {
                 state = phase::stopping;
+                output_admission_open = false;
                 for (auto& owner : owners) {
                     if (owner.state != owner_phase::free) {
                         owner.retire_requested = true;
@@ -288,13 +291,24 @@ gameinput_runtime::implementation::next_deadline() const {
         static_cast<void>(re_reclaimed);
     }
 
+    bool wake_output_cleanup{};
     {
         std::scoped_lock lock{table_gate};
-        if (resident_history_banks == 0U && all_native_owners_drained_locked() &&
-            active_queries == 0U && active_history_calls == 0U) {
+        const bool runtime_drained = resident_history_banks == 0U &&
+                                     all_native_owners_drained_locked() && active_queries == 0U &&
+                                     active_history_calls == 0U;
+        if (runtime_drained && output_enabled && !native_cleanup_requested &&
+            !native_cleanup_finished) {
+            native_cleanup_requested = true;
+            wake_output_cleanup = true;
+        } else if (runtime_drained && (!output_enabled || native_cleanup_finished)) {
             state = phase::drained;
         }
-        return stop_status_locked(resident_history_banks);
+        const auto report = stop_status_locked(resident_history_banks);
+        if (wake_output_cleanup) {
+            output_cleanup_wake.notify_all();
+        }
+        return report;
     }
 }
 
@@ -302,10 +316,13 @@ void gameinput_runtime::implementation::shutdown() noexcept {
     for (;;) {
         const auto report = stop(std::chrono::steady_clock::now());
         if (report.drained) {
-            return;
+            break;
         }
         std::unique_lock lock{table_gate};
         query_drained.wait_for(lock, runtime_detail::retry_period);
+    }
+    if (output_cleanup_worker.joinable()) {
+        output_cleanup_worker.join();
     }
 }
 
@@ -489,6 +506,28 @@ void gameinput_runtime::implementation::service_watch_stop(maintenance_time now)
 }
 
 void gameinput_runtime::implementation::service_releasable_owners() {
+    if (output_enabled) {
+        bool wake{};
+        {
+            std::scoped_lock lock{table_gate};
+            for (auto& owner : owners) {
+                if (owner.state != owner_phase::retiring || !owner.registry_retired ||
+                    owner.release_started || owner.reading_token.valid() ||
+                    owner.reading_registration_inflight || owner.history_leases != 0U ||
+                    owner.output_leases != 0U) {
+                    continue;
+                }
+                owner.state = owner_phase::releasing;
+                owner.release_started = true;
+                wake = true;
+            }
+        }
+        if (wake) {
+            notify_output_cleanup();
+        }
+        return;
+    }
+
     for (std::size_t index = 0; index < owners.size(); ++index) {
         gameinput_detail::native_device_handle device{};
         read_pin pin{};
@@ -542,7 +581,8 @@ gameinput_runtime::implementation::all_native_owners_drained_locked() const noex
            !rescan_registration_inflight &&
            std::ranges::all_of(owners, [](const owner_slot& owner) {
                return owner.state == owner_phase::free && !owner.reading_token.valid() &&
-                      !owner.reading_registration_inflight && owner.history_leases == 0U;
+                      !owner.reading_registration_inflight && owner.history_leases == 0U &&
+                      owner.output_leases == 0U;
            });
 }
 
@@ -562,6 +602,13 @@ gameinput_runtime::implementation::all_native_owners_drained_locked() const noex
     }
     const auto pending_history_owners = static_cast<std::size_t>(std::ranges::count_if(owners,
         [](const owner_slot& owner) { return owner.history_leases != 0U; }));
+    std::size_t pending_output_leases{};
+    for (const auto& owner : owners) {
+        pending_output_leases += owner.output_leases;
+    }
+    const auto pending_native_cleanup_owners =
+        static_cast<std::size_t>(std::ranges::count_if(owners,
+            [](const owner_slot& owner) { return owner.state == owner_phase::releasing; }));
     return gameinput_stop_report{
         .drained = state == phase::drained && active_queries == 0U && active_history_calls == 0U &&
                    pending_history_owners == 0U && resident_history_banks == 0U,
@@ -569,6 +616,9 @@ gameinput_runtime::implementation::all_native_owners_drained_locked() const noex
         .active_metadata_queries = active_queries,
         .active_history_calls = active_history_calls,
         .pending_history_owners = pending_history_owners,
+        .pending_output_leases = pending_output_leases,
+        .pending_native_cleanup_owners = pending_native_cleanup_owners,
+        .native_api_cleanup_complete = !output_enabled || native_cleanup_finished,
     };
 }
 

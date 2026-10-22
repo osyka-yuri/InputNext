@@ -90,9 +90,10 @@ TEST_CASE("output.execution_resident_backend_capacity_retains_cleanup_and_preser
 
 TEST_CASE("output.execution_identity_exhaustion_blocks_admission_and_keeps_cleanup_available",
     "[component][output][execution]") {
+    authority_fixture fixture{};
+    execution_engine_scope scope{fixture.owner};
+
     SECTION("backend identity") {
-        authority_fixture fixture{};
-        execution_engine_scope scope{fixture.owner};
         execution_engine_test_access::seed_next_backend_id(scope.engine(), 0U);
         const auto sink_state = std::make_shared<controlled_native_state>();
         std::unique_ptr<native_sink> candidate =
@@ -107,8 +108,6 @@ TEST_CASE("output.execution_identity_exhaustion_blocks_admission_and_keeps_clean
     }
 
     SECTION("lane generation identity") {
-        authority_fixture fixture{};
-        execution_engine_scope scope{fixture.owner};
         execution_engine_test_access::seed_next_lane_generation(scope.engine(), 0U);
         std::unique_ptr<native_sink> candidate =
             std::make_unique<controlled_native_sink>(std::make_shared<controlled_native_state>());
@@ -123,8 +122,6 @@ TEST_CASE("output.execution_identity_exhaustion_blocks_admission_and_keeps_clean
     }
 
     SECTION("publication identity") {
-        authority_fixture fixture{};
-        execution_engine_scope scope{fixture.owner};
         const auto sink_state = std::make_shared<controlled_native_state>();
         std::unique_ptr<native_sink> sink = std::make_unique<controlled_native_sink>(sink_state);
         auto backend = scope.register_backend(fixture.connection.target, sink, rumble_mask);
@@ -155,8 +152,6 @@ TEST_CASE("output.execution_identity_exhaustion_blocks_admission_and_keeps_clean
     }
 
     SECTION("attempt identity") {
-        authority_fixture fixture{};
-        execution_engine_scope scope{fixture.owner};
         const auto sink_state = std::make_shared<controlled_native_state>();
         std::unique_ptr<native_sink> sink = std::make_unique<controlled_native_sink>(sink_state);
         auto backend = scope.register_backend(fixture.connection.target, sink, rumble_mask);
@@ -177,8 +172,6 @@ TEST_CASE("output.execution_identity_exhaustion_blocks_admission_and_keeps_clean
     }
 
     SECTION("last attempt serial is delivered before the backend retires") {
-        authority_fixture fixture{};
-        execution_engine_scope scope{fixture.owner};
         const auto sink_state = std::make_shared<controlled_native_state>();
         std::unique_ptr<native_sink> sink = std::make_unique<controlled_native_sink>(sink_state);
         auto backend = scope.register_backend(fixture.connection.target, sink, rumble_mask);

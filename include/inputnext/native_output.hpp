@@ -2,18 +2,7 @@
 
 #include <inputnext/output_execution.hpp>
 
-#include <inputnext/output.hpp>
-
 namespace inputnext::output {
-
-// Values supplied to a sink for its represented channels. Absent represented intents are neutral;
-// OFF remains a present logical intent in the publication.
-struct native_output final {
-    channel_mask channels{};
-    channel_values values{};
-
-    friend constexpr bool operator==(const native_output&, const native_output&) noexcept = default;
-};
 
 struct native_command final {
     backend_handle backend{};

@@ -6,8 +6,6 @@
 
 #include <expected>
 
-#include <inputnext/native_output.hpp>
-
 namespace inputnext::output::detail {
 
 execution_result<represented_projection> project_representation(const logical_snapshot& snapshot,

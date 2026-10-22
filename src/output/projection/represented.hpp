@@ -7,8 +7,6 @@
 
 #include <optional>
 
-#include <inputnext/native_output.hpp>
-
 namespace inputnext::output::detail {
 
 struct represented_projection final {

@@ -2,10 +2,12 @@
 
 #include "keystroke_mapping.hpp"
 #include "keystroke_tracker.hpp"
+#include "output/xinput/rumble.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/focus.hpp>
 #include <inputnext/history.hpp>
 #include <inputnext/input_binding.hpp>
+#include <inputnext/output.hpp>
 #include <inputnext/xinput.hpp>
 #include <inputnext/xinput_events.hpp>
 
@@ -13,6 +15,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
 
@@ -85,7 +88,27 @@ struct service::implementation final {
         XINPUT_GAMEPAD canonical_gamepad{};
         std::uint32_t packet_number{};
         std::uint64_t committed_revision{};
+
+        struct desired_rumble_state final {
+            ::inputnext::output::rumble_value value{};
+            assignment occupant{};
+            focus::foreground_epoch epoch{};
+            std::uint64_t enable_generation{};
+            std::uint64_t request_revision{};
+        };
+
+        std::optional<::inputnext::output::internal_context> rumble_context;
+        std::optional<desired_rumble_state> desired_rumble;
+        std::uint64_t rumble_request_revision{};
+        std::uint64_t rumble_logical_version{};
+        bool rumble_restore_pending{};
+        DWORD rumble_restore_error{ERROR_SUCCESS};
         event_position_state events;
+    };
+
+    struct enable_generation_transition final {
+        std::uint64_t previous{};
+        std::uint64_t next{};
     };
 
     struct prepared_state_read final {
@@ -97,6 +120,15 @@ struct service::implementation final {
         XINPUT_GAMEPAD canonical_gamepad{};
         std::uint64_t sample_revision{};
         std::optional<read_pin> sample_pin;
+    };
+
+    struct prepared_rumble_request final {
+        assignment occupant{};
+        focus::foreground_epoch epoch{};
+        ::inputnext::output::rumble_value value{};
+        std::uint64_t enable_generation{};
+        bool enabled{};
+        bool known_background{};
     };
 
     struct event_turn final {
@@ -118,12 +150,38 @@ struct service::implementation final {
         metadata_source& metadata_provider,
         event_source* event_provider,
         std::uint64_t qpc_frequency,
+        std::unique_ptr<::inputnext::output::detail::xinput_rumble> rumble,
         presentation_seed seed);
+
+    [[nodiscard]] static bool same_assignment(const std::optional<assignment>& current,
+        const assignment& expected) noexcept {
+        return current.has_value() && *current == expected;
+    }
 
     [[nodiscard]] DWORD
     prepare_state_read(DWORD user_index, bool include_guide, prepared_state_read& prepared);
     [[nodiscard]] DWORD commit_state_read(const prepared_state_read& prepared,
         XINPUT_STATE* output);
+    [[nodiscard]] DWORD prepare_rumble_request(DWORD user_index,
+        const XINPUT_VIBRATION* vibration,
+        prepared_rumble_request& prepared);
+    [[nodiscard]] DWORD commit_rumble_request(DWORD user_index,
+        const prepared_rumble_request& prepared);
+    static void clear_rumble_state(position_record& position,
+        output::detail::xinput_rumble::transaction* turn,
+        DWORD error) noexcept;
+    void restore_rumble_state(position_record& position,
+        output::detail::xinput_rumble::transaction& turn,
+        std::uint64_t enable_generation) const noexcept;
+    void transition_rumble_for_enable(position_record& position,
+        output::detail::xinput_rumble::transaction* turn,
+        bool next_enabled,
+        enable_generation_transition generations) const noexcept;
+    void maintain_rumble_position(position_record& position,
+        output::detail::xinput_rumble::transaction& turn) const noexcept;
+    static void maintain_enabled_rumble(position_record& position,
+        output::detail::xinput_rumble::transaction& turn,
+        const output::detail::xinput_rumble_key& key) noexcept;
 
     [[nodiscard]] static bool invalidate_event_position(position_record& position,
         guide_wait_state reason) noexcept;
@@ -231,6 +289,7 @@ struct service::implementation final {
     focus::observer& focus;
     metadata_source& metadata;
     event_source* event_source_provider{};
+    std::unique_ptr<::inputnext::output::detail::xinput_rumble> rumble;
     std::optional<detail::keystroke_repeat_timing> repeat_timing;
     std::array<position_record, 4U> positions{};
     std::uint64_t next_assignment{};

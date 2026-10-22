@@ -1,4 +1,7 @@
+#include "gameinput/native/gameinput_value_mapping.hpp"
+
 #include <inputnext/gamepad_state.hpp>
+#include <inputnext/output.hpp>
 
 #include <GameInput.h>
 #include <catch2/catch_test_macros.hpp>
@@ -7,8 +10,6 @@
 #include <cstddef>
 #include <cstring>
 #include <utility>
-
-#include <gameinput/native/gameinput_value_mapping.hpp>
 
 namespace {
 
@@ -84,6 +85,16 @@ TEST_CASE("gameinput.mapping.analog_and_opaque_identifiers", "[gameinput][native
     native_guid.Data4[0] = 0x42U;
     const auto copied_guid = copy_guid(native_guid);
     CHECK(std::memcmp(copied_guid.bytes.data(), &native_guid, sizeof(native_guid)) == 0);
+}
+
+TEST_CASE("gameinput.mapping.rumble_classic_motors_only", "[gameinput][native][unit]") {
+    const auto mapped =
+        map_rumble_value(output::rumble_value{.low_frequency = 0.125F, .high_frequency = 0.875F});
+
+    CHECK(mapped.lowFrequency == 0.125F);
+    CHECK(mapped.highFrequency == 0.875F);
+    CHECK(mapped.leftTrigger == 0.0F);
+    CHECK(mapped.rightTrigger == 0.0F);
 }
 
 } // namespace

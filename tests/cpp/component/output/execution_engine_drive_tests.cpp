@@ -51,6 +51,7 @@ TEST_CASE("output.execution_attempt_uses_real_native_sink_and_exact_completion",
     CHECK(completed.id == command.attempt);
     CHECK(completed.publication == command.publication);
     CHECK(completed.result.status == native_status::accepted);
+    CHECK(completed.output == command.output);
     CHECK(!progress->write_in_flight);
 }
 
@@ -100,16 +101,20 @@ TEST_CASE("output.execution_late_success_does_not_confirm_a_new_publication",
     CHECK(pending->observed_publication.value == 2U);
     const auto previous_completion = pending->last_completed_attempt.value_or(completed_attempt{});
     CHECK(previous_completion.publication.value == 1U);
+    const auto previous_command = sink_state->call(0U);
+    CHECK(previous_completion.output == previous_command.output);
     CHECK(scope.engine().drive_one(*lane));
     const auto current_command = sink_state->call(1U);
     CHECK(current_command.publication == pending->observed_publication);
     CHECK(current_command.output.values.rumble.low_frequency == 0.4F);
     CHECK(current_command.output.values.rumble.high_frequency == 0.7F);
+    CHECK(previous_completion.output != current_command.output);
     auto completed = scope.engine().progress(*backend);
     REQUIRE(completed.has_value());
     CHECK(completed->delivery == delivery_state::setter_accepted);
     const auto latest_completion = completed->last_completed_attempt.value_or(completed_attempt{});
     CHECK(latest_completion.id == current_command.attempt);
+    CHECK(latest_completion.output == current_command.output);
 }
 
 } // namespace

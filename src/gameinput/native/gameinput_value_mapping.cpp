@@ -1,10 +1,12 @@
 #include "gameinput_value_mapping.hpp"
 
-#include <cstring>
-
-#include <GameInput.h>
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/gamepad_state.hpp>
+#include <inputnext/output.hpp>
+
+#include <GameInput.h>
+
+#include <cstring>
 
 namespace inputnext::gameinput_detail {
 namespace {
@@ -84,6 +86,15 @@ gamepad_state map_gamepad_state(const gameinput::GameInputGamepadState& native_s
             stick_state{.x = native_state.rightThumbstickX, .y = native_state.rightThumbstickY},
         .left_trigger = native_state.leftTrigger,
         .right_trigger = native_state.rightTrigger,
+    };
+}
+
+gameinput::GameInputRumbleParams map_rumble_value(output::rumble_value value) noexcept {
+    return gameinput::GameInputRumbleParams{
+        .lowFrequency = value.low_frequency,
+        .highFrequency = value.high_frequency,
+        .leftTrigger = 0.0F,
+        .rightTrigger = 0.0F,
     };
 }
 

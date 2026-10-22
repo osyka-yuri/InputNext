@@ -20,6 +20,16 @@ Each assignment also tracks the greatest committed source revision. An overlappi
 
 Independent history consumers provide [keystrokes and typed Guide waits](xinput-events.md).
 
+## Rumble and controls
+
+With output configured, `set_state` submits rumble for the exact current assignment. Left and right motor strengths normalize independently from 0–65,535 to 0–1. Success means logical acceptance, not native delivery or physical vibration. Zero remains a present intent in normal [output arbitration](output.md).
+
+Disabling XInput revokes that service's contribution and retains its latest qualified request. Requests made while disabled replace the cache. Enabling restores it, including zero, only for the same live assignment and eligible foreground epoch. Focus loss, expiry, reassignment and close invalidate stale rights and cached requests. Cleanup does not revoke independent output owners.
+
+A known background request succeeds without being cached for replay. Unavailable focus or a stale captured assignment, Enable generation or foreground epoch cannot authorize a request. An input-only service returns `ERROR_NOT_SUPPORTED` for a live assignment regardless of focus; argument and connection errors take precedence.
+
+`get_rumble_output_status` reports stored cache and restore status, not delivery. `power_off_controller` returns `ERROR_NOT_SUPPORTED` for a live assignment. The [GameInput rumble composition](gameinput-output.md) supplies native delivery and a foreground diagnostic.
+
 ## Queries
 
 Queries project owned metadata into XInput values. Blocking metadata work and variable-length output copies run outside the presentation gate. Final assignment and connection validation determines which occupant the result belongs to. A metadata failure or mismatched target returns `ERROR_DEVICE_NOT_CONNECTED` without writing outputs.

@@ -23,21 +23,24 @@ namespace inputnext::test::output {
 
 class registry_source final : public source_lifetime {};
 
-class foreground_source final : public focus::source {
+class foreground_source final : public inputnext::focus::source {
 public:
-    explicit foreground_source(focus::process_instance process) noexcept
+    explicit foreground_source(inputnext::focus::process_instance process) noexcept
         : process_(process),
           observations_(0U) {}
 
-    [[nodiscard]] focus::process_instance process() const noexcept override { return process_; }
+    [[nodiscard]] inputnext::focus::process_instance process() const noexcept override {
+        return process_;
+    }
 
-    [[nodiscard]] focus::reading observe() noexcept override {
+    [[nodiscard]] inputnext::focus::reading observe() noexcept override {
         {
             std::scoped_lock lock{mutex_};
             observations_.fetch_add(1U, std::memory_order_release);
         }
         changed_.notify_all();
-        return focus::reading{.process = process_, .state = focus::evidence::foreground};
+        return inputnext::focus::reading{.process = process_,
+            .state = inputnext::focus::evidence::foreground};
     }
 
     [[nodiscard]] std::uint64_t observations() const noexcept {
@@ -53,7 +56,7 @@ public:
     }
 
 private:
-    focus::process_instance process_;
+    inputnext::focus::process_instance process_;
     mutable std::mutex mutex_;
     mutable std::condition_variable changed_;
     std::atomic<std::uint64_t> observations_;
@@ -67,7 +70,8 @@ private:
 
 class authority_fixture final {
 public:
-    explicit authority_fixture(std::byte first = std::byte{0x51U})
+    explicit authority_fixture(std::byte first = std::byte{0x51U},
+        inputnext::output::authority_seed seed = {})
         : runtime(runtime_identity(first)),
           registry(runtime),
           process{.pid = 41U, .creation_time_100ns = 12345U},
@@ -76,7 +80,7 @@ public:
           focus_observer(
               runtime_identity(static_cast<std::byte>(std::to_integer<unsigned int>(first) + 1U)),
               std::move(owned_focus_source)),
-          trusted(runtime, registry, focus_observer),
+          trusted(runtime, registry, focus_observer, seed),
           owner(trusted.public_authority()) {
         auto candidate = std::unique_ptr<source_lifetime>{std::make_unique<registry_source>()};
         auto admitted = registry.admit(candidate);
@@ -87,7 +91,7 @@ public:
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
         while (std::chrono::steady_clock::now() < deadline) {
             const auto observed = focus_observer.published();
-            if (observed.open && observed.state == focus::evidence::foreground) {
+            if (observed.open && observed.state == inputnext::focus::evidence::foreground) {
                 return;
             }
             std::this_thread::yield();
@@ -105,10 +109,10 @@ public:
 
     runtime_id runtime;
     device_registry registry;
-    focus::process_instance process;
+    inputnext::focus::process_instance process;
     std::unique_ptr<foreground_source> owned_focus_source;
     foreground_source* focus_source_view{};
-    focus::observer focus_observer;
+    inputnext::focus::observer focus_observer;
     inputnext::output::detail::composition trusted;
     inputnext::output::authority& owner;
     inputnext::admitted_connection connection;

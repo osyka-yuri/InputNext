@@ -4,6 +4,7 @@
 #include "gameinput/history/source_history_cursor.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/native/native_history.hpp"
+#include "gameinput/native/native_rumble_endpoint.hpp"
 #include "gameinput/reading_parts.hpp"
 #include <inputnext/gamepad_state.hpp>
 #include <inputnext/history.hpp>
@@ -176,6 +177,12 @@ public:
     [[nodiscard]] bool connected(native_device_handle device) noexcept override {
         static_cast<void>(device);
         return true;
+    }
+
+    [[nodiscard]] native_result<std::unique_ptr<native_rumble_endpoint>> create_rumble_endpoint(
+        native_device_handle device) override {
+        static_cast<void>(device);
+        return std::unexpected(native_failure{.cause = native_failure_cause::resource_exhausted});
     }
 
     void retain(native_device_handle device) noexcept override { static_cast<void>(device); }

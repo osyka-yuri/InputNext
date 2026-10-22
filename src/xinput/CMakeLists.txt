@@ -1,5 +1,6 @@
 add_library(inputnext_xinput STATIC
     service.cpp
+    output.cpp
     events.cpp
     event_retrieval.cpp
     guide_wait.cpp
@@ -13,6 +14,9 @@ target_include_directories(inputnext_xinput
     PUBLIC "${PROJECT_SOURCE_DIR}/include"
     PRIVATE "${PROJECT_SOURCE_DIR}/src"
 )
-target_link_libraries(inputnext_xinput PUBLIC inputnext_devices inputnext_focus)
+target_link_libraries(inputnext_xinput
+    PUBLIC inputnext_devices inputnext_focus
+    PRIVATE inputnext_output_authority
+)
 target_compile_definitions(inputnext_xinput INTERFACE WIN32_LEAN_AND_MEAN NOMINMAX)
 inputnext_configure_target(inputnext_xinput)

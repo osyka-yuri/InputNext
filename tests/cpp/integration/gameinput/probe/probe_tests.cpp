@@ -1,5 +1,6 @@
 #include "supervisor.hpp"
 
+#include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
@@ -192,4 +193,26 @@ TEST_CASE("gameinput.probe.supervisor_forwards_xinput_events_option",
     CHECK(output.str().contains("xinput_enabled=true focus_source=current_process"));
     CHECK(output.str().contains("xinput_events_enabled=true"));
     CHECK(output.str().contains("stop=drained"));
+}
+
+TEST_CASE("gameinput.probe.supervisor_forwards_rumble_without_interaction",
+    "[integration][gameinput][probe][rumble]") {
+    const auto result = run_child(L"inputnext_gameinput_probe.exe",
+        {L"--duration-ms", L"150", L"--rumble"},
+        std::chrono::seconds{20});
+
+    INFO("result timed_out=" << result.process.timed_out
+                             << " exit_code=" << result.process.exit_code
+                             << " cleanup_confirmed=" << result.process.cleanup_confirmed);
+    INFO("stdout:\n" << result.output);
+    INFO("stderr:\n" << result.errors);
+    CHECK_FALSE(result.process.timed_out);
+    CHECK(result.process.cleanup_confirmed);
+    CHECK(result.process.exit_code == 4U);
+    CHECK(result.errors.empty());
+    CHECK(result.output.contains("rumble_ui visible=true foreground_forced=false"));
+    CHECK(result.output.contains(
+        "rumble_sequence=not_started reason=user_start_not_clicked xinput_logical_calls=0"));
+    CHECK(result.output.contains("rumble_runtime_stop=drained"));
+    CHECK_FALSE(result.output.contains("rumble_step name="));
 }

@@ -71,8 +71,6 @@ struct execution_engine::implementation final {
     struct drive_action final {
         drive_action_kind kind{drive_action_kind::idle};
         backend_handle backend{};
-        publication_id publication{};
-        attempt_id attempt{};
         native_command command{};
         native_sink* sink{};
         std::unique_ptr<native_sink> cleanup_sink = nullptr;
@@ -120,10 +118,7 @@ struct execution_engine::implementation final {
         lane_selection selection) noexcept;
     [[nodiscard]] drive_action prepare_drive(lane_token token) noexcept;
     void finish_cleanup(lane_token token, backend_handle handle) noexcept;
-    void finish_attempt(backend_handle handle,
-        publication_id publication,
-        attempt_id attempt,
-        native_result result) noexcept;
+    void finish_attempt(const native_command& command, native_result result) noexcept;
     void apply_native_result(backend_record& backend, native_result result) noexcept;
     [[nodiscard]] bool apply_qualification_result(backend_record& backend,
         const execution_result<bool>& result) noexcept;

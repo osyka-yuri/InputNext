@@ -3,6 +3,8 @@
 #include "device_metadata.hpp"
 #include "device_registry.hpp"
 #include "history.hpp"
+#include <inputnext/device_identity.hpp>
+#include <inputnext/input_binding.hpp>
 
 #include <array>
 #include <chrono>
@@ -12,9 +14,6 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
-
-#include <inputnext/device_identity.hpp>
-#include <inputnext/input_binding.hpp>
 
 namespace inputnext {
 
@@ -72,17 +71,24 @@ struct gameinput_stop_report final {
     std::size_t active_metadata_queries{};
     std::size_t active_history_calls{};
     std::size_t pending_history_owners{};
+    std::size_t pending_output_leases{};
+    std::size_t pending_native_cleanup_owners{};
+    bool native_api_cleanup_complete{true};
 };
 
 namespace gameinput_detail {
 class runtime_factory;
-}
+class runtime_output_access;
+class runtime_output_lease;
+} // namespace gameinput_detail
 
 class gameinput_xinput;
 
 // Caller-driven GameInput lifecycle with latest-state and bounded history consumers. The registry
-// must outlive this runtime, all returned read bindings, and every admitted query. No worker is
-// started internally.
+// must outlive this runtime, its returned read bindings, admitted queries, and associated private
+// output access/leases. Destroy that access and release all leases before destroying the runtime.
+// Private output activation may start a cleanup worker before start(); ordinary runtimes remain
+// caller-driven.
 class gameinput_runtime final {
 public:
     gameinput_runtime(device_registry& registry, gameinput_options options);
@@ -109,6 +115,8 @@ private:
     explicit gameinput_runtime(std::unique_ptr<implementation> implementation) noexcept;
 
     friend class gameinput_detail::runtime_factory;
+    friend class gameinput_detail::runtime_output_access;
+    friend class gameinput_detail::runtime_output_lease;
     friend class gameinput_xinput;
 
     std::unique_ptr<implementation> implementation_;

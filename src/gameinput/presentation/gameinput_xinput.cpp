@@ -1,20 +1,24 @@
 #include <inputnext/gameinput_xinput.hpp>
 
+#include "output/xinput/rumble.hpp"
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/error.hpp>
 #include <inputnext/focus.hpp>
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/history.hpp>
+#include <inputnext/xinput.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <new>
 #include <optional>
 #include <span>
 #include <system_error>
+#include <utility>
 
 namespace inputnext {
 namespace {
@@ -55,6 +59,22 @@ gameinput_xinput::gameinput_xinput(gameinput_runtime& runtime,
     std::uint64_t qpc_frequency)
     : runtime_(runtime),
       presentation_(focus, *this, *this, qpc_frequency) {
+}
+
+gameinput_xinput::gameinput_xinput(gameinput_runtime& runtime,
+    focus::observer& focus,
+    std::unique_ptr<output::detail::xinput_rumble> rumble,
+    xinput::presentation_seed seed)
+    : gameinput_xinput(runtime, focus, system_qpc_frequency(), std::move(rumble), seed) {
+}
+
+gameinput_xinput::gameinput_xinput(gameinput_runtime& runtime,
+    focus::observer& focus,
+    std::uint64_t qpc_frequency,
+    std::unique_ptr<output::detail::xinput_rumble> rumble,
+    xinput::presentation_seed seed)
+    : runtime_(runtime),
+      presentation_(focus, *this, *this, qpc_frequency, std::move(rumble), seed) {
 }
 
 gameinput_xinput::~gameinput_xinput() {

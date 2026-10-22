@@ -4,7 +4,7 @@ InputNext is a Windows controller runtime under development. Its native input co
 
 See [native input components](docs/input.md) for publication, ownership, and shutdown contracts.
 
-The [GameInput runtime](docs/gameinput.md) provides native controller discovery, latest state, [independent history readers](docs/history.md), metadata queries, and a supervised diagnostic.
+The [GameInput runtime](docs/gameinput.md) provides native controller discovery, latest state, [independent history readers](docs/history.md), metadata queries, [rumble output](docs/gameinput-output.md), and a supervised diagnostic.
 
 The C++ [XInput presentation](docs/xinput.md) maps connections to four positions with packet tracking, [focus observation](docs/focus.md), logical Enable, metadata queries, and [keystrokes and Guide waits](docs/xinput-events.md).
 
