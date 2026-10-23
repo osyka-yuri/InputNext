@@ -1,0 +1,3 @@
+LIBRARY inputnext_runtime
+EXPORTS
+    input_next_runtime_query_api @1

@@ -69,6 +69,10 @@ Profiles use separate build directories with `-analyze`, `-asan`, or `-ubsan` su
 
 The Address profile requires the MSVC AddressSanitizer component. It disables incompatible runtime checks and incremental linking. Undefined uses the static release CRT and checks C++ sanitizer runtime linkage during configuration. These profiles instrument project targets and Catch2; prebuilt SDK binaries are unchanged.
 
+Undefined pins clang-cl 23.1.3 and verifies both compiler-rt library hashes. Its isolated overflow probe must produce the expected UBSan report and terminate with recovery disabled. An uninstrumented or recovering probe fails this check.
+
+The XInput export test checks the complete PE export tables. Default, Release and Address require only the established InputNext exports. Undefined additionally requires the exact compiler-rt name set in `tests/cpp/integration/xinput/dll/ubsan_runtime_exports.hpp`, independently of its ordinal assignment. Prefix masks and unknown symbols are rejected. Review this list and the runtime hashes in `cmake/Sanitizers.cmake` together when updating LLVM.
+
 Diagnostic test configurations also have matching build and test presets, for example:
 
 ```powershell
@@ -129,6 +133,10 @@ Output policy, authority and native execution also build for both architectures 
 
 Focus observation and XInput presentation also build for both architectures without GameInput. Their native types and current-process focus source use the Windows SDK.
 
+## XInput bundle
+
+See [XInput DLL bundle](xinput-dll.md) for Release build commands, deployment and manual checks. The bundle is omitted when GameInput is disabled.
+
 ## Formatting
 
 The C++ style starts from LLVM with four-space indentation, a 100-column limit, left-aligned pointers and references, and LF line endings. Wrapped parameter and argument lists use one item per line. Includes are sorted within existing blocks; comment text is preserved.
@@ -182,9 +190,13 @@ Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2
 - `tests/cpp/integration/gameinput/presentation` checks GameInput/XInput composition, events, waiter shutdown, and metadata and focus progress during blocked native work, using narrow native and metadata ports.
 - `tests/cpp/integration/gameinput/output` checks rumble delivery, backend admission and retirement, reconnect, capacity, and diagnostic evidence through production runtime, presentation, authority, and executor components with a controlled native port.
 - `tests/cpp/integration/gameinput/probe` checks real child-process supervision and app-local initialization and cleanup.
+- `tests/cpp/unit/runtime/abi` checks private ABI layout, complete tables and pure argument policy.
+- `tests/cpp/component/runtime/bootstrap` checks discovery and owner creation without native startup.
+- `tests/cpp/integration/runtime` checks the real ABI adapters and session composition with controlled native ports, including early Enable, concurrent publication, autonomous progress and retained shutdown owners.
+- `tests/cpp/integration/xinput/dll` checks actual PE exports against independent ABI manifests, facade dispatch, provider lifetime and normal executable imports. Its explicit native probe is separate from ordinary tests.
 - `tests/harness` checks the test runner and its failure cleanup.
 
-The native callback-drain case under `tests/cpp/integration/gameinput/native` requires a physical controller. Run it explicitly as described in [GameInput](gameinput.md). Its exception-handling regression runs an entered callback on a joinable thread in an isolated child process, without a controller. Native runtime, native history adapter, SDK mapping, and process-probe integration tests build for both architectures. Hardware checks remain separate from automatic CTest runs.
+The native callback-drain case under `tests/cpp/integration/gameinput/native` requires a physical controller. Run it explicitly as described in [GameInput](gameinput.md). Its exception-handling regression runs an entered callback on a joinable thread in an isolated child process, without a controller. Native runtime, native history adapter, SDK mapping, process-probe and DLL integration tests build for both architectures. Hardware checks remain separate from automatic CTest runs.
 
 Group cases by behavioral contract and share focused fixtures and synchronization helpers. Concurrency is a test property, not a separate integration level. Workers collect outcomes; assertions run after cleanup and join. Tests use explicit synchronization to reach the required interleaving, with bounded timeouts for failure isolation.
 

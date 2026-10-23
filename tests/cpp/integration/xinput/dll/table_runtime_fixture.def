@@ -1,0 +1,7 @@
+LIBRARY "inputnext_runtime"
+EXPORTS
+    input_next_runtime_query_api @1
+    inputnext_fixture_configure @50
+    inputnext_fixture_get_snapshot @51
+    inputnext_fixture_reset @52
+    inputnext_fixture_get_api @53

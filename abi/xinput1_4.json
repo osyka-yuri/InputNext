@@ -1,0 +1,18 @@
+{
+  "library": "xinput1_4.dll",
+  "version": "1.4",
+  "exports": [
+    { "ordinal": 2, "name": "XInputGetState", "noname": false },
+    { "ordinal": 3, "name": "XInputSetState", "noname": false },
+    { "ordinal": 4, "name": "XInputGetCapabilities", "noname": false },
+    { "ordinal": 5, "name": "XInputEnable", "noname": false },
+    { "ordinal": 7, "name": "XInputGetBatteryInformation", "noname": false },
+    { "ordinal": 8, "name": "XInputGetKeystroke", "noname": false },
+    { "ordinal": 10, "name": "XInputGetAudioDeviceIds", "noname": false },
+    { "ordinal": 100, "name": "XInputGetStateEx", "noname": true },
+    { "ordinal": 101, "name": "XInputWaitForGuideButton", "noname": true },
+    { "ordinal": 102, "name": "XInputCancelGuideButtonWait", "noname": true },
+    { "ordinal": 103, "name": "XInputPowerOffController", "noname": true },
+    { "ordinal": 108, "name": "XInputGetCapabilitiesEx", "noname": true }
+  ]
+}

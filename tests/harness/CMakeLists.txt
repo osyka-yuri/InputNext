@@ -21,3 +21,18 @@ set_tests_properties(harness.failure_cleanup PROPERTIES
     LABELS "harness;integration"
     TIMEOUT 15
 )
+
+if(INPUTNEXT_NATIVE_PROFILE STREQUAL "Undefined")
+    add_executable(inputnext_ubsan_probe ubsan_probe.cpp)
+    inputnext_configure_target(inputnext_ubsan_probe)
+    add_test(NAME harness.ubsan_detects_signed_overflow
+        COMMAND "${CMAKE_COMMAND}"
+            "-DTEST_EXECUTABLE=$<TARGET_FILE:inputnext_ubsan_probe>"
+            "-DRESULT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/results"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/verify_ubsan.cmake"
+    )
+    set_tests_properties(harness.ubsan_detects_signed_overflow PROPERTIES
+        LABELS "harness;integration;sanitizer;ubsan"
+        TIMEOUT 10
+    )
+endif()

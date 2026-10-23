@@ -104,6 +104,7 @@ public:
 
     [[nodiscard]] DWORD
     set_state(flavor version, DWORD user_index, const XINPUT_VIBRATION* vibration);
+    [[nodiscard]] DWORD connection_status(DWORD user_index);
     [[nodiscard]] DWORD power_off_controller(flavor version, DWORD user_index);
     void maintain_output() noexcept;
     [[nodiscard]] std::optional<rumble_output_status> get_rumble_output_status(

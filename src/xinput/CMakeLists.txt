@@ -1,5 +1,6 @@
 add_library(inputnext_xinput STATIC
     service.cpp
+    connection_status.cpp
     output.cpp
     events.cpp
     event_retrieval.cpp

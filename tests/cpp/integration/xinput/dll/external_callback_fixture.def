@@ -1,0 +1,5 @@
+LIBRARY "inputnext_external_callback"
+EXPORTS
+    inputnext_external_get_state @1
+    inputnext_external_copy_api @2
+    inputnext_external_get_api @3

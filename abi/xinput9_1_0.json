@@ -1,0 +1,10 @@
+{
+  "library": "xinput9_1_0.dll",
+  "version": "9.1.0",
+  "exports": [
+    { "ordinal": 2, "name": "XInputGetCapabilities", "noname": false },
+    { "ordinal": 3, "name": "XInputGetDSoundAudioDeviceGuids", "noname": false },
+    { "ordinal": 4, "name": "XInputGetState", "noname": false },
+    { "ordinal": 5, "name": "XInputSetState", "noname": false }
+  ]
+}

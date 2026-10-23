@@ -1,6 +1,7 @@
 #pragma once
 
 #include "xinput/service_state.hpp"
+#include <inputnext/focus.hpp>
 #include <inputnext/history.hpp>
 #include <inputnext/xinput.hpp>
 
@@ -12,6 +13,11 @@ namespace inputnext::xinput::detail {
 struct service_test_access final {
     using prepared_read = service::implementation::prepared_state_read;
     using prepared_rumble = service::implementation::prepared_rumble_request;
+    using presentation_guard = ::inputnext::focus::observer::presentation_guard;
+
+    [[nodiscard]] static presentation_guard lock_presentation(service& instance) {
+        return instance.implementation_->focus.lock_presentation();
+    }
 
     [[nodiscard]] static DWORD
     prepare(service& instance, DWORD user_index, bool include_guide, prepared_read& prepared) {

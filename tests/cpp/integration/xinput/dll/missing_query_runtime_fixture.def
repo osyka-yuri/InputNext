@@ -1,0 +1,5 @@
+LIBRARY "inputnext_runtime"
+EXPORTS
+    inputnext_fixture_configure @50
+    inputnext_fixture_get_snapshot @51
+    inputnext_fixture_reset @52

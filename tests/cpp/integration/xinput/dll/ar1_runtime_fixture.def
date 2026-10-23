@@ -1,0 +1,5 @@
+LIBRARY "inputnext_runtime"
+EXPORTS
+    input_next_runtime_query_api @1
+    inputnext_ar1_get_snapshot @50
+    inputnext_ar1_reset_snapshot @51

@@ -1,0 +1,14 @@
+LIBRARY "xinput1_3"
+EXPORTS
+    XInputGetState=InputNextXInputGetState @2
+    XInputSetState=InputNextXInputSetState @3
+    XInputGetCapabilities=InputNextXInputGetCapabilities @4
+    XInputEnable=InputNextXInputEnable @5
+    XInputGetDSoundAudioDeviceGuids=InputNextXInputGetDSoundAudioDeviceGuids @6
+    XInputGetBatteryInformation=InputNextXInputGetBatteryInformation @7
+    XInputGetKeystroke=InputNextXInputGetKeystroke @8
+    XInputGetStateEx=InputNextXInputGetStateEx @100 NONAME
+    XInputWaitForGuideButton=InputNextXInputWaitForGuideButton @101 NONAME
+    XInputCancelGuideButtonWait=InputNextXInputCancelGuideButtonWait @102 NONAME
+    XInputPowerOffController=InputNextXInputPowerOffController @103 NONAME
+    XInputGetCapabilitiesEx=InputNextXInputGetCapabilitiesEx @108 NONAME
