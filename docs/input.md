@@ -26,6 +26,8 @@ Publication and revocation serialize at the connection gate. A publication commi
 
 A `read_pin` protects a connection's sample storage until the pin is released. It borrows registry storage, so the registry must remain alive through its final release. Retirement closes new read and publication admission. A read completed before that close may return the old connection's sample; a later read is rejected. A retained pin never reads the replacement's state.
 
+`read_binding::validate_capture` checks admission at that instant without acquiring a pin or extending residency.
+
 Releasing the last pin does not destroy the source. `drain_retired`, admission recovery, or shutdown performs final destruction outside the locks used by readers. A slow source destructor can delay other lifecycle operations; reads of other live connections remain independent of it.
 
 ## Shutdown

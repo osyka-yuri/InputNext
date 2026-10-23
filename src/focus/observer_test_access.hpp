@@ -1,10 +1,9 @@
 #pragma once
 
+#include <inputnext/device_identity.hpp>
 #include <inputnext/focus.hpp>
 
 #include <memory>
-
-#include <inputnext/device_identity.hpp>
 
 namespace inputnext::focus::detail {
 
@@ -17,6 +16,7 @@ public:
         clock_callback now,
         const void* clock_context);
     static void seed_counters(observer& target, const snapshot& seed) noexcept;
+    [[nodiscard]] static snapshot stored_snapshot(const observer& target);
 };
 
 } // namespace inputnext::focus::detail

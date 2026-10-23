@@ -495,4 +495,22 @@ TEST_CASE("devices.shutdown_with_inflight_pin", "[component][devices][concurrenc
     CHECK(rejected_source.get() == rejected_pointer);
 }
 
+TEST_CASE("devices.shutdown_after_last_pin_release_does_not_wait_for_a_notification",
+    "[component][devices][concurrency]") {
+    destruction_observer destroyed;
+    device_registry registry{make_runtime()};
+    auto source = make_source(&destroyed);
+    auto admitted = registry.admit(source);
+    REQUIRE(admitted.has_value());
+    auto pin = registry.capture(admitted->target);
+    REQUIRE(pin.has_value());
+
+    pin->release();
+    registry.shutdown();
+
+    CHECK(registry.live_count() == 0U);
+    CHECK(registry.resident_count() == 0U);
+    CHECK(destroyed.call_count() == 1U);
+}
+
 } // namespace

@@ -117,6 +117,8 @@ public:
     presentation_guard& operator=(const presentation_guard&) = delete;
 
     [[nodiscard]] snapshot published() const noexcept;
+    // Captures fresh foreground evidence using one clock sample.
+    [[nodiscard]] std::optional<snapshot> capture_foreground() const noexcept;
     // Captured and current evidence must both be fresh, with identity, evidence, revision, and
     // openness matching.
     [[nodiscard]] bool matches_foreground(const snapshot& captured) const noexcept;

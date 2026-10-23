@@ -142,6 +142,10 @@ TEST_CASE("focus.observer_blocked_poll_preserves_publication_and_discards_after_
         CHECK(closed.state == evidence::background);
         CHECK(closed.native_code == captured.native_code);
         CHECK(closed.completed_observations == captured.completed_observations);
+        {
+            const auto guard = value.lock_presentation();
+            CHECK(!guard.capture_foreground().has_value());
+        }
         const auto successor_after_release = successor.published();
         CHECK(successor_after_release.observer_incarnation == successor_incarnation);
         CHECK(successor_after_release.state == evidence::foreground);

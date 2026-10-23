@@ -109,6 +109,30 @@ TEST_CASE("devices.stale_and_foreign_targets", "[component][devices]") {
     CHECK(registry.resident_count() == 0U);
 }
 
+TEST_CASE("devices.validate_capture_checks_admission_without_extending_residency",
+    "[component][devices]") {
+    device_registry registry{make_runtime()};
+    const read_binding empty_reader;
+    const auto empty_validation = empty_reader.validate_capture();
+    CHECK((!empty_validation.has_value() && empty_validation.error() == error::invalid_argument));
+
+    auto source = make_source();
+    const auto admitted = registry.admit(source);
+    REQUIRE(admitted.has_value());
+    CHECK(admitted->reader.validate_capture().has_value());
+
+    auto pin = admitted->reader.capture();
+    REQUIRE(pin.has_value());
+    CHECK(admitted->reader.validate_capture().has_value());
+    REQUIRE(registry.retire(admitted->target).has_value());
+    const auto retired_validation = admitted->reader.validate_capture();
+    CHECK((!retired_validation.has_value() && retired_validation.error() == error::not_connected));
+
+    pin->release();
+    CHECK(registry.drain_retired() == 1U);
+    CHECK(registry.resident_count() == 0U);
+}
+
 TEST_CASE("devices.failed_admission_is_atomic", "[component][devices]") {
     device_registry registry{make_runtime()};
     std::unique_ptr<source_lifetime> empty_source;

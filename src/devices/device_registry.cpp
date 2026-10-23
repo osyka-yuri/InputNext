@@ -1,22 +1,21 @@
-#include <expected>
 #include <inputnext/device_registry.hpp>
 
 #include "connection_record.hpp"
+#include <inputnext/device_identity.hpp>
+#include <inputnext/error.hpp>
+#include <inputnext/input_binding.hpp>
+#include <inputnext/source_lifetime.hpp>
 
 #include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <utility>
-
-#include <inputnext/device_identity.hpp>
-#include <inputnext/error.hpp>
-#include <inputnext/input_binding.hpp>
-#include <inputnext/source_lifetime.hpp>
 
 namespace inputnext {
 namespace {
@@ -28,14 +27,15 @@ using record_type = detail::connection_record;
 
 [[nodiscard]] bool has_target(record_type& record, connection_target target) {
     std::scoped_lock lock{record.gate};
-    return record.phase == detail::connection_phase::live && record.target == target;
+    return record.phase.load(std::memory_order_seq_cst) == detail::connection_phase::live &&
+           record.target == target;
 }
 
 [[nodiscard]] record_type* find_free_record(
     std::array<record_type, max_resident_connections>& records) {
     for (auto& record : records) {
         std::scoped_lock lock{record.gate};
-        if (record.phase == detail::connection_phase::free) {
+        if (record.phase.load(std::memory_order_seq_cst) == detail::connection_phase::free) {
             return &record;
         }
     }
@@ -60,26 +60,26 @@ void initialize_reserved_record(record_type& record,
     connection_target target,
     std::unique_ptr<source_lifetime>& source) noexcept {
     std::scoped_lock lock{record.gate};
-    record.phase = detail::connection_phase::reserved;
+    record.phase.store(detail::connection_phase::reserved, std::memory_order_seq_cst);
     record.target = target;
-    record.pin_count = 0U;
+    record.pin_count.store(0U, std::memory_order_seq_cst);
     record.latest.emplace(0U);
     record.source = std::move(source);
 }
 
 void activate_record(record_type& record) noexcept {
     std::scoped_lock lock{record.gate};
-    record.phase = detail::connection_phase::live;
+    record.phase.store(detail::connection_phase::live, std::memory_order_seq_cst);
 }
 
 [[nodiscard]] bool close_record(record_type& record, connection_target expected) {
     std::scoped_lock lock{record.gate};
-    if (record.phase != detail::connection_phase::live || record.target != expected ||
-        !record.latest.has_value()) {
+    if (record.phase.load(std::memory_order_seq_cst) != detail::connection_phase::live ||
+        record.target != expected || !record.latest.has_value()) {
         return false;
     }
     record.latest->close();
-    record.phase = detail::connection_phase::retired;
+    record.phase.store(detail::connection_phase::retired, std::memory_order_seq_cst);
     return true;
 }
 
@@ -136,10 +136,12 @@ struct device_registry::storage final {
             std::unique_ptr<source_lifetime> source;
             {
                 std::scoped_lock lock{record.gate};
-                if (record.phase != detail::connection_phase::retired || record.pin_count != 0U) {
+                if (record.phase.load(std::memory_order_seq_cst) !=
+                        detail::connection_phase::retired ||
+                    record.pin_count.load(std::memory_order_seq_cst) != 0U) {
                     continue;
                 }
-                record.phase = detail::connection_phase::draining;
+                record.phase.store(detail::connection_phase::draining, std::memory_order_seq_cst);
                 source = std::move(record.source);
             }
 
@@ -150,7 +152,7 @@ struct device_registry::storage final {
                 record.latest.reset();
                 record.target = {};
                 resident_count.fetch_sub(1U, std::memory_order_relaxed);
-                record.phase = detail::connection_phase::free;
+                record.phase.store(detail::connection_phase::free, std::memory_order_seq_cst);
             }
             ++reclaimed;
         }
@@ -400,10 +402,10 @@ void device_registry::shutdown() {
     state.closed = true;
     state.retire_live_connections();
 
-    for (auto& record : state.records) {
-        std::unique_lock record_lock{record.gate};
-        if (record.phase == detail::connection_phase::retired && record.pin_count != 0U) {
-            record.pins_changed.wait(record_lock, [&record] { return record.pin_count == 0U; });
+    for (auto const& record : state.records) {
+        if (record.phase.load(std::memory_order_seq_cst) == detail::connection_phase::retired) {
+            const auto observed = record.pin_count.load(std::memory_order_seq_cst);
+            record.wait_for_pins(observed);
         }
     }
     static_cast<void>(state.drain_reclaimable());

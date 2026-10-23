@@ -20,9 +20,10 @@ struct connection_snapshot final {
         const connection_snapshot&) noexcept = default;
 };
 
-// A pin keeps its source and sample resident but borrows registry storage. Keep the registry alive
-// while using or releasing the pin; stale identity rejection cannot make post-destruction access safe.
-// Shutdown may overlap pin release; stop external calls and join workers before registry destruction.
+// A pin keeps its source, sample, and target resident but borrows registry storage. Keep the
+// registry alive while using or releasing the pin; stale identity rejection cannot make
+// post-destruction access safe. Shutdown may overlap pin release; stop external calls and join
+// workers before registry destruction.
 class read_pin final {
 public:
     read_pin() noexcept = default;
@@ -60,6 +61,8 @@ public:
     read_binding& operator=(read_binding&&) noexcept = default;
 
     [[nodiscard]] result<read_pin> capture() const;
+    // Checks capture admission at this instant without acquiring a pin or extending residency.
+    [[nodiscard]] result<void> validate_capture() const;
     [[nodiscard]] result<connection_snapshot> read() const;
 
 private:

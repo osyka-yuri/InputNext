@@ -6,6 +6,9 @@ add_executable(inputnext_xinput_component_tests
     service_assignment_tests.cpp
     service_focus_tests.cpp
     service_query_tests.cpp
+    get_state_read_tests.cpp
+    get_state_preparation_tests.cpp
+    get_state_lifecycle_tests.cpp
     connection_status_tests.cpp
     output_tests.cpp
     output_transaction_tests.cpp

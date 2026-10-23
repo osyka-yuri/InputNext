@@ -2,6 +2,10 @@ add_executable(inputnext_device_component_tests
     device_registry_tests.cpp
     device_registry_concurrency_tests.cpp
     device_registry_race_tests.cpp
+    device_pin_release_protocol_tests.cpp
+)
+target_include_directories(inputnext_device_component_tests PRIVATE
+    "${PROJECT_SOURCE_DIR}/src/devices"
 )
 target_link_libraries(inputnext_device_component_tests PRIVATE inputnext_devices Catch2::Catch2WithMain)
 inputnext_configure_target(inputnext_device_component_tests)

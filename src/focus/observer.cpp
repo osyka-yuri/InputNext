@@ -49,6 +49,23 @@ constexpr auto freshness_budget = 250ms;
     return now >= started && now - started < freshness_budget;
 }
 
+[[nodiscard]] snapshot effective_at(snapshot current,
+    std::chrono::steady_clock::time_point sampled_now) noexcept {
+    if (current.state == evidence::unavailable || current.exhausted ||
+        fresh_at(sampled_now, current.observation_started)) {
+        return current;
+    }
+
+    current.state = evidence::unavailable;
+    current.observation_started = {};
+    if (current.revision == std::numeric_limits<std::uint64_t>::max()) {
+        current.exhausted = true;
+    } else {
+        ++current.revision;
+    }
+    return current;
+}
+
 } // namespace
 
 struct observer::implementation final {
@@ -113,21 +130,9 @@ struct observer::implementation final {
         return true;
     }
 
-    void expire_if_needed(std::chrono::steady_clock::time_point sampled_now) noexcept {
-        if (publication.state == evidence::unavailable ||
-            fresh_at(sampled_now, publication.observation_started)) {
-            return;
-        }
-
-        if (advance_revision()) {
-            publication.state = evidence::unavailable;
-            publication.observation_started = {};
-        }
-    }
-
-    [[nodiscard]] snapshot read_publication() noexcept {
-        expire_if_needed(current_time());
-        return publication;
+    [[nodiscard]] snapshot read_publication(
+        std::chrono::steady_clock::time_point sampled_now) const noexcept {
+        return effective_at(publication, sampled_now);
     }
 
     [[nodiscard]] evidence normalize_reading(const reading& reading_value,
@@ -146,7 +151,7 @@ struct observer::implementation final {
     void apply_reading(const reading& reading_value,
         std::chrono::steady_clock::time_point observation_started,
         std::chrono::steady_clock::time_point sampled_now) noexcept {
-        expire_if_needed(sampled_now);
+        publication = effective_at(publication, sampled_now);
 
         if (publication.completed_observations != std::numeric_limits<std::uint64_t>::max()) {
             ++publication.completed_observations;
@@ -199,11 +204,11 @@ struct observer::implementation final {
             const auto reading_value = owned_source->observe();
             {
                 std::scoped_lock lock{presentation_mutex};
-                const auto sampled_now = current_time();
                 if (!publication.open) {
                     return;
                 }
 
+                const auto sampled_now = current_time();
                 apply_reading(reading_value, observation_started, sampled_now);
             }
 
@@ -265,9 +270,8 @@ observer::presentation_guard observer::lock_presentation() const {
 }
 
 snapshot observer::published() const {
-    auto& state = *implementation_;
-    std::scoped_lock lock{state.presentation_mutex};
-    return state.read_publication();
+    const auto guard = lock_presentation();
+    return guard.published();
 }
 
 void observer::stop() {
@@ -304,7 +308,23 @@ observer::presentation_guard& observer::presentation_guard::operator=(
 }
 
 snapshot observer::presentation_guard::published() const noexcept {
-    return implementation_ != nullptr ? implementation_->read_publication() : snapshot{};
+    return implementation_ != nullptr
+               ? implementation_->read_publication(implementation_->current_time())
+               : snapshot{};
+}
+
+std::optional<snapshot> observer::presentation_guard::capture_foreground() const noexcept {
+    if (implementation_ == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto now = implementation_->current_time();
+    const auto current = implementation_->read_publication(now);
+    if (!current.open || current.exhausted || current.state != evidence::foreground ||
+        current.revision == 0U) {
+        return std::nullopt;
+    }
+    return current;
 }
 
 bool observer::presentation_guard::matches_foreground(const snapshot& captured) const noexcept {
@@ -313,12 +333,10 @@ bool observer::presentation_guard::matches_foreground(const snapshot& captured) 
     }
 
     const auto now = implementation_->current_time();
-    implementation_->expire_if_needed(now);
-    const auto& current = implementation_->publication;
+    const auto current = implementation_->read_publication(now);
     if (!captured.open || captured.exhausted || captured.state != evidence::foreground ||
         captured.revision == 0U || !fresh_at(now, captured.observation_started) || !current.open ||
-        current.exhausted || current.state != evidence::foreground || current.revision == 0U ||
-        !fresh_at(now, current.observation_started)) {
+        current.exhausted || current.state != evidence::foreground || current.revision == 0U) {
         return false;
     }
 
@@ -332,7 +350,7 @@ observer::presentation_guard::current_foreground_epoch() const noexcept {
         return std::nullopt;
     }
 
-    const auto current = implementation_->read_publication();
+    const auto current = implementation_->read_publication(implementation_->current_time());
     if (!current.open || current.exhausted || current.state != evidence::foreground ||
         current.revision == 0U) {
         return std::nullopt;
@@ -362,6 +380,12 @@ void detail::observer_test_access::seed_counters(observer& target, const snapsho
     std::scoped_lock lock{state.presentation_mutex};
     state.publication.revision = seed.revision;
     state.publication.completed_observations = seed.completed_observations;
+}
+
+snapshot detail::observer_test_access::stored_snapshot(const observer& target) {
+    const auto& state = *target.implementation_;
+    std::scoped_lock lock{state.presentation_mutex};
+    return state.publication;
 }
 
 } // namespace inputnext::focus

@@ -86,12 +86,18 @@ TEST_CASE("focus.observer_foreground_freshness_expires_at_strict_budget",
         const auto guard = value->lock_presentation();
         clock.advance(249ms);
         CHECK(guard.matches_foreground(captured));
+        if (const auto before_capture = guard.capture_foreground(); before_capture.has_value()) {
+            CHECK(before_capture->revision == captured.revision);
+        } else {
+            FAIL("fresh foreground evidence is missing before strict expiry");
+        }
         const auto before_expiry = guard.published();
         CHECK(before_expiry.state == evidence::foreground);
         CHECK(before_expiry.revision == captured.revision);
 
         clock.advance(1ms);
         CHECK(!guard.matches_foreground(captured));
+        CHECK(!guard.capture_foreground().has_value());
         const auto at_expiry = guard.published();
         CHECK(at_expiry.state == evidence::unavailable);
         CHECK(at_expiry.revision == captured.revision + 1U);
@@ -101,6 +107,39 @@ TEST_CASE("focus.observer_foreground_freshness_expires_at_strict_budget",
         const auto after_expiry = guard.published();
         CHECK(after_expiry.state == evidence::unavailable);
         CHECK(after_expiry.revision == at_expiry.revision);
+    }
+
+    source->release();
+    value->stop();
+}
+
+TEST_CASE("focus.presentation_guard_capture_foreground_expires_at_strict_budget",
+    "[component][focus][freshness]") {
+    manual_clock clock{};
+    const process_instance process{.pid = 82U, .creation_time_100ns = 1011U};
+    auto owned_source = std::make_unique<controlled_source>(process,
+        std::vector{reading{.process = process, .state = evidence::foreground}},
+        2U);
+    auto* const source = owned_source.get();
+    const auto value =
+        make_observer(clock, make_incarnation(std::byte{82U}), std::move(owned_source));
+    const source_release release{*source};
+
+    REQUIRE(wait_for_publication(*value, [](snapshot published) {
+        return published.revision == 1U && published.state == evidence::foreground;
+    }));
+    REQUIRE(source->wait_until_blocked());
+
+    {
+        const auto guard = value->lock_presentation();
+        clock.advance(250ms);
+        CHECK(!guard.capture_foreground().has_value());
+
+        const auto expired = guard.published();
+        CHECK(expired.state == evidence::unavailable);
+        CHECK(expired.revision == 2U);
+        CHECK(expired.observation_started == std::chrono::steady_clock::time_point{});
+        CHECK(!guard.capture_foreground().has_value());
     }
 
     source->release();
@@ -122,6 +161,10 @@ TEST_CASE("focus.observer_background_evidence_expires_at_budget", "[component][f
         return published.revision == 1U && published.state == evidence::background;
     }));
     REQUIRE(source->wait_until_blocked());
+    {
+        const auto guard = value->lock_presentation();
+        CHECK(!guard.capture_foreground().has_value());
+    }
 
     clock.advance(250ms);
     const auto expired = value->published();
@@ -246,8 +289,10 @@ TEST_CASE("focus.guard_moves_keep_gate_and_captured_freshness_independent",
         // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move): verify moved-from guards stay inert.
         const auto moved_from_snapshot = first_guard.published();
         const bool moved_from_match = first_guard.matches_foreground(captured);
+        const auto moved_from_capture = first_guard.capture_foreground();
         CHECK(!moved_from_snapshot.open);
         CHECK(!moved_from_match);
+        CHECK(!moved_from_capture.has_value());
         CHECK(destination_guard.published().observer_incarnation == captured.observer_incarnation);
         CHECK(second->published().observer_incarnation == other_incarnation);
 
@@ -345,6 +390,10 @@ TEST_CASE("focus.observer_expiry_revision_exhaustion_is_sticky", "[component][fo
     CHECK(exhausted.exhausted);
     CHECK(exhausted.state == evidence::unavailable);
     CHECK(exhausted.revision == std::numeric_limits<std::uint64_t>::max());
+    {
+        const auto guard = value->lock_presentation();
+        CHECK(!guard.capture_foreground().has_value());
+    }
 
     source->release();
     REQUIRE(source->wait_for_returned(2U));

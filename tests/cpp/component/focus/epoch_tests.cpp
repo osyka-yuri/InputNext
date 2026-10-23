@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -29,7 +30,7 @@ public:
     [[nodiscard]] reading observe() noexcept override {
         std::unique_lock lock{mutex_};
         const auto call = ++calls_;
-        if (call == blocked_call_) {
+        if (call == blocked_call_ && !all_released_) {
             blocked_call_active_ = call;
             released_ = false;
             changed_.notify_all();
@@ -58,7 +59,12 @@ public:
         changed_.notify_all();
     }
 
-    void release_all() noexcept { release_current(); }
+    void release_all() noexcept {
+        std::scoped_lock lock{mutex_};
+        all_released_ = true;
+        released_ = true;
+        changed_.notify_all();
+    }
 
 private:
     const process_instance process_;
@@ -68,6 +74,22 @@ private:
     std::uint64_t blocked_call_{2U};
     std::uint64_t blocked_call_active_{};
     bool released_{};
+    bool all_released_{};
+};
+
+class source_release final {
+public:
+    explicit source_release(controlled_epoch_source& source) noexcept : source_(source) {}
+
+    ~source_release() { source_.release_all(); }
+
+    source_release(const source_release&) = delete;
+    source_release& operator=(const source_release&) = delete;
+    source_release(source_release&&) = delete;
+    source_release& operator=(source_release&&) = delete;
+
+private:
+    controlled_epoch_source& source_;
 };
 
 [[nodiscard]] runtime_id make_incarnation(std::byte value) noexcept {
@@ -91,6 +113,37 @@ private:
 
 } // namespace
 
+TEST_CASE("focus.epoch_source_cleanup_releases_current_and_future_waits",
+    "[component][focus][concurrency]") {
+    using namespace std::chrono_literals;
+    controlled_epoch_source source{process_instance{.pid = 812U, .creation_time_100ns = 992U}};
+    std::promise<void> completed;
+    const auto completion = completed.get_future();
+    std::jthread reader;
+    const source_release cleanup{source};
+    const auto observe = [&] {
+        for (std::uint32_t index = 0U; index < 3U; ++index) {
+            static_cast<void>(source.observe());
+        }
+        completed.set_value();
+    };
+
+    SECTION("release before entering the selected wait") {
+        source.release_all();
+        reader = std::jthread{observe};
+    }
+    SECTION("scope cleanup releases the current wait") {
+        reader = std::jthread{observe};
+        REQUIRE(source.wait_until_blocked(2U));
+        {
+            const source_release release{source};
+        }
+    }
+    CHECK(completion.wait_for(2s) == std::future_status::ready);
+    source.release_all();
+    reader.join();
+}
+
 TEST_CASE("foreground epoch survives timestamp refresh while captured snapshot lease expires",
     "[component][focus][freshness]") {
     test::focus::manual_clock clock{};
@@ -102,6 +155,7 @@ TEST_CASE("foreground epoch survives timestamp refresh while captured snapshot l
             std::move(source),
             &test::focus::manual_clock::read,
             &clock);
+    const source_release cleanup{*source_view};
 
     REQUIRE(wait_for_publication(*value, [](snapshot published) {
         return published.state == evidence::foreground && published.revision == 1U;

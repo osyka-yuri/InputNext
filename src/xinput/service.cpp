@@ -151,8 +151,11 @@ DWORD service::implementation::prepare_state_read(DWORD user_index,
         }
         prepared.occupant = *position.occupant;
         prepared.reader = position.reader;
-        prepared.focus_word = guard.published();
-        prepared.eligible_at_capture = enabled && guard.matches_foreground(prepared.focus_word);
+        const auto captured_foreground = guard.capture_foreground();
+        if (captured_foreground.has_value()) {
+            prepared.focus_word = *captured_foreground;
+        }
+        prepared.eligible_at_capture = captured_foreground.has_value() && enabled;
     }
 
     if (!prepared.eligible_at_capture) {
@@ -189,13 +192,20 @@ DWORD service::implementation::commit_state_read(const prepared_state_read& prep
             return ERROR_DEVICE_NOT_CONNECTED;
         }
 
-        auto final_capture = prepared.reader.capture();
-        if (!final_capture.has_value()) {
-            return ERROR_DEVICE_NOT_CONNECTED;
-        }
-        final_pin.emplace(std::move(*final_capture));
-        if (final_pin->target() != prepared.occupant.target) {
-            return ERROR_DEVICE_NOT_CONNECTED;
+        if (prepared.sample_pin.has_value()) {
+            if (prepared.sample_pin->target() != prepared.occupant.target ||
+                !prepared.reader.validate_capture().has_value()) {
+                return ERROR_DEVICE_NOT_CONNECTED;
+            }
+        } else {
+            auto final_capture = prepared.reader.capture();
+            if (!final_capture.has_value()) {
+                return ERROR_DEVICE_NOT_CONNECTED;
+            }
+            final_pin.emplace(std::move(*final_capture));
+            if (final_pin->target() != prepared.occupant.target) {
+                return ERROR_DEVICE_NOT_CONNECTED;
+            }
         }
 
         const bool active = prepared.eligible_at_capture && enabled &&

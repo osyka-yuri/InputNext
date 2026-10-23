@@ -8,7 +8,7 @@ Snapshots report `foreground`, `background`, or `unavailable`, together with pro
 
 Initial evidence is unavailable. A missing foreground window, failed process lookup, or mismatched source identity cannot establish foreground eligibility. Revision exhaustion is permanent and makes the observer ineligible. Diagnostic counters saturate instead of wrapping.
 
-Evidence expires 250 ms after the observation starts; an age of exactly 250 ms is expired. Reading publication or checking presentation eligibility applies expiry under the presentation gate, even while the source is blocked. Results aged 250 ms or more at publication cannot renew evidence. Recovery advances the revision, so it cannot authorize a read captured before expiry. A captured snapshot must itself remain fresh even when subsequent observations preserve the same revision.
+Evidence expires 250 ms after the observation starts; an age of exactly 250 ms is expired. Readers project expiry onto their local snapshot, even while the source is blocked. Before accepting another result, the writer applies expiry to the stored evidence. Results aged 250 ms or more at publication cannot renew evidence. Recovery advances the revision, so it cannot authorize a read captured before expiry. A captured snapshot must itself remain fresh even when subsequent observations preserve the same revision.
 
 `foreground_epoch` identifies the observer, process, and foreground revision without retaining an observation timestamp. Guard checks match it against current fresh evidence. Long-lived event consumers use this identity; their in-flight operations still retain the captured snapshot's freshness requirement.
 
@@ -16,7 +16,9 @@ The worker waits nominally 4 ms after each completed observation. The freshness 
 
 ## Synchronization and ownership
 
-Source calls run outside the presentation gate. Publication takes that gate briefly; XInput uses the same gate to check freshness and commit eligibility and packet state. Keep guarded work local and bounded. Perform provider queries, waits, and variable-length copies outside the gate.
+Source calls run outside the presentation gate. Readers and writers access stored evidence under that gate.
+
+XInput captures initial focus and control state together, then reads and translates the input sample outside the gate. Its final guarded turn revalidates eligibility and commits packet state. Keep guarded work local and bounded; perform provider queries, waits, and variable-length copies outside the gate.
 
 `stop()` closes publication, requests worker stop, and joins outside the gate. It is idempotent; serialize calls to it. An in-flight result cannot publish after close, and the owned source remains alive until the worker finishes. An external call that never returns can delay shutdown indefinitely.
 

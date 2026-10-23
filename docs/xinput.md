@@ -8,7 +8,7 @@ Assignment uses the lowest free position. Assigning an already bound connection 
 
 Assignment IDs never wrap or repeat within that instance. Exhaustion rejects new assignments and preserves existing positions. A physical reconnect has a new connection target; assigning the same live connection again after release has a new assignment ID.
 
-`get_state` reads coherent cached input and revalidates the assignment and live connection before committing its result. It performs no GameInput query, history traversal, or focus probe. Invalid arguments, stale assignments, and disconnected sources leave the caller's output unchanged.
+`get_state` captures a coherent assignment, Enable decision, and focus snapshot in one short guarded turn, then reads cached input outside the presentation gate. A final guarded turn revalidates the assignment, live connection, and eligibility before committing the result and packet state. It performs no GameInput query, history traversal, or focus probe. Invalid arguments, stale assignments, and disconnected sources leave the caller's output unchanged.
 
 Disabled, background, unavailable, or expired focus produces neutral input without advancing the packet. A call that captured an ineligible decision stays neutral even if eligibility later returns. An eligible call rechecks focus freshness and Enable before committing. Focus loss or expiry followed by return invalidates an earlier focus capture.
 
