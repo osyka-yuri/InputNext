@@ -1,0 +1,12 @@
+# Place beside the game executable. Restart the game after editing.
+
+[effects.left_trigger]
+mode = "feedback"
+start = 0.20
+strength = 0.60
+
+[effects.right_trigger]
+mode = "weapon"
+start = 0.25
+end = 0.75
+strength = 0.80

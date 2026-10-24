@@ -3,6 +3,7 @@ add_library(inputnext_runtime_session STATIC
     session/native_session_prepare.cpp
     session/native_session_maintenance.cpp
     session/native_session_shutdown.cpp
+    session/native_paths.cpp
 )
 target_include_directories(inputnext_runtime_session
     PUBLIC "${PROJECT_SOURCE_DIR}/include"
@@ -14,6 +15,8 @@ target_link_libraries(inputnext_runtime_session PRIVATE
     inputnext_output_authority
     inputnext_output_execution
     inputnext_focus
+    inputnext_profiles
+    inputnext_profile_application
     ole32
 )
 

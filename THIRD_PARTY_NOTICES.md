@@ -9,6 +9,16 @@
 
 The upstream archive contains the complete license in `LICENSE.txt`. The archive URL and SHA-256 are pinned in `tests/CMakeLists.txt`.
 
+## toml++
+
+- Version: 3.4.0
+- Source: https://github.com/marzer/tomlplusplus/tree/v3.4.0
+- License: [MIT License](licenses/third-party/MIT-tomlplusplus.txt)
+- Use: statically compiled TOML 1.0 parser for per-game profiles.
+
+The archive URL and SHA-256 are pinned in `cmake/Toml.cmake`.
+`cmake/LimitTomlTables.cmake` applies a source-verified table-count limit to protect profile parsing from deeply nested dotted keys.
+
 ## Microsoft GameInput
 
 - Version: 4.0.300

@@ -10,6 +10,8 @@ The C++ [XInput presentation](docs/xinput.md) maps connections to four positions
 
 The C++ [output authority](docs/output.md) owns effect contexts, arbitration, expiry, and acknowledged closure. Its [native executor](docs/output-execution.md) schedules qualified attempts and manages retry and sink lifetime.
 
+[Per-game profiles](docs/profiles.md) configure persistent adaptive-trigger effects from `inputnext.toml` beside the game executable.
+
 See [development setup](docs/development.md) for toolchain requirements and verification commands.
 
 Licensed under the [MIT License](LICENSE). Third-party dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).

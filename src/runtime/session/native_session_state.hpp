@@ -5,6 +5,7 @@
 #include "native_session.hpp"
 #include "native_session_dependencies.hpp"
 #include "output/composition/composition.hpp"
+#include "profiles/application.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_registry.hpp>
 #include <inputnext/focus.hpp>
@@ -39,7 +40,7 @@ struct native_session::implementation final {
     void launch(worker_launcher launcher, void* launcher_context);
     void maintenance_loop() noexcept;
     void request_stop() noexcept;
-    void close_admission_and_presentation() const noexcept;
+    [[nodiscard]] bool close_admission_and_presentation() noexcept;
     void drain_owned_domains() noexcept;
     void shutdown() noexcept;
     void record_stop_report(const gameinput_stop_report& report) noexcept;
@@ -58,8 +59,10 @@ struct native_session::implementation final {
     std::unique_ptr<output::executor> output_executor;
     std::unique_ptr<gameinput_detail::gameinput_output_connections> connections;
     std::unique_ptr<gameinput_xinput> presentation_service;
+    std::unique_ptr<profiles::application> profile_application;
     std::thread worker;
 
+    mutable std::mutex control_gate;
     mutable std::mutex lifecycle_gate;
     std::condition_variable lifecycle_changed;
     bool start_attempted{};

@@ -93,9 +93,16 @@ std::optional<gameinput_failure> native_session::implementation::run_maintenance
     }
 
     const auto inventory = runtime->connections();
-    const auto presented = presentation_service->synchronize(inventory);
-    if (!presented.has_value()) {
-        return unexpected_maintenance_failure();
+    {
+        std::scoped_lock control_lock{control_gate};
+        const auto presented = presentation_service->synchronize(inventory);
+        if (!presented.has_value()) {
+            return should_stop() ? std::nullopt : std::optional{unexpected_maintenance_failure()};
+        }
+        const auto applied = profile_application->maintain();
+        if (applied.terminal && applied.failure.has_value()) {
+            return unexpected_maintenance_failure();
+        }
     }
     if (should_stop()) {
         return std::nullopt;

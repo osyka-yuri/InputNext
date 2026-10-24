@@ -26,17 +26,38 @@ void native_session::implementation::request_stop() noexcept {
     lifecycle_changed.notify_all();
 }
 
-void native_session::implementation::close_admission_and_presentation() const noexcept {
+bool native_session::implementation::close_admission_and_presentation() noexcept {
+    bool closed{};
+    try {
+        std::scoped_lock control_lock{control_gate};
+        bool profile_drained = profile_application == nullptr;
+        try {
+            if (profile_application != nullptr) {
+                profile_drained = profile_application->close().pending_contexts == 0U;
+            }
+        } catch (...) {
+            drain_exception_count.fetch_add(1U, std::memory_order_relaxed);
+        }
+        bool presentation_closed = presentation_service == nullptr;
+        try {
+            if (presentation_service != nullptr) {
+                presentation_service->close();
+                presentation_closed = true;
+            }
+        } catch (...) {
+            drain_exception_count.fetch_add(1U, std::memory_order_relaxed);
+        }
+        closed = profile_drained && presentation_closed;
+    } catch (...) {
+        drain_exception_count.fetch_add(1U, std::memory_order_relaxed);
+    }
     if (runtime_access != nullptr) {
         runtime_access->close_admission();
     }
     if (connections != nullptr) {
         connections->close_admission();
-        connections->request_stop();
     }
-    if (presentation_service != nullptr) {
-        presentation_service->close();
-    }
+    return closed;
 }
 
 void native_session::implementation::drain_owned_domains() noexcept {
@@ -50,7 +71,12 @@ void native_session::implementation::drain_owned_domains() noexcept {
     drain_started.store(true, std::memory_order_release);
     drain_phase.store(native_session_drain_phase::closing_admission, std::memory_order_release);
 
-    close_admission_and_presentation();
+    while (!close_admission_and_presentation()) {
+        std::this_thread::sleep_for(drain_retry_period);
+    }
+    if (output_executor != nullptr) {
+        output_executor->request_drive();
+    }
     drain_phase.store(native_session_drain_phase::stopping_connections, std::memory_order_release);
     if (connections != nullptr) {
         connections->shutdown();
@@ -104,7 +130,7 @@ void native_session::implementation::terminate_after_failure(
         stop_requested = true;
     }
     lifecycle_changed.notify_all();
-    close_admission_and_presentation();
+    static_cast<void>(close_admission_and_presentation());
     drain_owned_domains();
 }
 
@@ -115,7 +141,7 @@ void native_session::implementation::shutdown() noexcept {
     }
 
     request_stop();
-    close_admission_and_presentation();
+    static_cast<void>(close_admission_and_presentation());
     {
         std::unique_lock lock{lifecycle_gate};
         if (start_attempted && !start_completed) {
@@ -128,6 +154,7 @@ void native_session::implementation::shutdown() noexcept {
 
     drain_owned_domains();
 
+    profile_application.reset();
     if (presentation_service != nullptr) {
         presentation_service.reset();
     }

@@ -5,13 +5,16 @@
 #include "gameinput/runtime/factory.hpp"
 #include "gameinput/runtime/output_access.hpp"
 #include "metadata/windows/provider.hpp"
+#include "native_paths.hpp"
 #include "native_session.hpp"
 #include "native_session_dependencies.hpp"
 #include "output/composition/composition.hpp"
+#include "profiles/application.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/focus.hpp>
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/gameinput_xinput.hpp>
+#include <inputnext/output.hpp>
 #include <inputnext/output_executor.hpp>
 
 #include <Windows.h>
@@ -26,21 +29,10 @@
 #include <thread>
 #include <utility>
 
-#include <algorithm>
-
-#include <cstddef>
-
-#include <filesystem>
-
-#include <string>
-
-#include <vector>
-
 namespace inputnext::runtime_detail {
 namespace {
 
-constexpr auto gameinput_filename = L"GameInputRedist.dll";
-constexpr std::size_t module_path_limit = 32768U;
+constexpr output::internal_owner_key profile_owner{0x50524F46494C45ULL};
 
 [[nodiscard]] runtime_id create_runtime_identity() {
     GUID value{};
@@ -54,39 +46,6 @@ constexpr std::size_t module_path_limit = 32768U;
         throw std::runtime_error{"native session runtime identity is invalid"};
     }
     return identity;
-}
-
-[[nodiscard]] std::filesystem::path sibling_gameinput_path() {
-    HMODULE module{};
-    const auto* const address = reinterpret_cast<LPCWSTR>(&sibling_gameinput_path);
-    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-            address,
-            &module) == FALSE) {
-        throw std::system_error(static_cast<int>(GetLastError()),
-            std::system_category(),
-            "GetModuleHandleExW");
-    }
-
-    std::vector<wchar_t> buffer(static_cast<std::size_t>(MAX_PATH));
-    for (;;) {
-        const auto length =
-            GetModuleFileNameW(module, buffer.data(), static_cast<DWORD>(buffer.size()));
-        if (length == 0U) {
-            throw std::system_error(static_cast<int>(GetLastError()),
-                std::system_category(),
-                "GetModuleFileNameW");
-        }
-        if (static_cast<std::size_t>(length) < buffer.size()) {
-            const std::filesystem::path module_path{
-                std::wstring{buffer.data(), static_cast<std::size_t>(length)}};
-            return module_path.parent_path() / gameinput_filename;
-        }
-        if (buffer.size() >= module_path_limit) {
-            throw std::length_error{"native session module path exceeds Windows path limit"};
-        }
-        buffer.resize(std::min<std::size_t>(buffer.size() * 2U, module_path_limit));
-    }
 }
 
 [[nodiscard]] std::uint64_t query_qpc_frequency() {
@@ -163,6 +122,20 @@ std::unique_ptr<native_session> native_session::implementation::prepare(
         state->qpc_frequency,
         std::move(*rumble));
 
+    const auto profile_producer = state->output_composition->make_producer({.owner = profile_owner,
+        .priority = output::internal_priority::game_profile,
+        .ttl = output::ttl_permission::finite_or_indefinite,
+        .foreground = output::foreground_policy::foreground_bound});
+    if (!profile_producer.has_value()) {
+        throw_preparation_failure("native session profile grant creation failed");
+    }
+    state->profile_application = std::make_unique<profiles::application>(*profile_producer,
+        state->presentation_service->presentation());
+    if (state->profile_application->replace_profile(dependencies.profile_settings)
+            .failure.has_value()) {
+        throw_preparation_failure("native session profile configuration is invalid");
+    }
+
     auto connections =
         gameinput_detail::gameinput_output_connections::create(*state->runtime_access,
             *state->output_executor);
@@ -182,7 +155,8 @@ std::unique_ptr<native_session> native_session::implementation::prepare(
 std::unique_ptr<native_session> native_session::prepare() {
     native_session_dependencies options{};
     options.identity = create_runtime_identity();
-    options.runtime_library = sibling_gameinput_path();
+    options.runtime_library = runtime_library_path();
+    options.profile_settings = load_process_profile();
     options.native = gameinput_detail::make_native_gameinput();
     options.metadata = metadata_detail::make_windows_metadata_provider();
     options.focus_source = focus::make_current_process_source();

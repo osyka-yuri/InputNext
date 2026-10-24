@@ -2,6 +2,7 @@
 
 #include "gameinput/native/native_gameinput.hpp"
 #include "metadata/provider.hpp"
+#include "profiles/model.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/focus.hpp>
 
@@ -22,6 +23,7 @@ struct native_session_dependencies final {
     std::unique_ptr<gameinput_detail::native_gameinput> native;
     std::unique_ptr<metadata_provider> metadata;
     std::unique_ptr<focus::source> focus_source;
+    profiles::profile profile_settings;
     worker_launcher launch_worker{};
     void* launch_context{};
 };

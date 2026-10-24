@@ -2,6 +2,7 @@ add_executable(inputnext_runtime_session_tests
     native_session_tests.cpp
     native_session_progress_tests.cpp
     native_session_drain_tests.cpp
+    native_session_profile_tests.cpp
 )
 target_link_libraries(inputnext_runtime_session_tests PRIVATE
     inputnext_runtime_session inputnext_gameinput_probe_support Catch2::Catch2WithMain

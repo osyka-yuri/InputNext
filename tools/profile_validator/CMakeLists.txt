@@ -1,0 +1,4 @@
+add_executable(inputnext_profile_validator main.cpp)
+target_include_directories(inputnext_profile_validator PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(inputnext_profile_validator PRIVATE inputnext_profiles)
+inputnext_configure_target(inputnext_profile_validator)
