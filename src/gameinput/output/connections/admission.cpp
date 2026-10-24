@@ -1,7 +1,10 @@
 #include "state.hpp"
 
+#include "backend_selection.hpp"
 #include "failure.hpp"
+#include "gameinput/dualsense/usb_sink.hpp"
 #include "gameinput/native/native_gameinput.hpp"
+#include "gameinput/output/usb/qualification.hpp"
 #include "gameinput/rumble/rumble_sink.hpp"
 #include "gameinput/runtime/output_access.hpp"
 #include "manager.hpp"
@@ -20,14 +23,6 @@
 #include <optional>
 #include <utility>
 
-#include <array>
-
-#include <span>
-
-#include "schedule.hpp"
-
-#include <inputnext/output.hpp>
-
 namespace inputnext::gameinput_detail {
 namespace {
 
@@ -35,12 +30,6 @@ using connections_failure::executor_control_failure;
 using connections_failure::native_control_failure;
 using connections_failure::protocol_failure;
 using connections_failure::runtime_control_failure;
-
-[[nodiscard]] bool has_rumble_capability(
-    const std::optional<rumble_capabilities>& capabilities) noexcept {
-    return capabilities.has_value() &&
-           (capabilities->low_frequency || capabilities->high_frequency);
-}
 
 [[nodiscard]] bool transient_registration_error(const output::execution_error error) noexcept {
     return error == output::execution_error::resources ||
@@ -50,90 +39,11 @@ using connections_failure::runtime_control_failure;
 
 } // namespace
 
-void gameinput_output_connections::implementation::scan_descriptions() noexcept {
-    std::array<connection_target, desired_capacity> targets{};
-    const auto count = snapshot_descriptions(targets);
-    for (const auto target : std::span{targets}.first(count)) {
-        if (!describe_target(target)) {
-            return;
-        }
-    }
-}
-
-std::size_t gameinput_output_connections::implementation::snapshot_descriptions(
-    std::array<connection_target, desired_capacity>& targets) noexcept {
-    std::scoped_lock lock{gate};
-    if (phase != connection_control_phase::accepting || fallback || admissions_frozen) {
-        return 0U;
-    }
-
-    std::size_t count = 0U;
-    const auto now = clock::now();
-    for (const auto& entry : desired) {
-        if (!connection_schedule::description_due(entry.occupied, now, entry.next_description)) {
-            continue;
-        }
-        targets[count] = entry.target;
-        ++count;
-    }
-    return count;
-}
-
-bool gameinput_output_connections::implementation::describe_target(
-    const connection_target target) noexcept {
-    gameinput_result<output_description> described = std::unexpected{
-        gameinput_failure{.code = gameinput_error::native_failure, .native_code = 0U}};
-    try {
-        described = runtime.describe(target);
-    } catch (const std::bad_alloc&) {
-        described = std::unexpected{
-            gameinput_failure{.code = gameinput_error::resource_exhausted, .native_code = 0U}};
-    } catch (...) {
-        described = std::unexpected{
-            gameinput_failure{.code = gameinput_error::native_failure, .native_code = 0U}};
-    }
-
-    const auto completed = clock::now();
-    if (!described.has_value()) {
-        std::scoped_lock lock{gate};
-        auto* const entry = find_desired_locked(target);
-        if (entry != nullptr && phase == connection_control_phase::accepting) {
-            fail_locked(runtime_control_failure(connection_control_operation::describe,
-                target,
-                described.error()));
-            entry->next_description = completed + std::chrono::milliseconds{64};
-        }
-        return true;
-    }
-    if (described->target != target) {
-        std::scoped_lock lock{gate};
-        fallback_locked(
-            protocol_failure(connection_control_operation::describe, target, std::nullopt));
-        return false;
-    }
-
-    std::scoped_lock lock{gate};
-    auto* const entry = find_desired_locked(target);
-    if (entry == nullptr || phase != connection_control_phase::accepting) {
-        return true;
-    }
-    const bool material_change = entry->description_known &&
-                                 (entry->catalogue_generation != described->catalogue_generation ||
-                                     entry->capabilities != described->capabilities);
-    entry->description_known = true;
-    entry->catalogue_generation = described->catalogue_generation;
-    entry->capabilities = described->capabilities;
-    entry->next_description = completed + std::chrono::milliseconds{64};
-    if (material_change) {
-        reset_retry_locked(*entry);
-        progress_dirty = true;
-    }
-    return true;
-}
-
 void gameinput_output_connections::implementation::attempt_one_creation() noexcept {
     std::size_t slot = resident_capacity;
     connection_target target{};
+    output_backend_kind kind{output_backend_kind::none};
+    std::shared_ptr<usb_output_qualification> qualification;
     {
         std::scoped_lock lock{gate};
         if (phase != connection_control_phase::accepting || fallback || admissions_frozen) {
@@ -142,6 +52,12 @@ void gameinput_output_connections::implementation::attempt_one_creation() noexce
         const auto now = clock::now();
         for (auto& entry : desired) {
             if (!creation_allowed_locked(entry, now)) {
+                continue;
+            }
+            if (entry.selection == output_backend_kind::dualsense_usb &&
+                (entry.qualification == nullptr || entry.qualification->target() != entry.target ||
+                    entry.qualification->catalogue_generation() != entry.catalogue_generation ||
+                    !entry.qualification->admits(entry.target, now))) {
                 continue;
             }
             const bool existing_exact = std::ranges::any_of(backends, [&](const auto& record) {
@@ -163,8 +79,12 @@ void gameinput_output_connections::implementation::attempt_one_creation() noexce
             }
             entry.resource_waiting = false;
             target = entry.target;
+            kind = entry.selection.value_or(output_backend_kind::none);
+            qualification = entry.qualification;
             backends[slot] = backend_record{.state = backend_state::creating,
                 .target = target,
+                .kind = kind,
+                .qualification = qualification,
                 .handle = std::nullopt,
                 .receipt = std::nullopt,
                 .cached_progress = std::nullopt};
@@ -175,12 +95,14 @@ void gameinput_output_connections::implementation::attempt_one_creation() noexce
         }
     }
     if (slot < resident_capacity) {
-        process_one_creation(slot, target);
+        process_one_creation(slot, target, kind, qualification);
     }
 }
 
 void gameinput_output_connections::implementation::process_one_creation(const std::size_t slot,
-    const connection_target target) noexcept {
+    const connection_target target,
+    const output_backend_kind kind,
+    const std::shared_ptr<usb_output_qualification>& qualification) noexcept {
     gameinput_result<runtime_output_lease> reserved = std::unexpected{
         gameinput_failure{.code = gameinput_error::native_failure, .native_code = 0U}};
     try {
@@ -197,7 +119,7 @@ void gameinput_output_connections::implementation::process_one_creation(const st
         return;
     }
 
-    process_reserved_candidate(slot, target, std::move(*reserved));
+    process_reserved_candidate(slot, target, kind, qualification, std::move(*reserved));
 }
 
 void gameinput_output_connections::implementation::handle_reserve_failure(const std::size_t slot,
@@ -220,13 +142,30 @@ void gameinput_output_connections::implementation::handle_reserve_failure(const 
 }
 
 bool gameinput_output_connections::implementation::candidate_may_proceed(
-    const connection_target target) noexcept {
+    const connection_target target,
+    const output_backend_kind kind,
+    const std::shared_ptr<usb_output_qualification>& qualification) noexcept {
     std::scoped_lock lock{gate};
-    auto const* const entry = find_desired_locked(target);
-    return entry != nullptr && phase == connection_control_phase::accepting && !fallback &&
-           !admissions_frozen && entry->description_known &&
-           has_rumble_capability(entry->capabilities) &&
-           !has_same_device_predecessor_locked(target);
+    return candidate_allowed_locked(target, kind, qualification);
+}
+
+bool gameinput_output_connections::implementation::candidate_allowed_locked(
+    const connection_target target,
+    const output_backend_kind kind,
+    const std::shared_ptr<usb_output_qualification>& qualification) const noexcept {
+    const auto* const entry = find_desired_locked(target);
+    if (entry == nullptr || phase != connection_control_phase::accepting || fallback ||
+        admissions_frozen || !entry->description_known || entry->selection != kind ||
+        kind == output_backend_kind::none || has_same_device_predecessor_locked(target)) {
+        return false;
+    }
+    if (kind == output_backend_kind::dualsense_usb) {
+        return qualification != nullptr && entry->qualification == qualification &&
+               qualification->target() == target &&
+               qualification->catalogue_generation() == entry->catalogue_generation &&
+               qualification->admits(target, clock::now());
+    }
+    return qualification == nullptr;
 }
 
 void gameinput_output_connections::implementation::cancel_candidate(const std::size_t slot,
@@ -244,15 +183,17 @@ void gameinput_output_connections::implementation::cancel_candidate(const std::s
 void gameinput_output_connections::implementation::process_reserved_candidate(
     const std::size_t slot,
     const connection_target target,
+    const output_backend_kind kind,
+    const std::shared_ptr<usb_output_qualification>& qualification,
     runtime_output_lease lease) noexcept {
-    if (!candidate_may_proceed(target)) {
+    if (!candidate_may_proceed(target, kind, qualification)) {
         lease = runtime_output_lease{};
         cancel_candidate(slot, target);
         return;
     }
 
     bool threw = false;
-    auto made = make_candidate(std::move(lease), threw);
+    auto made = make_candidate(std::move(lease), kind, qualification, threw);
     if (!made.has_value()) {
         handle_candidate_failure(slot, target, made.error(), threw);
         return;
@@ -266,18 +207,27 @@ void gameinput_output_connections::implementation::process_reserved_candidate(
         complete_candidate_locked(slot);
         return;
     }
-    if (!mark_candidate_registering(slot, target)) {
+    if (!mark_candidate_registering(slot, target, kind, qualification)) {
         candidate.reset();
         cancel_candidate(slot, target);
         return;
     }
-    register_candidate(slot, target, std::move(candidate));
+    register_candidate(slot, target, kind, qualification, std::move(candidate));
 }
 
 native_result<std::unique_ptr<output::native_sink>>
 gameinput_output_connections::implementation::make_candidate(runtime_output_lease lease,
+    const output_backend_kind kind,
+    std::shared_ptr<usb_output_qualification> qualification,
     bool& threw) noexcept {
     try {
+        if (kind == output_backend_kind::dualsense_usb) {
+            auto sink = dualsense::make_dualsense_usb_sink(std::move(lease));
+            if (!sink.has_value()) {
+                return std::unexpected{sink.error()};
+            }
+            return make_qualified_usb_sink(std::move(*sink), std::move(qualification));
+        }
         return make_rumble_sink(std::move(lease));
     } catch (const std::bad_alloc&) {
         return std::unexpected{native_failure{.cause = native_failure_cause::resource_exhausted,
@@ -317,13 +267,14 @@ void gameinput_output_connections::implementation::handle_candidate_failure(cons
 
 bool gameinput_output_connections::implementation::mark_candidate_registering(
     const std::size_t slot,
-    const connection_target target) noexcept {
+    const connection_target target,
+    const output_backend_kind kind,
+    const std::shared_ptr<usb_output_qualification>& qualification) noexcept {
     std::scoped_lock lock{gate};
-    auto const* const entry = find_desired_locked(target);
-    const bool may_register = entry != nullptr && phase == connection_control_phase::accepting &&
-                              !fallback && !admissions_frozen && entry->description_known &&
-                              has_rumble_capability(entry->capabilities) &&
-                              !has_same_device_predecessor_locked(target);
+    const bool may_register =
+        slot < backends.size() && backends[slot].state == backend_state::creating &&
+        backends[slot].target == target && backends[slot].qualification == qualification &&
+        candidate_allowed_locked(target, kind, qualification);
     if (may_register) {
         backends[slot].state = backend_state::registering;
     }
@@ -332,12 +283,14 @@ bool gameinput_output_connections::implementation::mark_candidate_registering(
 
 void gameinput_output_connections::implementation::register_candidate(const std::size_t slot,
     const connection_target target,
+    const output_backend_kind kind,
+    const std::shared_ptr<usb_output_qualification>& qualification,
     std::unique_ptr<output::native_sink> candidate) noexcept {
     output::execution_result<output::backend_handle> registered =
         std::unexpected{output::execution_error::resources};
     bool threw = false;
     try {
-        registered = executor.register_backend(target, candidate, output::rumble_mask);
+        registered = executor.register_backend(target, candidate, represented_channels(kind));
     } catch (...) {
         threw = true;
     }
@@ -360,7 +313,7 @@ void gameinput_output_connections::implementation::register_candidate(const std:
             return;
         }
 
-        publish_registered_candidate(slot, target, handle);
+        publish_registered_candidate(slot, target, handle, qualification);
         return;
     }
 
@@ -391,10 +344,17 @@ void gameinput_output_connections::implementation::retain_unresolved_candidate(
 void gameinput_output_connections::implementation::publish_registered_candidate(
     const std::size_t slot,
     const connection_target target,
-    const output::backend_handle handle) noexcept {
+    const output::backend_handle handle,
+    const std::shared_ptr<usb_output_qualification>& qualification) noexcept {
     {
         std::scoped_lock lock{gate};
         auto& record = backends[slot];
+        if (record.state != backend_state::registering || record.target != target ||
+            record.qualification != qualification) {
+            fallback_locked(
+                protocol_failure(connection_control_operation::register_backend, target, handle));
+            return;
+        }
         record.state = backend_state::current;
         record.target = target;
         record.handle = handle;

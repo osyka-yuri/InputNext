@@ -34,10 +34,13 @@ target_link_libraries(inputnext_gameinput_core
 )
 inputnext_configure_target(inputnext_gameinput_core)
 
+add_subdirectory(dualsense)
+
 if(INPUTNEXT_BUILD_GAMEINPUT)
     include("${PROJECT_SOURCE_DIR}/cmake/GameInput.cmake")
     add_library(inputnext_gameinput_native STATIC
         native/windows_gameinput.cpp
+        native/windows_raw_output_report.cpp
         native/windows_history_cursor.cpp
         native/native_history_cursor.cpp
         native/gameinput_value_mapping.cpp
@@ -75,15 +78,19 @@ if(INPUTNEXT_BUILD_GAMEINPUT)
     add_library(inputnext_gameinput_output STATIC
         output/connections/manager.cpp
         output/connections/worker.cpp
+        output/connections/description.cpp
+        output/connections/qualification.cpp
         output/connections/admission.cpp
         output/connections/retirement.cpp
+        output/usb/qualification.cpp
     )
     target_include_directories(inputnext_gameinput_output
         PUBLIC "${PROJECT_SOURCE_DIR}/include"
         PRIVATE "${PROJECT_SOURCE_DIR}/src"
     )
     target_link_libraries(inputnext_gameinput_output
-        PUBLIC inputnext_gameinput_runtime inputnext_gameinput_rumble inputnext_output_execution
+        PUBLIC inputnext_gameinput_runtime inputnext_gameinput_rumble
+            inputnext_gameinput_dualsense_usb inputnext_output_execution
     )
     inputnext_configure_target(inputnext_gameinput_output)
 

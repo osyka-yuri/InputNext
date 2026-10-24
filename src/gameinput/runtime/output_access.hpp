@@ -1,9 +1,11 @@
 #pragma once
 
 #include "gameinput/native/native_gameinput.hpp"
+#include "gameinput/native/native_raw_output_report.hpp"
 #include "gameinput/native/native_rumble_endpoint.hpp"
 #include "owner_identity.hpp"
 #include <inputnext/device_identity.hpp>
+#include <inputnext/device_metadata.hpp>
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/input_binding.hpp>
 
@@ -26,6 +28,7 @@ struct output_description final {
     connection_target target{};
     std::uint64_t catalogue_generation{};
     std::optional<rumble_capabilities> capabilities{std::nullopt};
+    std::optional<metadata_device_model> model{std::nullopt};
 };
 
 class runtime_output_lease final {
@@ -44,6 +47,7 @@ public:
 
     [[nodiscard]] native_result<std::unique_ptr<native_rumble_endpoint>>
     create_rumble_endpoint() const;
+    [[nodiscard]] raw_report_result create_raw_output_report(std::uint32_t report_id) const;
 
 private:
     friend class runtime_output_access;
@@ -75,6 +79,8 @@ public:
     runtime_output_access& operator=(runtime_output_access&&) = delete;
 
     [[nodiscard]] gameinput_result<output_description> describe(connection_target target) const;
+    [[nodiscard]] metadata_result<bool> qualify_dualsense_usb(connection_target target,
+        std::uint64_t expected_catalogue_generation) const;
     [[nodiscard]] gameinput_result<runtime_output_lease> reserve(connection_target target);
     void close_admission() noexcept;
 

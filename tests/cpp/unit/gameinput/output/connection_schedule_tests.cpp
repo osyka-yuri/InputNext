@@ -24,7 +24,7 @@ TEST_CASE("gameinput.output.connection_schedule_retries_after_latest_active_gate
         .admissions_frozen = false,
         .occupied = true,
         .description_known = true,
-        .has_rumble_capability = true,
+        .has_output_backend = true,
         .retry_blocked = false};
 
     SECTION("both deadlines are future") {
@@ -69,21 +69,21 @@ TEST_CASE("gameinput.output.connection_schedule_retries_after_latest_active_gate
                                         .admissions_frozen = false,
                                         .occupied = true,
                                         .description_known = false,
-                                        .has_rumble_capability = true,
+                                        .has_output_backend = true,
                                         .retry_blocked = false},
             creation_state{.accepting = true,
                 .fallback = false,
                 .admissions_frozen = false,
                 .occupied = true,
                 .description_known = true,
-                .has_rumble_capability = false,
+                .has_output_backend = false,
                 .retry_blocked = false},
             creation_state{.accepting = true,
                 .fallback = false,
                 .admissions_frozen = false,
                 .occupied = true,
                 .description_known = true,
-                .has_rumble_capability = true,
+                .has_output_backend = true,
                 .retry_blocked = true}};
         for (const auto gates : ineligible) {
             auto nearest = std::optional{description_due_time};

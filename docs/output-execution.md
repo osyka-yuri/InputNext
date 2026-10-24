@@ -1,6 +1,6 @@
 # Native output execution
 
-`inputnext_output_execution` drives the desired state held by the [output authority](output.md). It schedules qualified native calls and manages retries and sink lifetimes. It builds for x64 and x86 without GameInput. The [GameInput rumble adapter](gameinput-output.md) supplies native output separately.
+`inputnext_output_execution` drives the desired state held by the [output authority](output.md). It schedules qualified native calls and manages retries and sink lifetimes. It builds for x64 and x86 without GameInput. The [GameInput output adapters](gameinput-output.md) supply native output separately.
 
 The public interfaces are [output_executor.hpp](../include/inputnext/output_executor.hpp), [native_output.hpp](../include/inputnext/native_output.hpp) and [output_execution.hpp](../include/inputnext/output_execution.hpp).
 

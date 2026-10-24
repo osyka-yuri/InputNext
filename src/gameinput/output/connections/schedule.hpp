@@ -19,7 +19,7 @@ struct creation_state final {
     bool admissions_frozen{};
     bool occupied{};
     bool description_known{};
-    bool has_rumble_capability{};
+    bool has_output_backend{};
     bool retry_blocked{};
 };
 
@@ -32,7 +32,7 @@ struct retry_state final {
 
 [[nodiscard]] constexpr bool can_attempt_creation(const creation_state state) noexcept {
     return state.accepting && !state.fallback && !state.admissions_frozen && state.occupied &&
-           state.description_known && state.has_rumble_capability && !state.retry_blocked;
+           state.description_known && state.has_output_backend && !state.retry_blocked;
 }
 
 inline void include_creation_deadline(std::optional<time_point>& nearest,

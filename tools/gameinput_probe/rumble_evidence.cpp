@@ -22,9 +22,11 @@ rumble_native_evidence assess_native_evidence(const rumble_step& step,
     if (!expected_backend.valid() || !observation.progress.backend.valid()) {
         return rumble_native_evidence::pending;
     }
+    const auto represented = observation.progress.represented_channels;
     if (observation.progress.backend != expected_backend ||
         observation.progress.phase != output::backend_phase::current ||
-        (observation.progress.represented_channels & output::rumble_mask) == 0U) {
+        (represented != output::rumble_mask && represented != output::supported_channel_mask) ||
+        observation.progress.unsupported_channels != 0U) {
         return rumble_native_evidence::rejected;
     }
 
@@ -50,8 +52,9 @@ rumble_native_evidence assess_native_evidence(const rumble_step& step,
         attempt.result.status != output::native_status::accepted) {
         return rumble_native_evidence::pending;
     }
-    if (attempt.output.channels != output::rumble_mask ||
-        attempt.output.values.rumble != expected_value) {
+    output::native_output expected_output{.channels = represented};
+    expected_output.values.rumble = expected_value;
+    if (attempt.output != expected_output) {
         return rumble_native_evidence::pending;
     }
 

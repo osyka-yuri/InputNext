@@ -1,5 +1,6 @@
 #include "state.hpp"
 
+#include "backend_selection.hpp"
 #include "failure.hpp"
 #include "manager.hpp"
 #include <inputnext/output_execution.hpp>
@@ -10,8 +11,6 @@
 #include <mutex>
 #include <optional>
 #include <span>
-
-#include <inputnext/output.hpp>
 
 namespace inputnext::gameinput_detail {
 namespace {
@@ -129,9 +128,7 @@ gameinput_output_connections::implementation::query_backend_progress(
         fail_locked(failure);
         return backend_scan_step::skip_backend;
     }
-    if (current->backend != handle || !valid_backend_phase(current->phase) ||
-        (current->represented_channels & output::rumble_mask) == 0U ||
-        (current->unsupported_channels & output::rumble_mask) != 0U) {
+    if (current->backend != handle || !valid_backend_phase(current->phase)) {
         std::scoped_lock lock{gate};
         fallback_locked(protocol_failure(connection_control_operation::progress_backend,
             handle.target,
@@ -153,6 +150,14 @@ gameinput_output_connections::implementation::cache_backend_progress(const std::
     if (record.handle != handle || record.state == backend_state::terminal_unresolved) {
         return backend_scan_step::skip_backend;
     }
+    const auto expected_channels = represented_channels(record.kind);
+    if (expected_channels == 0U || progress.represented_channels != expected_channels ||
+        (progress.unsupported_channels & expected_channels) != 0U) {
+        fallback_locked(protocol_failure(connection_control_operation::progress_backend,
+            handle.target,
+            handle));
+        return backend_scan_step::stop_scan;
+    }
     if (record.receipt.has_value() && progress.phase == output::backend_phase::current) {
         fallback_locked(protocol_failure(connection_control_operation::progress_backend,
             handle.target,
@@ -161,7 +166,7 @@ gameinput_output_connections::implementation::cache_backend_progress(const std::
     }
     publish_backend_progress_locked(slot, progress);
     receipt = record.receipt;
-    retire = should_retire_locked(record.target);
+    retire = should_retire_locked(record);
     return backend_scan_step::progress_ready;
 }
 

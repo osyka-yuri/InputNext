@@ -1,11 +1,15 @@
 #include "output_access.hpp"
 
 #include "gameinput/native/native_gameinput.hpp"
+#include "gameinput/native/native_raw_output_report.hpp"
 #include "gameinput/native/native_rumble_endpoint.hpp"
+#include "metadata/policy.hpp"
 #include "owner_identity.hpp"
 #include "state.hpp"
 #include <inputnext/device_identity.hpp>
+#include <inputnext/device_metadata.hpp>
 #include <inputnext/gameinput_runtime.hpp>
+#include <inputnext/output_execution.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -92,7 +96,8 @@ gameinput_result<output_description> runtime_output_access::describe(
 
     output_description description{.target = target,
         .catalogue_generation = 0U,
-        .capabilities = std::nullopt};
+        .capabilities = std::nullopt,
+        .model = std::nullopt};
     {
         std::scoped_lock catalogue_lock{implementation.catalogue_gate};
         const auto* const entry = implementation.find_catalogue(target, slot_generation);
@@ -104,6 +109,10 @@ gameinput_result<output_description> runtime_output_access::describe(
                     .low_frequency = facts.low_frequency_rumble,
                     .high_frequency = facts.high_frequency_rumble,
                 };
+            }
+            const auto model = metadata_detail::classify_device_model(entry->facts);
+            if (model.has_value()) {
+                description.model = model.value;
             }
         }
     }
@@ -118,6 +127,33 @@ gameinput_result<output_description> runtime_output_access::describe(
         }
     }
     return description;
+}
+
+metadata_result<bool> runtime_output_access::qualify_dualsense_usb(const connection_target target,
+    const std::uint64_t expected_catalogue_generation) const {
+    if (!target.valid() || runtime_ == nullptr || runtime_->implementation_ == nullptr) {
+        return std::unexpected(metadata_error::not_connected);
+    }
+
+    auto queried = runtime_->query_metadata(target);
+    if (!queried.has_value()) {
+        return std::unexpected(queried.error());
+    }
+    if (queried->target != target ||
+        queried->catalogue_generation != expected_catalogue_generation) {
+        return std::unexpected(metadata_error::stale);
+    }
+    if (queried->container_id_source == container_id_provenance::conflicting ||
+        !queried->model.has_value() ||
+        (queried->model.value != metadata_device_model::dualsense &&
+            queried->model.value != metadata_device_model::dualsense_edge) ||
+        !queried->transport.has_value() ||
+        queried->transport.value.value != physical_transport::usb) {
+        return false;
+    }
+
+    return queried->transport.value.provenance == transport_provenance::native_bus_type ||
+           queried->transport.value.provenance == transport_provenance::native_enumerator;
 }
 
 gameinput_result<runtime_output_lease> runtime_output_access::reserve(connection_target target) {
@@ -259,6 +295,39 @@ runtime_output_lease::create_rumble_endpoint() const {
         return std::unexpected(native_failure{.cause = native_failure_cause::resource_exhausted});
     } catch (...) {
         return std::unexpected(native_failure{.cause = native_failure_cause::native_failure});
+    }
+}
+
+raw_report_result runtime_output_lease::create_raw_output_report(
+    const std::uint32_t report_id) const {
+    if (runtime_ == nullptr || runtime_->implementation_ == nullptr || !target_.valid() ||
+        !device_.valid()) {
+        return std::unexpected(
+            output::native_result{.status = output::native_status::disconnected});
+    }
+
+    auto& implementation = *runtime_->implementation_;
+    {
+        std::scoped_lock table_lock{implementation.table_gate};
+        if (slot_index_ >= implementation.owners.size()) {
+            return std::unexpected(
+                output::native_result{.status = output::native_status::disconnected});
+        }
+        const auto& owner = implementation.owners[slot_index_];
+        if (owner.generation != generation_ || owner.target != target_ || owner.device != device_ ||
+            owner.output_leases != 1U ||
+            owner.state == gameinput_runtime::implementation::owner_phase::free ||
+            !implementation.output_enabled || implementation.native == nullptr) {
+            return std::unexpected(
+                output::native_result{.status = output::native_status::disconnected});
+        }
+    }
+
+    try {
+        return implementation.native->create_raw_output_report(device_, report_id);
+    } catch (...) {
+        return std::unexpected(
+            output::native_result{.status = output::native_status::retryable_failure});
     }
 }
 

@@ -7,6 +7,7 @@
 #include "gameinput/native/native_history.hpp"
 #include "gameinput/reading_parts.hpp"
 #include "metadata/provider.hpp"
+#include "runtime/session/native_session.hpp"
 #include "runtime/session/native_session_dependencies.hpp"
 #include "support/focus/controlled_source.hpp"
 #include <inputnext/device_metadata.hpp>
@@ -31,8 +32,6 @@
 #include <thread>
 #include <utility>
 #include <vector>
-
-#include <runtime/session/native_session.hpp>
 
 namespace inputnext::runtime_session_test_support {
 
@@ -210,6 +209,8 @@ public:
         auto port = std::make_unique<counted_native_port>(initialize_calls, destruction_counts);
         native = port.get();
         native->fake->device_facts = runtime_fixture::native_facts(u"session-endpoint");
+        native->fake->device_facts.vendor_id.value = 0x045EU;
+        native->fake->device_facts.product_id.value = 0x02FDU;
         native->fake->device_facts.gameinput_capabilities =
             metadata_field<native_gameinput_capabilities>{
                 .availability = metadata_availability::available,

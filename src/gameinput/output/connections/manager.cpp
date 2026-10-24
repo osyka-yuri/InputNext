@@ -119,6 +119,7 @@ gameinput_result<void> gameinput_output_connections::synchronize(
             return std::unexpected{runtime_failure(gameinput_error::resource_exhausted)};
         }
 
+        const auto current_targets = std::span{targets}.first(target_count);
         std::array<implementation::desired_record, implementation::desired_capacity> next{};
         for (std::size_t index = 0U; index < target_count; ++index) {
             const auto existing =
@@ -132,8 +133,18 @@ gameinput_result<void> gameinput_output_connections::synchronize(
             next[index].occupied = true;
             next[index].target = targets[index];
             next[index].next_description = implementation::clock::time_point::min();
+            next[index].next_qualification = implementation::clock::time_point::min();
         }
-        implementation_->desired = next;
+        for (const auto& entry : implementation_->desired) {
+            if (!entry.occupied ||
+                std::ranges::find(current_targets, entry.target) != current_targets.end()) {
+                continue;
+            }
+            if (entry.qualification != nullptr) {
+                entry.qualification->revoke();
+            }
+        }
+        implementation_->desired = std::move(next);
         implementation_->inventory_dirty = true;
         implementation_->progress_dirty = true;
         implementation_->changed.notify_one();
@@ -161,6 +172,16 @@ void gameinput_output_connections::request_stop() noexcept {
             implementation_->phase == connection_control_phase::needs_executor_shutdown ||
             implementation_->control_finished) {
             return;
+        }
+        for (auto const& entry : implementation_->desired) {
+            if (entry.qualification != nullptr) {
+                entry.qualification->revoke();
+            }
+        }
+        for (auto const& backend : implementation_->backends) {
+            if (backend.qualification != nullptr) {
+                backend.qualification->revoke();
+            }
         }
         implementation_->phase = connection_control_phase::stopping;
         implementation_->desired = {};
@@ -192,6 +213,20 @@ std::optional<output::backend_progress> gameinput_output_connections::backend_pr
         }
     }
     return retiring == nullptr ? std::nullopt : retiring->cached_progress;
+}
+
+std::optional<output::backend_progress> gameinput_output_connections::query_backend_progress(
+    const connection_target target) const noexcept {
+    const auto managed = backend_progress(target);
+    if (!managed.has_value()) {
+        return std::nullopt;
+    }
+    try {
+        const auto current = implementation_->executor.progress(managed->backend);
+        return current.has_value() ? std::optional{*current} : std::nullopt;
+    } catch (...) {
+        return std::nullopt;
+    }
 }
 
 void gameinput_output_connections::shutdown() noexcept {

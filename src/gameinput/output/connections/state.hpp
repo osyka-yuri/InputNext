@@ -1,10 +1,13 @@
 #pragma once
 
+#include "backend_selection.hpp"
 #include "gameinput/native/native_gameinput.hpp"
+#include "gameinput/output/usb/qualification.hpp"
 #include "gameinput/runtime/output_access.hpp"
 #include "manager.hpp"
 #include "schedule.hpp"
 #include <inputnext/device_identity.hpp>
+#include <inputnext/device_metadata.hpp>
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/native_output.hpp>
 #include <inputnext/output_execution.hpp>
@@ -49,7 +52,11 @@ struct gameinput_output_connections::implementation final {
         bool description_known{};
         std::uint64_t catalogue_generation{};
         std::optional<rumble_capabilities> capabilities{std::nullopt};
+        std::optional<metadata_device_model> model{std::nullopt};
+        std::optional<output_backend_kind> selection{std::nullopt};
         clock::time_point next_description;
+        clock::time_point next_qualification;
+        std::shared_ptr<usb_output_qualification> qualification;
         std::uint8_t retry_level{};
         bool retry_armed{};
         clock::time_point retry_due;
@@ -61,9 +68,17 @@ struct gameinput_output_connections::implementation final {
     struct backend_record final {
         backend_state state{backend_state::free};
         connection_target target{};
+        output_backend_kind kind{output_backend_kind::none};
+        std::shared_ptr<usb_output_qualification> qualification;
         std::optional<output::backend_handle> handle{std::nullopt};
         std::optional<output::retirement_receipt> receipt{std::nullopt};
         std::optional<output::backend_progress> cached_progress{std::nullopt};
+    };
+
+    struct qualification_request final {
+        connection_target target{};
+        std::uint64_t catalogue_generation{};
+        std::shared_ptr<usb_output_qualification> qualification;
     };
 
     implementation(runtime_output_access& runtime_access,
@@ -103,19 +118,43 @@ struct gameinput_output_connections::implementation final {
     [[nodiscard]] std::size_t snapshot_descriptions(
         std::array<connection_target, desired_capacity>& targets) noexcept;
     [[nodiscard]] bool describe_target(connection_target target) noexcept;
+    void scan_qualifications() noexcept;
+    [[nodiscard]] std::size_t snapshot_qualifications(
+        std::array<qualification_request, desired_capacity>& requests) noexcept;
+    [[nodiscard]] desired_record* current_qualification_locked(
+        const qualification_request& request) noexcept;
+    void reject_qualification(const qualification_request& request,
+        std::optional<metadata_error> failure,
+        bool known_ineligible) noexcept;
+    void qualify_selection(const qualification_request& request) noexcept;
     void attempt_one_creation() noexcept;
-    void process_one_creation(std::size_t slot, connection_target target) noexcept;
+    void process_one_creation(std::size_t slot,
+        connection_target target,
+        output_backend_kind kind,
+        const std::shared_ptr<usb_output_qualification>& qualification) noexcept;
     void process_reserved_candidate(std::size_t slot,
         connection_target target,
+        output_backend_kind kind,
+        const std::shared_ptr<usb_output_qualification>& qualification,
         runtime_output_lease lease) noexcept;
     void handle_reserve_failure(std::size_t slot,
         connection_target target,
         gameinput_failure failure) noexcept;
-    [[nodiscard]] static native_result<std::unique_ptr<output::native_sink>>
-    make_candidate(runtime_output_lease lease, bool& threw) noexcept;
-    [[nodiscard]] bool candidate_may_proceed(connection_target target) noexcept;
+    [[nodiscard]] static native_result<std::unique_ptr<output::native_sink>> make_candidate(
+        runtime_output_lease lease,
+        output_backend_kind kind,
+        std::shared_ptr<usb_output_qualification> qualification,
+        bool& threw) noexcept;
+    [[nodiscard]] bool candidate_may_proceed(connection_target target,
+        output_backend_kind kind,
+        const std::shared_ptr<usb_output_qualification>& qualification) noexcept;
+    [[nodiscard]] bool candidate_allowed_locked(connection_target target,
+        output_backend_kind kind,
+        const std::shared_ptr<usb_output_qualification>& qualification) const noexcept;
     [[nodiscard]] bool mark_candidate_registering(std::size_t slot,
-        connection_target target) noexcept;
+        connection_target target,
+        output_backend_kind kind,
+        const std::shared_ptr<usb_output_qualification>& qualification) noexcept;
     void cancel_candidate(std::size_t slot, connection_target target) noexcept;
     void handle_candidate_failure(std::size_t slot,
         connection_target target,
@@ -123,13 +162,16 @@ struct gameinput_output_connections::implementation final {
         bool threw) noexcept;
     void register_candidate(std::size_t slot,
         connection_target target,
+        output_backend_kind kind,
+        const std::shared_ptr<usb_output_qualification>& qualification,
         std::unique_ptr<output::native_sink> candidate) noexcept;
     void retain_unresolved_candidate(std::size_t slot,
         connection_target target,
         std::optional<output::backend_handle> handle) noexcept;
     void publish_registered_candidate(std::size_t slot,
         connection_target target,
-        output::backend_handle handle) noexcept;
+        output::backend_handle handle,
+        const std::shared_ptr<usb_output_qualification>& qualification) noexcept;
     void handle_registration_failure(std::size_t slot,
         connection_target target,
         std::unique_ptr<output::native_sink> candidate,
@@ -137,6 +179,7 @@ struct gameinput_output_connections::implementation final {
     void schedule_after_cycle() noexcept;
     [[nodiscard]] std::optional<clock::time_point> next_deadline_locked() const noexcept;
     [[nodiscard]] bool any_backend_locked() const noexcept;
+    [[nodiscard]] bool has_usb_route_locked(connection_target target) const noexcept;
     [[nodiscard]] connection_schedule::creation_state creation_state_locked(
         const desired_record& entry) const noexcept;
     [[nodiscard]] bool creation_allowed_locked(const desired_record& entry,
@@ -154,7 +197,7 @@ struct gameinput_output_connections::implementation final {
     void complete_candidate_locked(std::size_t slot) noexcept;
     void finish_worker_locked() noexcept;
     void publish_backend_progress_locked(std::size_t slot, output::backend_progress value) noexcept;
-    [[nodiscard]] bool should_retire_locked(connection_target target) const noexcept;
+    [[nodiscard]] bool should_retire_locked(const backend_record& backend) const noexcept;
 
     runtime_output_access& runtime;
     output::executor& executor;

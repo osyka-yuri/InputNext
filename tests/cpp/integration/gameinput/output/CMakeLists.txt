@@ -1,10 +1,15 @@
 add_executable(inputnext_gameinput_output_tests
     connections_tests.cpp
+    usb_connections_tests.cpp
+    usb_qualification_freshness_tests.cpp
+    bluetooth_connections_tests.cpp
+    native_progress_tests.cpp
     rumble_evidence_tests.cpp
     "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/rumble_evidence.cpp"
     "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/rumble_sequence.cpp"
+    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/dualsense_usb_evidence.cpp"
 )
-set_property(SOURCE rumble_evidence_tests.cpp APPEND PROPERTY INCLUDE_DIRECTORIES
+set_property(SOURCE rumble_evidence_tests.cpp native_progress_tests.cpp APPEND PROPERTY INCLUDE_DIRECTORIES
     "${PROJECT_SOURCE_DIR}/tools/gameinput_probe"
 )
 target_link_libraries(inputnext_gameinput_output_tests PRIVATE

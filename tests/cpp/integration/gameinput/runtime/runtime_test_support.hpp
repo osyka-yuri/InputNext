@@ -1,15 +1,18 @@
 #pragma once
 
+#include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/reading_parts.hpp"
 #include "gameinput/runtime/factory.hpp"
 #include "metadata/provider.hpp"
 #include "runtime_history_test_support.hpp"
 #include "runtime_metadata_test_support.hpp"
+#include "runtime_raw_report_test_support.hpp"
 #include "runtime_rumble_test_support.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/gamepad_state.hpp>
+#include <inputnext/output_execution.hpp>
 
 #include <algorithm>
 #include <array>
@@ -26,8 +29,6 @@
 #include <span>
 #include <string>
 #include <utility>
-
-#include <gameinput/native/native_gameinput.hpp>
 
 namespace inputnext::gameinput_test_support {
 
@@ -100,7 +101,10 @@ public:
     static constexpr std::size_t device_capacity = 144U;
     static constexpr std::size_t registration_capacity = 256U;
 
-    ~fake_gameinput() override { rumble_controls->native_adapter_destroyed(); }
+    ~fake_gameinput() override {
+        rumble_controls->native_adapter_destroyed();
+        raw_report_controls->native_adapter_destroyed();
+    }
 
     [[nodiscard]] native_result<void> initialize(
         const std::filesystem::path& runtime_library) override {
@@ -319,6 +323,15 @@ public:
         return rumble_controls->create_endpoint();
     }
 
+    [[nodiscard]] raw_report_result create_raw_output_report(native_device_handle device,
+        const std::uint32_t report_id) override {
+        if (!device.valid()) {
+            return std::unexpected(
+                output::native_result{.status = output::native_status::disconnected});
+        }
+        return raw_report_controls->create_report(report_id);
+    }
+
     void retain(native_device_handle device) noexcept override {
         static_cast<void>(device);
         ++retained_devices;
@@ -327,6 +340,7 @@ public:
     void release(native_device_handle device) noexcept override {
         static_cast<void>(device);
         rumble_controls->native_device_released();
+        raw_report_controls->native_device_released();
         ++released_devices;
     }
 
@@ -375,6 +389,10 @@ public:
 
     [[nodiscard]] std::shared_ptr<rumble_test_controls> rumble_script() const noexcept {
         return rumble_controls;
+    }
+
+    [[nodiscard]] std::shared_ptr<raw_report_test_controls> raw_report_script() const noexcept {
+        return raw_report_controls;
     }
 
     void emit(native_device_handle handle, native_device_event event) {
@@ -571,6 +589,8 @@ private:
     std::shared_ptr<native_history_script> history_script;
     std::shared_ptr<rumble_test_controls> rumble_controls =
         std::make_shared<rumble_test_controls>();
+    std::shared_ptr<raw_report_test_controls> raw_report_controls =
+        std::make_shared<raw_report_test_controls>();
     std::atomic<bool> block_next_facts_;
     std::counting_semaphore<1> facts_blocked_{0};
     std::counting_semaphore<1> facts_release_{0};

@@ -2,9 +2,11 @@
 
 #include <exception>
 #include <ios>
+#include <optional>
 
 #include <Windows.h>
 
+#include "executable_path.hpp"
 #include "supervisor.hpp"
 
 #include <algorithm>
@@ -381,30 +383,16 @@ void copy_available_output(HANDLE pipe, std::ostream& output, output_pipe_state&
     return state.closed;
 }
 
-[[nodiscard]] std::filesystem::path current_executable_path() {
-    std::vector<wchar_t> buffer(256U);
-    while (true) {
-        const DWORD length =
-            GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-        if (length == 0U) {
-            throw std::system_error(static_cast<int>(GetLastError()),
-                std::system_category(),
-                "GetModuleFileNameW");
-        }
-        if (length < buffer.size()) {
-            return std::filesystem::path{std::wstring{buffer.data(), length}};
-        }
-        if (buffer.size() >= 32'768U) {
-            throw std::length_error("The executable path exceeds the Windows path limit.");
-        }
-        buffer.resize(buffer.size() * 2U);
-    }
-}
-
 [[nodiscard]] std::vector<std::wstring> worker_arguments(const probe_options& options) {
-    std::vector<std::wstring> arguments{L"--inputnext-worker",
-        L"--duration-ms",
-        std::to_wstring(options.duration_ms)};
+    std::vector<std::wstring> arguments{L"--inputnext-worker"};
+    if (options.duration_ms.has_value()) {
+        arguments.emplace_back(L"--duration-ms");
+        arguments.push_back(std::to_wstring(*options.duration_ms));
+    }
+    if (options.first_step != 1U) {
+        arguments.emplace_back(L"--start-step");
+        arguments.push_back(std::to_wstring(options.first_step));
+    }
     if (options.require_device) {
         arguments.emplace_back(L"--require-device");
     }
@@ -424,18 +412,23 @@ void copy_available_output(HANDLE pipe, std::ostream& output, output_pipe_state&
     if (options.rumble) {
         arguments.emplace_back(L"--rumble");
     }
+    if (options.dualsense_usb) {
+        arguments.emplace_back(L"--dualsense-usb");
+    }
     return arguments;
 }
 
 [[nodiscard]] owned_process_result supervise_child(child_process& child,
     HANDLE output_pipe,
-    std::chrono::milliseconds timeout,
+    const std::optional<std::chrono::milliseconds> timeout,
     process_streams streams) {
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    const auto deadline = timeout.has_value()
+                              ? std::optional{std::chrono::steady_clock::now() + *timeout}
+                              : std::nullopt;
     output_pipe_state output_state{};
     while (true) {
         copy_available_output(output_pipe, streams.output, output_state);
-        if (std::chrono::steady_clock::now() >= deadline) {
+        if (deadline.has_value() && std::chrono::steady_clock::now() >= *deadline) {
             const auto cleanup_deadline = std::chrono::steady_clock::now() + cleanup_period;
             const bool tree_stopped = stop_child_tree(child, cleanup_deadline);
             const bool pipe_closed =
@@ -487,10 +480,11 @@ owned_process_result run_owned_process(const owned_process_request& request,
     unique_handle child_write;
     child_process child;
     try {
-        if (!request.executable.is_absolute() || request.timeout.count() <= 0 ||
-            request.timeout > std::chrono::minutes{10}) {
-            throw std::invalid_argument(
-                "Child executable must be absolute and timeout must be within ten minutes.");
+        if (!request.executable.is_absolute() ||
+            (request.timeout.has_value() &&
+                (request.timeout->count() <= 0 || *request.timeout > std::chrono::minutes{10}))) {
+            throw std::invalid_argument("Child executable must be absolute; an explicit timeout "
+                                        "must be positive and within ten minutes.");
         }
 
         const auto parent_read = make_output_pipe(child_write);
@@ -510,11 +504,15 @@ owned_process_result run_owned_process(const owned_process_request& request,
 supervised_result run_supervised_probe(const probe_options& options, process_streams streams) {
     try {
         const auto executable = current_executable_path();
+        const auto timeout =
+            options.duration_ms.has_value()
+                ? std::optional{std::chrono::milliseconds{*options.duration_ms} + cleanup_period}
+                : std::nullopt;
         const owned_process_request request{
             .executable = executable,
             .working_directory = executable.parent_path(),
             .arguments = worker_arguments(options),
-            .timeout = std::chrono::milliseconds{options.duration_ms} + cleanup_period,
+            .timeout = timeout,
         };
         const auto child = run_owned_process(request, streams);
         if (child.timed_out) {

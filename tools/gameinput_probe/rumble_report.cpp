@@ -89,6 +89,8 @@ void append_hex_bytes(std::ostream& output, const Bytes& bytes) {
     switch (value) {
     case connection_control_operation::describe:
         return "describe";
+    case connection_control_operation::qualify_backend:
+        return "qualify_backend";
     case connection_control_operation::reserve:
         return "reserve";
     case connection_control_operation::create_sink:
@@ -237,6 +239,10 @@ std::string format_rumble_connection_stop(const rumble_session_stop_report& repo
         if (failure.executor_failure.has_value()) {
             output << " failure_executor_code="
                    << static_cast<unsigned int>(failure.executor_failure.value());
+        }
+        if (failure.metadata_failure.has_value()) {
+            output << " failure_metadata_code="
+                   << static_cast<unsigned int>(*failure.metadata_failure);
         }
     }
     return output.str();

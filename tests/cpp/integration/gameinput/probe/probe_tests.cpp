@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -135,6 +136,49 @@ TEST_CASE("gameinput.probe.smoke_and_argument_validation", "[integration][gamein
     CHECK(invalid.exit_code == 2U);
 }
 
+TEST_CASE("gameinput.probe.supervisor_allows_explicit_untimed_child",
+    "[integration][gameinput][probe]") {
+    const auto path = sibling_executable(L"inputnext_gameinput_probe_child_fixture.exe");
+    REQUIRE_FALSE(path.empty());
+    std::ostringstream output;
+    std::ostringstream errors;
+    const auto result =
+        inputnext::gameinput_detail::run_owned_process({.executable = path,
+                                                           .working_directory = path.parent_path(),
+                                                           .arguments = {},
+                                                           .timeout = std::nullopt},
+            {.output = output, .errors = errors});
+    CHECK_FALSE(result.timed_out);
+    CHECK(result.cleanup_confirmed);
+    CHECK(result.exit_code == 0U);
+    CHECK(output.str() == "fixture=exit code=0\n");
+    CHECK(errors.str().empty());
+}
+
+TEST_CASE("gameinput.probe.supervisor_forwards_selected_usb_step",
+    "[integration][gameinput][probe]") {
+    const auto result = run_child(L"inputnext_gameinput_probe.exe",
+        {L"--dualsense-usb", L"--start-step", L"16", L"--duration-ms", L"150"},
+        std::chrono::seconds{20});
+    INFO(result.output);
+    CHECK_FALSE(result.process.timed_out);
+    CHECK(result.process.cleanup_confirmed);
+    CHECK(result.process.exit_code == 4U);
+    CHECK(result.output.contains("steps=20 first_step=16 user_passed=0 user_failed=0"));
+    CHECK_FALSE(result.output.contains("dualsense_usb_step="));
+    for (const auto* value : {L"0", L"21", L"4294967296"}) {
+        const auto invalid = run_child(L"inputnext_gameinput_probe.exe",
+            {L"--dualsense-usb", L"--start-step", value},
+            std::chrono::seconds{2});
+        CHECK_FALSE(invalid.process.timed_out);
+        CHECK(invalid.process.exit_code == 2U);
+    }
+    const auto other_mode = run_child(L"inputnext_gameinput_probe.exe",
+        {L"--rumble", L"--start-step", L"1"},
+        std::chrono::seconds{2});
+    CHECK(other_mode.process.exit_code == 2U);
+}
+
 TEST_CASE("gameinput.probe.supervisor_forwards_history_option", "[integration][gameinput][probe]") {
     const auto executable = sibling_executable(L"inputnext_gameinput_probe.exe");
     REQUIRE_FALSE(executable.empty());
@@ -215,4 +259,30 @@ TEST_CASE("gameinput.probe.supervisor_forwards_rumble_without_interaction",
         "rumble_sequence=not_started reason=user_start_not_clicked xinput_logical_calls=0"));
     CHECK(result.output.contains("rumble_runtime_stop=drained"));
     CHECK_FALSE(result.output.contains("rumble_step name="));
+}
+
+TEST_CASE("gameinput.probe.supervisor_forwards_usb_without_starting_output",
+    "[integration][gameinput][probe][dualsense_usb]") {
+    const auto result = run_child(L"inputnext_gameinput_probe.exe",
+        {L"--duration-ms", L"150", L"--dualsense-usb"},
+        std::chrono::seconds{20});
+    INFO(result.output);
+    INFO(result.errors);
+    CHECK((!result.process.timed_out));
+    CHECK(result.process.cleanup_confirmed);
+    CHECK(result.process.exit_code == 4U);
+    CHECK(result.errors.empty());
+    CHECK(result.output.contains("output_mode=dualsense_usb_foreground_ui"));
+    CHECK(result.output.contains("start=waiting_for_user"));
+    CHECK(result.output.contains("user_passed=0 user_failed=0"));
+    CHECK(result.output.contains("rumble_runtime_stop=drained"));
+    CHECK((!result.output.contains("dualsense_usb_step=")));
+    CHECK((!result.output.contains("dualsense_usb_start=accepted")));
+
+    const auto incompatible = run_child(L"inputnext_gameinput_probe.exe",
+        {L"--dualsense-usb", L"--rumble"},
+        std::chrono::seconds{2});
+    CHECK((!incompatible.process.timed_out));
+    CHECK(incompatible.process.cleanup_confirmed);
+    CHECK(incompatible.process.exit_code == 2U);
 }

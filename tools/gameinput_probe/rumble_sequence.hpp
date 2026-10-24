@@ -24,6 +24,7 @@ struct rumble_step final {
     std::uint16_t right_motor{};
     bool expects_native_output{};
     bool logical_channel_present{};
+    std::string_view instruction;
 };
 
 struct rumble_motor_selection final {

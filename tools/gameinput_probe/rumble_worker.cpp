@@ -1,6 +1,10 @@
 #include "rumble_worker.hpp"
 
+#include "dualsense_usb_candidate_selector.hpp"
+#include "executable_path.hpp"
+#include "gameinput/output/connections/backend_selection.hpp"
 #include "gameinput/output/connections/manager.hpp"
+#include "manual_sequence.hpp"
 #include "report.hpp"
 #include "rumble_evidence.hpp"
 #include "rumble_report.hpp"
@@ -9,6 +13,7 @@
 #include "rumble_window.hpp"
 #include "worker.hpp"
 #include "xinput_report.hpp"
+#include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_execution.hpp>
 #include <inputnext/xinput_types.hpp>
@@ -25,45 +30,18 @@
 #include <string>
 #include <string_view>
 
-#include <filesystem>
-
-#include <stdexcept>
-
-#include <system_error>
-
-#include <vector>
-
 namespace inputnext::gameinput_detail {
 namespace {
 
 using rumble_clock = std::chrono::steady_clock;
 constexpr auto report_interval = std::chrono::milliseconds{250};
-constexpr auto step_dwell = std::chrono::milliseconds{600};
 constexpr auto step_evidence_limit = std::chrono::milliseconds{1250};
 constexpr auto cleanup_evidence_limit = std::chrono::milliseconds{750};
 
-[[nodiscard]] std::filesystem::path executable_path() {
-    std::vector<wchar_t> buffer(256U);
-    while (true) {
-        const DWORD length =
-            GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-        if (length == 0U) {
-            throw std::system_error(static_cast<int>(GetLastError()),
-                std::system_category(),
-                "GetModuleFileNameW");
-        }
-        if (length < buffer.size()) {
-            return std::filesystem::path{std::wstring{buffer.data(), length}};
-        }
-        if (buffer.size() >= 32'768U) {
-            throw std::length_error("The executable path exceeds the Windows path limit.");
-        }
-        buffer.resize(buffer.size() * 2U);
-    }
-}
-
 [[nodiscard]] rumble_readiness inspect_readiness(rumble_session& session,
-    rumble_window const& window) {
+    rumble_window const& window,
+    dualsense_usb_candidate_selector& selector,
+    const maintenance_time now) {
     const auto positions = session.assignments();
     std::optional<rumble_readiness> fallback;
     for (std::size_t index = 0U; index < positions.size(); ++index) {
@@ -83,6 +61,13 @@ constexpr auto cleanup_evidence_limit = std::chrono::milliseconds{750};
             description->capabilities.has_value()) {
             candidate.low_motor = description->capabilities->low_frequency;
             candidate.high_motor = description->capabilities->high_frequency;
+            if (needs_usb_qualification(description->model)) {
+                candidate.configured =
+                    candidate.configured && selector.is_eligible(session,
+                                                assignment.target,
+                                                description->catalogue_generation,
+                                                now);
+            }
         }
         if (!fallback.has_value()) {
             fallback = candidate;
@@ -128,6 +113,7 @@ struct active_step final {
     std::optional<xinput::rumble_output_status> before_status;
     std::optional<std::uint32_t> logical_result;
     bool logical_call_made{};
+    bool report_emitted{};
 };
 
 [[nodiscard]] std::optional<active_step> begin_step(rumble_session& session,
@@ -239,8 +225,9 @@ struct active_step final {
 find_ready_backend(rumble_session const& session, const connection_target target) {
     auto progress = session.backend_progress(target);
     if (!progress.has_value() || progress->backend.target != target ||
-        progress->phase != output::backend_phase::current ||
-        (progress->represented_channels & output::rumble_mask) == 0U) {
+        progress->phase != output::backend_phase::current || progress->unsupported_channels != 0U ||
+        (progress->represented_channels != output::rumble_mask &&
+            progress->represented_channels != output::supported_channel_mask)) {
         return std::nullopt;
     }
     return progress;
@@ -425,8 +412,7 @@ public:
 
 private:
     [[nodiscard]] bool start_session() {
-        const auto library =
-            std::filesystem::path{executable_path().parent_path() / L"GameInputRedist.dll"};
+        const auto library = current_executable_path().parent_path() / L"GameInputRedist.dll";
         session_ = std::make_unique<rumble_session>(library);
         const auto started = session_->start();
         if (!started.has_value()) {
@@ -437,12 +423,28 @@ private:
         }
 
         session_started_ = true;
-        deadline_ = rumble_clock::now() + std::chrono::milliseconds{options_.duration_ms};
+        deadline_ = options_.duration_ms.has_value()
+                        ? rumble_clock::now() + std::chrono::milliseconds{*options_.duration_ms}
+                        : rumble_clock::time_point::max();
         next_report_ = rumble_clock::now();
         output_ << "start=ok output_mode=foreground_rumble_ui runtime_library=app-local\n"
                 << "rumble_ui visible=true foreground_forced=false start=waiting_for_user\n";
-        window_.set_status("Waiting for a rumble-capable controller and foreground Start click.");
+        window_.set_status(
+            "Waiting for a connected controller with rumble support. Bring this window forward "
+            "and click Start.");
         return true;
+    }
+
+    [[nodiscard]] bool sequence_complete() const noexcept {
+        return manual_sequence_.has_value() && manual_sequence_->complete();
+    }
+
+    [[nodiscard]] std::size_t user_passed() const noexcept {
+        return manual_sequence_.has_value() ? manual_sequence_->passed() : 0U;
+    }
+
+    [[nodiscard]] std::size_t user_failed() const noexcept {
+        return manual_sequence_.has_value() ? manual_sequence_->failed() : 0U;
     }
 
     void run_foreground_loop() {
@@ -452,7 +454,7 @@ private:
             }
             wait_briefly();
         }
-        if (sequence_started_ && !sequence_complete_ && incomplete_reason_.empty()) {
+        if (sequence_started_ && !sequence_complete() && incomplete_reason_.empty()) {
             incomplete_reason_ = window_.abort_requested() ? "user_abort" : "duration_elapsed";
         }
     }
@@ -460,7 +462,7 @@ private:
     [[nodiscard]] bool process_iteration() {
         static_cast<void>(window_.pump_messages());
         if (window_.abort_requested()) {
-            if (sequence_started_ && !sequence_complete_) {
+            if (sequence_started_ && !sequence_complete()) {
                 incomplete_reason_ = "user_abort";
             }
             return false;
@@ -474,10 +476,12 @@ private:
             return false;
         }
 
-        const auto readiness = inspect_readiness(*session_, window_);
-        report_readiness(now, readiness);
-        if (window_.take_start_request() && !handle_start_request(readiness)) {
-            return false;
+        if (!sequence_started_) {
+            const auto readiness = inspect_readiness(*session_, window_, selector_, now);
+            report_readiness(now, readiness);
+            if (window_.take_start_request() && !handle_start_request(readiness)) {
+                return false;
+            }
         }
         return !sequence_started_ || advance_sequence(now);
     }
@@ -496,8 +500,9 @@ private:
     [[nodiscard]] bool handle_start_request(const rumble_readiness& readiness) {
         start_clicked_ = true;
         if (!readiness.ready() || !readiness.assignment.has_value()) {
-            window_.set_status("Start ignored. Bring this window forward and wait for an "
-                               "assignment with a reported rumble motor.");
+            window_.set_status(
+                "Start ignored. Wait for a controller with rumble support, bring this window "
+                "forward, and click Start.");
             output_
                 << "rumble_start=ignored reason=foreground_assignment_or_capability_not_ready\n";
             output_.flush();
@@ -507,12 +512,11 @@ private:
         selected_assignment_ = readiness.assignment;
         selected_motors_ = {.low_motor = readiness.low_motor, .high_motor = readiness.high_motor};
         sequence_ = make_rumble_sequence(selected_motors_);
-        next_step_ = sequence_.begin();
-        end_step_ = sequence_.end();
+        manual_sequence_.emplace(sequence_.size());
         sequence_started_ = true;
         output_started_ = true;
         window_.set_running(true);
-        window_.set_status("Start accepted. Preparing the exact controller output backend.");
+        window_.set_status("Start accepted. Preparing the first effect.");
         const auto& selected = *selected_assignment_;
         output_ << "rumble_start=accepted user=" << selected.user_index
                 << " assignment=" << selected.id << ' ' << format_rumble_target(selected.target)
@@ -559,16 +563,31 @@ private:
         if (!sequence_environment_is_current()) {
             return false;
         }
-        if (!selected_assignment_.has_value()) {
+        if (!selected_assignment_.has_value() || !manual_sequence_.has_value()) {
             return false;
         }
+        const auto& sequence = *manual_sequence_;
         const auto& selected = *selected_assignment_;
+        if (current_step_.has_value()) {
+            if (const auto confirmation = window_.take_step_result(); confirmation.has_value()) {
+                const bool keep_running = accept_user_result(*confirmation);
+                if (!keep_running || !current_step_.has_value()) {
+                    return keep_running;
+                }
+            }
+            if (sequence.awaiting_confirmation()) {
+                return true;
+            }
+        }
+        if (sequence.complete()) {
+            return false;
+        }
         const auto progress = find_ready_backend(*session_, selected.target);
         if (!progress.has_value()) {
-            window_.set_status("Waiting for the exact GameInput output backend.");
+            window_.set_status("Preparing the next effect. Keep this window in the foreground.");
             return true;
         }
-        if (!current_step_.has_value() && now >= dwell_until_ && next_step_ != end_step_) {
+        if (!current_step_.has_value()) {
             begin_next_step(selected, *progress, now);
         }
         return !current_step_.has_value() || observe_current_step(now, selected);
@@ -577,16 +596,22 @@ private:
     void begin_next_step(const xinput::assignment& selected,
         const output::backend_progress& progress,
         const rumble_clock::time_point now) {
-        current_step_ = begin_step(*session_, selected, *next_step_, progress, now, logical_calls_);
-        if (next_step_->action == rumble_step_action::disable) {
+        if (!manual_sequence_.has_value() || manual_sequence_->complete()) {
+            return;
+        }
+        const auto& step = sequence_.steps()[manual_sequence_->index()];
+        current_step_ = begin_step(*session_, selected, step, progress, now, logical_calls_);
+        manual_sequence_->mark_pending();
+        window_.disable_confirmation();
+        if (step.action == rumble_step_action::disable) {
             sequence_disabled_ = true;
-        } else if (next_step_->action == rumble_step_action::enable) {
+        } else if (step.action == rumble_step_action::enable) {
             sequence_disabled_ = false;
         }
-        const auto number = static_cast<std::size_t>(next_step_ - sequence_.begin()) + 1U;
-        window_.set_status("Running step " + std::to_string(number) + " of " +
-                           std::to_string(sequence_.size()) +
-                           ". Keep this window in the foreground.");
+        const auto number = manual_sequence_->index() + 1U;
+        window_.set_status("Step " + std::to_string(number) + "/" +
+                           std::to_string(sequence_.size()) + ". " + std::string{step.instruction} +
+                           " Preparing the effect.");
     }
 
     [[nodiscard]] rumble_native_evidence observe_native_step(const active_step& step,
@@ -629,16 +654,37 @@ private:
         const auto evidence = observe_native_step(step, selected, matched);
         if (evidence == rumble_native_evidence::rejected) {
             report_current_step(evidence, std::nullopt, logical_confirmed);
-            failure_reported_ = true;
             incomplete_reason_ = "native_output_rejected";
             return false;
         }
         if (logical_confirmed && native_state_confirmed(evidence)) {
-            return accept_current_step(now, evidence, matched, logical_confirmed);
+            std::optional<rumble_native_match> accepted_match;
+            if (evidence == rumble_native_evidence::accepted_newer_attempt ||
+                evidence == rumble_native_evidence::historical_reuse) {
+                accepted_match = matched;
+                previous_match_ = matched;
+            }
+            report_current_step(evidence, accepted_match, logical_confirmed);
+            output_.flush();
+            if (!manual_sequence_.has_value()) {
+                incomplete_reason_ = "manual_sequence_missing";
+                return false;
+            }
+            const auto readiness = manual_sequence_->mark_ready();
+            const auto number = manual_sequence_->index() + 1U;
+            window_.set_status("Step " + std::to_string(number) + "/" +
+                               std::to_string(sequence_.size()) + ". " +
+                               std::string{step.definition->instruction} +
+                               " Check the effect, then choose Works or Does not work.");
+            if (readiness.has_value()) {
+                window_.enable_confirmation(*readiness);
+            } else {
+                window_.disable_confirmation();
+            }
+            return true;
         }
         if (now >= step.deadline) {
             report_current_step(rumble_native_evidence::pending, std::nullopt, logical_confirmed);
-            failure_reported_ = true;
             incomplete_reason_ =
                 logical_confirmed ? "native_evidence_timeout" : "logical_status_timeout";
             return false;
@@ -652,37 +698,28 @@ private:
                evidence == rumble_native_evidence::not_requested;
     }
 
-    [[nodiscard]] bool accept_current_step(const rumble_clock::time_point now,
-        const rumble_native_evidence evidence,
-        const rumble_native_match& matched,
-        const bool logical_confirmed) {
-        if (!current_step_.has_value()) {
-            return false;
+    [[nodiscard]] bool accept_user_result(const manual_step_confirmation& confirmation) {
+        if (!current_step_.has_value() || !manual_sequence_.has_value() ||
+            !manual_sequence_->record_result(confirmation, rumble_clock::now())) {
+            return true;
         }
-        const auto& step = *current_step_;
-        std::optional<rumble_native_match> accepted_match;
-        if (evidence == rumble_native_evidence::accepted_newer_attempt ||
-            evidence == rumble_native_evidence::historical_reuse) {
-            accepted_match = matched;
-            previous_match_ = matched;
-        }
-        report_current_step(evidence, accepted_match, logical_confirmed);
+        output_ << "rumble_user_result step=" << current_step_->definition->name << " result="
+                << (confirmation.result == manual_step_result::passed ? "passed" : "failed")
+                << '\n';
         output_.flush();
-        if (step.definition->name == "final_zero") {
-            sequence_complete_ = true;
-            current_step_.reset();
-            return false;
-        }
-        ++next_step_;
+        window_.disable_confirmation();
         current_step_.reset();
-        dwell_until_ = now + step_dwell;
-        return true;
+        if (!manual_sequence_->complete()) {
+            window_.set_status("Preparing the next effect. Keep this window in the foreground.");
+        }
+        return !manual_sequence_->complete();
     }
 
     void report_current_step(const rumble_native_evidence evidence,
         const std::optional<rumble_native_match>& match,
         const bool logical_confirmed) {
-        if (!current_step_.has_value() || !selected_assignment_.has_value()) {
+        if (!current_step_.has_value() || current_step_->report_emitted ||
+            !selected_assignment_.has_value()) {
             return;
         }
         const auto& selected = *selected_assignment_;
@@ -696,10 +733,12 @@ private:
                        logical_confirmed,
                        capabilities_still_match(*session_, selected, selected_motors_)))
                 << '\n';
+        current_step_->report_emitted = true;
     }
 
     void report_pending_step() {
-        if (failure_reported_ || !current_step_.has_value() || !selected_assignment_.has_value()) {
+        if (!current_step_.has_value() || current_step_->report_emitted ||
+            !selected_assignment_.has_value()) {
             return;
         }
         const auto& selected = *selected_assignment_;
@@ -720,7 +759,7 @@ private:
                 window_,
                 selected_assignment_,
                 selected_motors_,
-                *(sequence_.end() - 1),
+                sequence_.steps().back(),
                 sequence_disabled_,
                 previous_match_,
                 output_));
@@ -738,36 +777,39 @@ private:
             output_ << "rumble_sequence=not_started reason=" << incomplete_reason_
                     << " xinput_logical_calls=" << logical_calls_ << '\n';
         }
-        if (sequence_started_ && !sequence_complete_) {
+        if (sequence_started_ && !sequence_complete()) {
             best_effort_cleanup();
         }
 
         window_.set_running(false);
-        window_.set_status(
-            sequence_complete_
-                ? "Sequence complete. Native setter evidence is not a physical measurement."
-                : "Sequence incomplete. See the diagnostic report.");
+        if (!sequence_complete()) {
+            window_.set_status("Sequence incomplete. See the diagnostic report.");
+        } else if (user_failed() == 0U) {
+            window_.set_status("Sequence complete. Every effect was reported as working.");
+        } else {
+            window_.set_status(
+                "Sequence complete. One or more effects were reported as not working.");
+        }
         const auto stop = session_->shutdown();
         report_shutdown(stop);
         const bool shutdown_confirmed = runtime_and_connections_drained(stop);
         if (!shutdown_confirmed && incomplete_reason_.empty()) {
             incomplete_reason_ = "cleanup_unverified";
         }
-        if (sequence_complete_ && shutdown_confirmed) {
-            output_ << "rumble_sequence=complete native_setter=accepted steps=" << sequence_.size()
-                    << " low_cap=" << (selected_motors_.low_motor ? "true" : "false")
-                    << " high_cap=" << (selected_motors_.high_motor ? "true" : "false")
-                    << " physical_effect=not_measured perception=not_collected\n";
-        } else {
-            output_ << "rumble_sequence=incomplete reason=" << incomplete_reason_
-                    << " steps=" << sequence_.size()
-                    << " low_cap=" << (selected_motors_.low_motor ? "true" : "false")
-                    << " high_cap=" << (selected_motors_.high_motor ? "true" : "false")
-                    << " physical_effect=not_measured perception=not_collected\n";
+        const bool complete = sequence_complete() && shutdown_confirmed;
+        output_ << "rumble_sequence=" << (complete ? "complete" : "incomplete")
+                << " steps=" << sequence_.size() << " user_passed=" << user_passed()
+                << " user_failed=" << user_failed()
+                << " low_cap=" << (selected_motors_.low_motor ? "true" : "false")
+                << " high_cap=" << (selected_motors_.high_motor ? "true" : "false")
+                << " physical_effect=not_measured";
+        if (!complete) {
+            output_ << " reason=" << incomplete_reason_;
         }
+        output_ << '\n';
         output_.flush();
         window_.close();
-        return sequence_complete_ && shutdown_confirmed ? 0 : 4;
+        return complete && user_failed() == 0U ? 0 : 4;
     }
 
     void report_shutdown(const rumble_session_stop_report& stop) {
@@ -789,7 +831,7 @@ private:
     [[nodiscard]] int report_failure(const std::string_view message) {
         output_ << "worker=failed message=" << message << '\n';
         if (session_) {
-            if (sequence_started_ && !sequence_complete_) {
+            if (sequence_started_ && !sequence_complete()) {
                 best_effort_cleanup();
             }
             report_shutdown(session_->shutdown());
@@ -802,24 +844,21 @@ private:
     const probe_options& options_;
     std::ostream& output_;
     rumble_window window_;
+    dualsense_usb_candidate_selector selector_;
     std::unique_ptr<rumble_session> session_;
     std::optional<xinput::assignment> selected_assignment_;
     std::optional<rumble_native_match> previous_match_;
     std::optional<active_step> current_step_;
+    std::optional<manual_sequence> manual_sequence_;
     rumble_sequence sequence_;
     rumble_motor_selection selected_motors_{};
-    const rumble_step* next_step_{};
-    const rumble_step* end_step_{};
     rumble_clock::time_point deadline_;
     rumble_clock::time_point next_report_;
-    rumble_clock::time_point dwell_until_;
     bool session_started_{};
     bool start_clicked_{};
     bool sequence_started_{};
-    bool sequence_complete_{};
     bool sequence_disabled_{};
     bool output_started_{};
-    bool failure_reported_{};
     std::uint64_t logical_calls_{};
     std::string incomplete_reason_;
 };

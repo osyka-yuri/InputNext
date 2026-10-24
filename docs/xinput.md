@@ -28,7 +28,7 @@ Disabling XInput revokes that service's contribution and retains its latest qual
 
 A known background request succeeds without being cached for replay. Unavailable focus or a stale captured assignment, Enable generation or foreground epoch cannot authorize a request. An input-only service returns `ERROR_NOT_SUPPORTED` for a live assignment regardless of focus; argument and connection errors take precedence.
 
-`get_rumble_output_status` reports stored cache and restore status, not delivery. `power_off_controller` returns `ERROR_NOT_SUPPORTED` for a live assignment. The [GameInput rumble composition](gameinput-output.md) supplies native delivery and a foreground diagnostic.
+`get_rumble_output_status` reports stored cache and restore status, not delivery. `power_off_controller` returns `ERROR_NOT_SUPPORTED` for a live assignment. The [GameInput output composition](gameinput-output.md) supplies native delivery and foreground diagnostics.
 
 ## Queries
 
@@ -55,7 +55,7 @@ Audio counts use UTF-16 code units and include the terminator for nonempty IDs. 
 
 For events, the coordinator runs runtime maintenance, synchronizes inventory, then calls `maintain_events` before consumers drain prepared keys. `get_keystroke` performs no history source work; its caller must arrange this explicit maintenance separately from time-sensitive reads.
 
-Run the native diagnostic with:
+With `INPUTNEXT_BUILD_DIAGNOSTICS=ON`, run the native diagnostic with:
 
 ```powershell
 ./build/windows-x64/tools/gameinput_probe/inputnext_gameinput_probe.exe --duration-ms 10000 --require-device --require-reading --xinput-events

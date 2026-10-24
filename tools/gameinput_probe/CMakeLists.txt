@@ -1,6 +1,13 @@
-add_library(inputnext_gameinput_probe_support STATIC supervisor.cpp)
+add_library(inputnext_gameinput_probe_support STATIC
+    supervisor.cpp
+    executable_path.cpp
+)
 target_include_directories(inputnext_gameinput_probe_support PUBLIC "${PROJECT_SOURCE_DIR}/include")
 inputnext_configure_target(inputnext_gameinput_probe_support)
+
+if(NOT INPUTNEXT_BUILD_DIAGNOSTICS)
+    return()
+endif()
 
 add_executable(inputnext_gameinput_probe
     main.cpp
@@ -11,6 +18,12 @@ add_executable(inputnext_gameinput_probe
     rumble_sequence.cpp
     rumble_evidence.cpp
     rumble_report.cpp
+    dualsense_usb_worker.cpp
+    dualsense_usb_candidate_selector.cpp
+    dualsense_usb_context.cpp
+    dualsense_usb_sequence.cpp
+    dualsense_usb_evidence.cpp
+    dualsense_usb_report.cpp
     report.cpp
     history_observer.cpp
     history_report.cpp

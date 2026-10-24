@@ -81,6 +81,9 @@ TEST_CASE("gameinput.probe.rumble.sequence_is_bounded_and_modest",
     const auto observed = sequence.steps();
 
     REQUIRE(observed.size() == 7U);
+    for (const auto& step : observed) {
+        CHECK((!step.instruction.empty()));
+    }
     CHECK((observed[0U].name == "low_motor"));
     CHECK((observed[1U].name == "high_motor"));
     CHECK((observed[2U].name == "zero"));
@@ -88,6 +91,9 @@ TEST_CASE("gameinput.probe.rumble.sequence_is_bounded_and_modest",
     CHECK((observed[4U].name == "disabled_cached_request"));
     CHECK((observed[5U].name == "reenable_restore"));
     CHECK((observed[6U].name == "final_zero"));
+    CHECK(observed[0U].instruction == "Feel the low-frequency vibration.");
+    CHECK(observed[1U].instruction == "Feel the high-frequency vibration.");
+    CHECK(observed[4U].instruction == "Check that no rumble starts while output is disabled.");
     CHECK(normalized_value(observed[0U]).low_frequency < 0.35F);
     CHECK(normalized_value(observed[1U]).high_frequency < 0.35F);
     CHECK(normalized_value(observed[2U]) == output::rumble_value{});

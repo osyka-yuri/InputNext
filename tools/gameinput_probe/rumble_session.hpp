@@ -1,7 +1,10 @@
 #pragma once
 
 #include "gameinput/output/connections/manager.hpp"
+#include "gameinput/runtime/output_access.hpp"
+#include "output/composition/internal_producer.hpp"
 #include <inputnext/device_identity.hpp>
+#include <inputnext/device_metadata.hpp>
 #include <inputnext/focus.hpp>
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/output.hpp>
@@ -14,8 +17,6 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
-
-#include <gameinput/runtime/output_access.hpp>
 
 namespace inputnext::gameinput_detail {
 
@@ -46,6 +47,11 @@ public:
     [[nodiscard]] std::optional<xinput::rumble_output_status> output_status(
         std::uint32_t user_index) const;
     [[nodiscard]] gameinput_result<output_description> describe(connection_target target) const;
+    [[nodiscard]] metadata_result<bool> qualify_dualsense_usb(connection_target target,
+        std::uint64_t expected_catalogue_generation) const;
+    [[nodiscard]] bool update_targeted_output(maintenance_time now, connection_target target);
+    [[nodiscard]] output::result<output::detail::internal_producer>
+    make_dualsense_diagnostic_producer() &;
     [[nodiscard]] std::optional<output::backend_progress> backend_progress(
         connection_target target) const noexcept;
     [[nodiscard]] output::result<output::logical_snapshot> logical_snapshot(

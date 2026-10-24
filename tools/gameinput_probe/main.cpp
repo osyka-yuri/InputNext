@@ -1,3 +1,5 @@
+#include "dualsense_usb_sequence.hpp"
+#include "dualsense_usb_worker.hpp"
 #include "rumble_worker.hpp"
 #include "worker.hpp"
 
@@ -11,7 +13,7 @@
 
 namespace {
 
-[[nodiscard]] bool parse_duration(std::wstring_view text, std::uint32_t& duration_ms) noexcept {
+[[nodiscard]] bool parse_positive(std::wstring_view text, std::uint32_t& value) noexcept {
     if (text.empty()) {
         return false;
     }
@@ -28,27 +30,55 @@ namespace {
         parsed = (parsed * 10U) + digit;
     }
 
-    if (parsed == 0U || parsed > 300'000U) {
+    if (parsed == 0U) {
         return false;
     }
-    duration_ms = parsed;
+    value = parsed;
     return true;
 }
 
 [[nodiscard]] int usage() {
     std::wcerr << L"Usage: inputnext_gameinput_probe [--duration-ms N] [--require-device] "
                   L"[--require-reading] [--history] [--require-history] [--xinput] "
-                  L"[--xinput-events] [--rumble]\n"
+                  L"[--xinput-events] [--rumble | --dualsense-usb] [--start-step K]\n"
                   L"--rumble opens a foreground diagnostic window; output starts only after its "
-                  L"Start click.\n"
+                  L"Start click. Confirm each step manually.\n"
+                  L"--dualsense-usb opens a manual DualSense USB output sequence after Start.\n"
+                  L"Output diagnostics have no overall time limit unless --duration-ms is set.\n"
+                  L"--start-step selects the first DualSense USB step (1 through 20). Skipped "
+                  L"steps are not passed.\n"
                   L"N must be between 1 and 300000 milliseconds.\n";
     return 2;
+}
+
+[[nodiscard]] bool finalize_options(inputnext::gameinput_detail::probe_options& options,
+    const bool duration_was_set,
+    const bool start_step_was_set) {
+    if (start_step_was_set &&
+        (!options.dualsense_usb ||
+            options.first_step > inputnext::gameinput_detail::dualsense_usb_steps().size())) {
+        return false;
+    }
+    const bool other_probe_mode = options.require_device || options.require_reading ||
+                                  options.history || options.require_history || options.xinput ||
+                                  options.xinput_events || options.rumble;
+    if (!duration_was_set && (options.rumble || options.dualsense_usb)) {
+        options.duration_ms.reset();
+    }
+    if (options.dualsense_usb) {
+        return !other_probe_mode;
+    }
+    return !options.rumble ||
+           !(options.require_device || options.require_reading || options.history ||
+               options.require_history || options.xinput || options.xinput_events);
 }
 
 [[nodiscard]] bool parse_options(int argc,
     wchar_t** argv,
     int first_argument,
     inputnext::gameinput_detail::probe_options& options) {
+    bool duration_was_set = false;
+    bool start_step_was_set = false;
     for (int index = first_argument; index < argc; ++index) {
         const std::wstring_view argument{argv[index]};
         if (argument == L"--require-device") {
@@ -67,17 +97,25 @@ namespace {
             options.xinput_events = true;
         } else if (argument == L"--rumble") {
             options.rumble = true;
+        } else if (argument == L"--dualsense-usb") {
+            options.dualsense_usb = true;
         } else if (argument == L"--duration-ms" && index + 1 < argc) {
-            if (!parse_duration(argv[++index], options.duration_ms)) {
+            std::uint32_t value{};
+            if (!parse_positive(argv[++index], value) || value > 300'000U) {
                 return false;
             }
+            options.duration_ms = value;
+            duration_was_set = true;
+        } else if (argument == L"--start-step" && index + 1 < argc) {
+            if (!parse_positive(argv[++index], options.first_step)) {
+                return false;
+            }
+            start_step_was_set = true;
         } else {
             return false;
         }
     }
-    return !options.rumble ||
-           !(options.require_device || options.require_reading || options.history ||
-               options.require_history || options.xinput || options.xinput_events);
+    return finalize_options(options, duration_was_set, start_step_was_set);
 }
 
 } // namespace
@@ -91,6 +129,9 @@ int wmain(int argc, wchar_t** argv) try {
     if (worker) {
         if (options.rumble) {
             return inputnext::gameinput_detail::run_rumble_probe_worker(options, std::cout);
+        }
+        if (options.dualsense_usb) {
+            return inputnext::gameinput_detail::run_dualsense_usb_probe_worker(options, std::cout);
         }
         return inputnext::gameinput_detail::run_probe_worker(options, std::cout);
     }

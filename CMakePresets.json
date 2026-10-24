@@ -20,7 +20,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "BUILD_TESTING": "ON",
-        "INPUTNEXT_NATIVE_PROFILE": "Default"
+        "INPUTNEXT_NATIVE_PROFILE": "Default",
+        "INPUTNEXT_BUILD_DIAGNOSTICS": "OFF"
       }
     },
     {
@@ -28,7 +29,8 @@
       "displayName": "Windows x64 Debug",
       "inherits": "windows-base",
       "cacheVariables": {
-        "INPUTNEXT_TARGET_ARCHITECTURE": "x64"
+        "INPUTNEXT_TARGET_ARCHITECTURE": "x64",
+        "INPUTNEXT_BUILD_DIAGNOSTICS": "ON"
       },
       "architecture": {
         "value": "x64",
@@ -40,7 +42,16 @@
       "displayName": "Windows x64 Release",
       "inherits": "windows-x64",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "INPUTNEXT_BUILD_DIAGNOSTICS": "OFF"
+      }
+    },
+    {
+      "name": "windows-x64-production",
+      "displayName": "Windows x64 Production",
+      "inherits": "windows-x64-release",
+      "cacheVariables": {
+        "BUILD_TESTING": "OFF"
       }
     },
     {
@@ -49,7 +60,8 @@
       "inherits": "windows-base",
       "cacheVariables": {
         "INPUTNEXT_TARGET_ARCHITECTURE": "x86",
-        "INPUTNEXT_BUILD_GAMEINPUT": "ON"
+        "INPUTNEXT_BUILD_GAMEINPUT": "ON",
+        "INPUTNEXT_BUILD_DIAGNOSTICS": "ON"
       },
       "architecture": {
         "value": "x86",
@@ -61,7 +73,16 @@
       "displayName": "Windows x86 Release",
       "inherits": "windows-x86",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "INPUTNEXT_BUILD_DIAGNOSTICS": "OFF"
+      }
+    },
+    {
+      "name": "windows-x86-production",
+      "displayName": "Windows x86 Production",
+      "inherits": "windows-x86-release",
+      "cacheVariables": {
+        "BUILD_TESTING": "OFF"
       }
     },
     {
@@ -80,7 +101,8 @@
       "displayName": "Windows x64 MSVC Analysis, Production",
       "inherits": "windows-x64-analyze",
       "cacheVariables": {
-        "BUILD_TESTING": "OFF"
+        "BUILD_TESTING": "OFF",
+        "INPUTNEXT_BUILD_DIAGNOSTICS": "OFF"
       }
     },
     {
@@ -118,6 +140,11 @@
   ],
   "buildPresets": [
     {
+      "name": "windows-x64-production",
+      "configurePreset": "windows-x64-production",
+      "targets": ["inputnext_xinput_bundle"]
+    },
+    {
       "name": "windows-x64",
       "configurePreset": "windows-x64"
     },
@@ -132,6 +159,11 @@
     {
       "name": "windows-x86-release",
       "configurePreset": "windows-x86-release"
+    },
+    {
+      "name": "windows-x86-production",
+      "configurePreset": "windows-x86-production",
+      "targets": ["inputnext_xinput_bundle"]
     },
     {
       "name": "windows-x64-analyze",

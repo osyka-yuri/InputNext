@@ -1,5 +1,6 @@
 #include "worker.hpp"
 
+#include "executable_path.hpp"
 #include "history_observer.hpp"
 #include "report.hpp"
 #include "xinput_event_observer.hpp"
@@ -25,36 +26,8 @@
 #include <system_error>
 #include <thread>
 
-#include <filesystem>
-
-#include <stdexcept>
-
-#include <string>
-
-#include <vector>
-
 namespace inputnext::gameinput_detail {
 namespace {
-
-[[nodiscard]] std::filesystem::path executable_path() {
-    std::vector<wchar_t> buffer(256U);
-    while (true) {
-        const DWORD length =
-            GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-        if (length == 0U) {
-            throw std::system_error(static_cast<int>(GetLastError()),
-                std::system_category(),
-                "GetModuleFileNameW");
-        }
-        if (length < buffer.size()) {
-            return std::filesystem::path{std::wstring{buffer.data(), length}};
-        }
-        if (buffer.size() >= 32'768U) {
-            throw std::length_error("The executable path exceeds the Windows path limit.");
-        }
-        buffer.resize(buffer.size() * 2U);
-    }
-}
 
 [[nodiscard]] runtime_id make_runtime_id() {
     GUID guid{};
@@ -296,7 +269,8 @@ void run_maintenance_loop(const probe_options& options,
     probe_observation& observation,
     std::ostream& output) {
     auto next_report = maintenance_time::clock::now();
-    const auto deadline = next_report + std::chrono::milliseconds{options.duration_ms};
+    const auto deadline =
+        next_report + std::chrono::milliseconds{options.duration_ms.value_or(10'000U)};
 
     while (maintenance_time::clock::now() < deadline) {
         const auto now = maintenance_time::clock::now();
@@ -338,7 +312,7 @@ void run_maintenance_loop(const probe_options& options,
 
 int run_probe_worker(const probe_options& options, std::ostream& output) {
     try {
-        const auto library = executable_path().parent_path() / L"GameInputRedist.dll";
+        const auto library = current_executable_path().parent_path() / L"GameInputRedist.dll";
         device_registry registry{make_runtime_id()};
         std::unique_ptr<focus::observer> focus;
         gameinput_runtime runtime{registry, gameinput_options{.runtime_library = library}};

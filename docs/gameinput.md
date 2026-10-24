@@ -2,9 +2,11 @@
 
 The x86 and x64 GameInput runtimes discover physical controllers and provide latest state through the [device registry](input.md) and independent readers through [input history](history.md). They use Microsoft GameInput 4.0.300, API version 4, loaded from an absolute app-local path. The build copies the matching `GameInputRedist.dll` and `GameInputRawInputProxy.exe` beside each executable or runtime DLL that needs them.
 
+For DualSense and DualSense Edge, InputNext supports Bluetooth input in basic report mode and sends no Bluetooth feedback. If another application enables enhanced mode, input availability through GameInput can change; powering the controller off and on restores basic mode. USB feedback is described in [GameInput output](gameinput-output.md).
+
 ## Ownership and maintenance
 
-Create `gameinput_runtime` with a registry and `gameinput_options::runtime_library`. One caller serializes `start`, `maintain`, and `stop`. Input-only operation starts no internal worker. The optional [rumble composition](gameinput-output.md) activates separate native cleanup before starting. While running, provide maintenance opportunities at least every 4 ms and use `next_deadline()` to service recovery. Native input calls can delay that caller; this interval is a scheduling requirement, not a native completion guarantee.
+Create `gameinput_runtime` with a registry and `gameinput_options::runtime_library`. One caller serializes `start`, `maintain`, and `stop`. Input-only operation starts no internal worker. The optional [output composition](gameinput-output.md) activates separate native cleanup before starting. While running, provide maintenance opportunities at least every 4 ms and use `next_deadline()` to service recovery. Native input calls can delay that caller; this interval is a scheduling requirement, not a native completion guarantee.
 
 `connections()` returns exact connection targets, borrowed read bindings, capture health, and whether pad and Guide state have been observed. Ready reads use the registry's published state without calling GameInput. A disconnect ends that connection's identity; reconnecting creates a new target even when hardware metadata is identical.
 
@@ -32,7 +34,7 @@ Native metadata notifications request a complete owned facts refresh on the coor
 
 ## Diagnostic
 
-Build with the x64 preset and run:
+Build with `INPUTNEXT_BUILD_DIAGNOSTICS=ON`, as in the `windows-x64` development preset, and run:
 
 ```powershell
 ./build/windows-x64/tools/gameinput_probe/inputnext_gameinput_probe.exe --duration-ms 10000 --require-device --require-reading
@@ -40,7 +42,7 @@ Build with the x64 preset and run:
 
 For the 32-bit diagnostic, use the `windows-x86` preset and its build directory in these commands.
 
-The diagnostic accepts durations from 1 through 300,000 ms. `--require-device` requires observing an admitted connection during the run; `--require-reading` requires a pad sample. It reports connections, samples, Guide availability, metadata, and shutdown.
+Input diagnostics default to ten seconds; `--duration-ms` accepts 1 through 300,000 ms. `--require-device` requires observing an admitted connection during the run; `--require-reading` requires a pad sample. Output includes connections, samples, Guide availability, metadata, and shutdown. Manual feedback checks use the separate [output modes](gameinput-output.md#rumble-diagnostic).
 
 Add `--history` to open independent [history readers](history.md). `--require-history` also requires a native baseline followed by a native Pad record or a qualified native checkpoint:
 
@@ -54,7 +56,7 @@ Metadata queries run synchronously, at most once per live connection per second 
 
 Available container GUIDs and endpoint IDs identify the reported associations. Endpoint text is quoted and escaped so control characters cannot create misleading output lines.
 
-The parent supervises a fresh child in a kill-on-close job. A deadline failure terminates the child and reports failure with callback drainage unverified. Without requirement flags, an empty inventory passes the initialization-and-cleanup smoke check.
+The parent supervises a fresh child in a kill-on-close job. Timed runs have a parent watchdog; its expiry terminates the child and leaves callback drainage unverified. Without requirement flags, an empty inventory passes the initialization-and-cleanup smoke check.
 
 For physical validation, run the diagnostic long enough to exercise each action:
 

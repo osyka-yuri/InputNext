@@ -3,7 +3,9 @@
 #include "gameinput/output/connections/manager.hpp"
 #include "gameinput/runtime/output_access.hpp"
 #include "output/composition/composition.hpp"
+#include "output/composition/internal_producer.hpp"
 #include <inputnext/device_identity.hpp>
+#include <inputnext/device_metadata.hpp>
 #include <inputnext/focus.hpp>
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/gameinput_xinput.hpp>
@@ -18,6 +20,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <expected>
@@ -30,6 +33,13 @@
 
 namespace inputnext::gameinput_detail {
 namespace {
+
+constexpr output::internal_context_options dualsense_output_options{
+    .owner = output::internal_owner_key{0x4453'5553'4201ULL},
+    .priority = output::internal_priority::diagnostic,
+    .ttl = output::ttl_permission::finite_only,
+    .foreground = output::foreground_policy::foreground_bound,
+};
 
 [[nodiscard]] runtime_id make_runtime_id() {
     GUID guid{};
@@ -103,7 +113,9 @@ struct rumble_session::implementation final {
         return {};
     }
 
-    [[nodiscard]] bool update(const maintenance_time now, const bool output_started) {
+    [[nodiscard]] bool update(const maintenance_time now,
+        const bool output_started,
+        const std::optional<connection_target> output_target = std::nullopt) {
         if (!runtime_started || runtime_stopped || !presentation) {
             return false;
         }
@@ -117,7 +129,22 @@ struct rumble_session::implementation final {
         presentation->presentation().maintain_output();
 
         if (output_started) {
-            if (!connections || !connections->synchronize(latest_inventory).has_value()) {
+            if (!connections) {
+                return false;
+            }
+            connection_inventory selected{};
+            const auto* inventory = &latest_inventory;
+            if (output_target.has_value()) {
+                for (std::size_t index = 0U; index < latest_inventory.size; ++index) {
+                    if (latest_inventory.entries[index].target == *output_target) {
+                        selected.entries[0U] = latest_inventory.entries[index];
+                        selected.size = 1U;
+                        break;
+                    }
+                }
+                inventory = &selected;
+            }
+            if (!connections->synchronize(*inventory).has_value()) {
                 return false;
             }
             if (executor) {
@@ -206,6 +233,11 @@ bool rumble_session::update(const maintenance_time now, const bool output_starte
     return implementation_->update(now, output_started);
 }
 
+bool rumble_session::update_targeted_output(const maintenance_time now,
+    const connection_target target) {
+    return implementation_->update(now, true, target);
+}
+
 bool rumble_session::focus_is_current_foreground() const noexcept {
     if (!implementation_->focus_observer) {
         return false;
@@ -247,10 +279,28 @@ gameinput_result<output_description> rumble_session::describe(
     return implementation_->output_access->describe(target);
 }
 
+metadata_result<bool> rumble_session::qualify_dualsense_usb(const connection_target target,
+    const std::uint64_t expected_catalogue_generation) const {
+    if (!implementation_->output_access) {
+        return std::unexpected{metadata_error::closed};
+    }
+    return implementation_->output_access->qualify_dualsense_usb(target,
+        expected_catalogue_generation);
+}
+
+output::result<output::detail::internal_producer>
+rumble_session::make_dualsense_diagnostic_producer() & {
+    if (!implementation_->output_composition || implementation_->stop_complete) {
+        return std::unexpected{output::error::not_connected};
+    }
+    return implementation_->output_composition->make_producer(dualsense_output_options);
+}
+
 std::optional<output::backend_progress> rumble_session::backend_progress(
     const connection_target target) const noexcept {
-    return implementation_->connections ? implementation_->connections->backend_progress(target)
-                                        : std::nullopt;
+    return implementation_->connections
+               ? implementation_->connections->query_backend_progress(target)
+               : std::nullopt;
 }
 
 output::result<output::logical_snapshot> rumble_session::logical_snapshot(

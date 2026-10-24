@@ -5,6 +5,7 @@
 #include <chrono>
 #include <filesystem>
 #include <iosfwd>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,7 +19,7 @@ struct owned_process_request final {
     std::filesystem::path executable;
     std::filesystem::path working_directory;
     std::vector<std::wstring> arguments;
-    std::chrono::milliseconds timeout{};
+    std::optional<std::chrono::milliseconds> timeout{std::chrono::milliseconds{0}};
 };
 
 struct owned_process_result final {

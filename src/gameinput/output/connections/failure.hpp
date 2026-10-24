@@ -3,12 +3,20 @@
 #include "gameinput/native/native_gameinput.hpp"
 #include "manager.hpp"
 #include <inputnext/device_identity.hpp>
+#include <inputnext/device_metadata.hpp>
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <optional>
 
 namespace inputnext::gameinput_detail::connections_failure {
+
+[[nodiscard]] inline connection_control_failure
+metadata_control_failure(const connection_target target, const metadata_error failure) noexcept {
+    return connection_control_failure{.operation = connection_control_operation::qualify_backend,
+        .target = target,
+        .metadata_failure = failure};
+}
 
 [[nodiscard]] inline connection_control_failure runtime_control_failure(
     const connection_control_operation operation,

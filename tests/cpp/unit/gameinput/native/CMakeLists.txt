@@ -1,4 +1,8 @@
-add_executable(inputnext_gameinput_value_mapping_tests value_mapping_tests.cpp)
+add_executable(inputnext_gameinput_value_mapping_tests
+    value_mapping_tests.cpp
+    raw_output_result_tests.cpp
+    raw_report_buffer_tests.cpp
+)
 target_link_libraries(inputnext_gameinput_value_mapping_tests PRIVATE
     inputnext_gameinput_native inputnext_gameinput_sdk Catch2::Catch2WithMain
 )

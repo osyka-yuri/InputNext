@@ -1,12 +1,16 @@
-#include <Windows.h>
-#include <string_view>
-
 #include "rumble_window.hpp"
+
+#include "manual_sequence.hpp"
+
+#include <Windows.h>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
@@ -30,6 +34,10 @@ struct rumble_window_state final {
     HWND status{};
     HWND start{};
     HWND abort{};
+    HWND passed{};
+    HWND failed{};
+    std::optional<manual_step_confirmation> step_confirmation;
+    manual_confirmation_id active_readiness_id{};
     bool start_requested{};
     bool abort_requested{};
     bool close_requested{};
@@ -41,6 +49,8 @@ constexpr auto window_class_name = std::to_array(L"InputNextGameInputRumbleProbe
 constexpr auto state_property_name = std::to_array(L"InputNextGameInputRumbleProbeState");
 constexpr int start_button_id = 101;
 constexpr int abort_button_id = 102;
+constexpr int passed_button_id = 103;
+constexpr int failed_button_id = 104;
 
 struct child_bounds final {
     int x{};
@@ -62,6 +72,16 @@ struct child_bounds final {
 
     switch (message) {
     case WM_COMMAND:
+        if (HIWORD(wparam) == BN_CLICKED && state->active_readiness_id != 0U &&
+            !state->step_confirmation.has_value() &&
+            (LOWORD(wparam) == passed_button_id || LOWORD(wparam) == failed_button_id)) {
+            state->step_confirmation = manual_step_confirmation{
+                .result = LOWORD(wparam) == passed_button_id ? manual_step_result::passed
+                                                             : manual_step_result::failed,
+                .readiness_id = state->active_readiness_id,
+                .accepted_at = manual_sequence::clock::now()};
+            return 0;
+        }
         if (HIWORD(wparam) == BN_CLICKED && LOWORD(wparam) == start_button_id) {
             state->start_requested = true;
             return 0;
@@ -123,7 +143,8 @@ struct child_bounds final {
 
 } // namespace
 
-rumble_window::rumble_window() : state_(std::make_unique<rumble_window_state>()) {
+rumble_window::rumble_window(const rumble_window_options options)
+    : state_(std::make_unique<rumble_window_state>()) {
     WNDCLASSEXW window_class{};
     window_class.cbSize = sizeof(window_class);
     window_class.lpfnWndProc = rumble_window_proc;
@@ -137,14 +158,16 @@ rumble_window::rumble_window() : state_(std::make_unique<rumble_window_state>())
             "RegisterClassExW");
     }
 
+    const std::wstring title_text{options.title};
+    const std::wstring instructions_text{options.instructions};
     state_->window = CreateWindowExW(0U,
         window_class_name.data(),
-        L"InputNext GameInput Rumble Diagnostic",
+        title_text.c_str(),
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
-        520,
-        220,
+        680,
+        280,
         nullptr,
         nullptr,
         window_class.hInstance,
@@ -162,20 +185,19 @@ rumble_window::rumble_window() : state_(std::make_unique<rumble_window_state>())
 
     state_->message = create_child(state_->window,
         L"STATIC",
-        L"Foreground-only GameInput rumble. Click Start to send available motor pulse(s), zero, "
-        L"disable, cache, restore, and final-zero requests.",
+        instructions_text.c_str(),
         SS_LEFT,
-        {.x = 16, .y = 16, .width = 480, .height = 45});
+        {.x = 16, .y = 16, .width = 630, .height = 48});
     state_->status = create_child(state_->window,
         L"STATIC",
         L"Starting runtime...",
         SS_LEFT,
-        {.x = 16, .y = 72, .width = 480, .height = 30});
+        {.x = 16, .y = 76, .width = 630, .height = 70});
     state_->start = create_child(state_->window,
         L"BUTTON",
         L"Start sequence",
         BS_PUSHBUTTON,
-        {.x = 16, .y = 125, .width = 150, .height = 32});
+        {.x = 16, .y = 166, .width = 120, .height = 36});
     if (!set_control_id(state_->start, start_button_id)) {
         state_->start = nullptr;
     }
@@ -183,18 +205,35 @@ rumble_window::rumble_window() : state_(std::make_unique<rumble_window_state>())
         L"BUTTON",
         L"Abort",
         BS_PUSHBUTTON,
-        {.x = 180, .y = 125, .width = 100, .height = 32});
+        {.x = 550, .y = 166, .width = 96, .height = 36});
     if (!set_control_id(state_->abort, abort_button_id)) {
         state_->abort = nullptr;
     }
+    state_->passed = create_child(state_->window,
+        L"BUTTON",
+        L"Works - Next",
+        BS_PUSHBUTTON,
+        {.x = 148, .y = 166, .width = 160, .height = 36});
+    if (!set_control_id(state_->passed, passed_button_id)) {
+        state_->passed = nullptr;
+    }
+    state_->failed = create_child(state_->window,
+        L"BUTTON",
+        L"Does not work - Next",
+        BS_PUSHBUTTON,
+        {.x = 320, .y = 166, .width = 218, .height = 36});
+    if (!set_control_id(state_->failed, failed_button_id)) {
+        state_->failed = nullptr;
+    }
     if (state_->message == nullptr || state_->status == nullptr || state_->start == nullptr ||
-        state_->abort == nullptr) {
+        state_->abort == nullptr || state_->passed == nullptr || state_->failed == nullptr) {
         throw std::system_error(static_cast<int>(GetLastError()),
             std::system_category(),
             "CreateWindowExW(control)");
     }
 
     EnableWindow(state_->abort, FALSE);
+    disable_confirmation();
     ShowWindow(state_->window, SW_SHOWNOACTIVATE);
     UpdateWindow(state_->window);
 }
@@ -234,6 +273,33 @@ bool rumble_window::abort_requested() const noexcept {
     return state_ == nullptr || state_->abort_requested || state_->close_requested;
 }
 
+std::optional<manual_step_confirmation> rumble_window::take_step_result() noexcept {
+    return state_ != nullptr ? std::exchange(state_->step_confirmation, std::nullopt)
+                             : std::nullopt;
+}
+
+void rumble_window::enable_confirmation(const manual_confirmation_id readiness_id) noexcept {
+    if (state_ == nullptr) {
+        return;
+    }
+    if (readiness_id == 0U) {
+        disable_confirmation();
+        return;
+    }
+    state_->active_readiness_id = readiness_id;
+    EnableWindow(state_->passed, TRUE);
+    EnableWindow(state_->failed, TRUE);
+}
+
+void rumble_window::disable_confirmation() noexcept {
+    if (state_ == nullptr) {
+        return;
+    }
+    state_->active_readiness_id = 0U;
+    EnableWindow(state_->passed, FALSE);
+    EnableWindow(state_->failed, FALSE);
+}
+
 bool rumble_window::is_foreground() const noexcept {
     return valid() && GetForegroundWindow() == state_->window;
 }
@@ -254,6 +320,7 @@ void rumble_window::set_running(const bool running) noexcept {
     if (state_ == nullptr) {
         return;
     }
+    disable_confirmation();
     if (state_->start != nullptr) {
         EnableWindow(state_->start, running ? FALSE : TRUE);
     }

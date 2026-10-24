@@ -1,13 +1,16 @@
 #pragma once
 
+#include "metadata/provider.hpp"
 #include <inputnext/device_metadata.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <expected>
+#include <mutex>
+#include <optional>
 #include <semaphore>
-
-#include <metadata/provider.hpp>
+#include <utility>
 
 namespace inputnext::gameinput_test_support {
 
@@ -15,6 +18,30 @@ class fake_metadata_provider final : public metadata_provider {
 public:
     [[nodiscard]] metadata_result<metadata_snapshot> query(
         const metadata_request& request) override {
+        query_calls_.fetch_add(1U, std::memory_order_relaxed);
+        if (busy_next_query_.exchange(false, std::memory_order_acq_rel)) {
+            completed_queries_.fetch_add(1U, std::memory_order_relaxed);
+            return std::unexpected(metadata_error::busy);
+        }
+
+        metadata_snapshot result{};
+        std::optional<metadata_error> failure;
+        {
+            std::scoped_lock lock{metadata_mutex_};
+            result.target = request.target;
+            result.catalogue_generation = request.catalogue_generation;
+            result.native = request.facts;
+            result.container_id = request.facts.container_id;
+            if (conflicting_identity) {
+                result.container_id_source = container_id_provenance::conflicting;
+            } else if (request.facts.container_id.has_value()) {
+                result.container_id_source = container_id_provenance::gameinput_native;
+            }
+            result.model = model;
+            result.transport = transport;
+            failure = std::exchange(next_failure_, std::nullopt);
+        }
+
         auto blocks = blocked_queries_.load(std::memory_order_acquire);
         while (blocks > 0U && !blocked_queries_.compare_exchange_weak(blocks,
                                   blocks - 1U,
@@ -25,15 +52,43 @@ public:
             release_.acquire();
         }
 
-        metadata_snapshot result{};
-        result.target = request.target;
-        result.catalogue_generation = request.catalogue_generation;
-        result.native = request.facts;
-        result.container_id = request.facts.container_id;
-        result.container_id_source = request.facts.container_id.has_value()
-                                         ? container_id_provenance::gameinput_native
-                                         : container_id_provenance::unavailable;
+        if (failure.has_value()) {
+            completed_queries_.fetch_add(1U, std::memory_order_relaxed);
+            return std::unexpected{failure.value()};
+        }
+        completed_queries_.fetch_add(1U, std::memory_order_relaxed);
         return result;
+    }
+
+    // Use set_observation when queries can run concurrently.
+    metadata_field<metadata_device_model> model{};
+    metadata_field<transport_metadata> transport{};
+    bool conflicting_identity{};
+
+    [[nodiscard]] std::size_t query_calls() const noexcept {
+        return query_calls_.load(std::memory_order_relaxed);
+    }
+
+    [[nodiscard]] std::size_t completed_queries() const noexcept {
+        return completed_queries_.load(std::memory_order_relaxed);
+    }
+
+    void make_next_query_busy() noexcept {
+        busy_next_query_.store(true, std::memory_order_release);
+    }
+
+    void set_observation(metadata_field<metadata_device_model> next_model,
+        metadata_field<transport_metadata> next_transport,
+        bool next_conflicting_identity) {
+        std::scoped_lock lock{metadata_mutex_};
+        model = next_model;
+        transport = next_transport;
+        conflicting_identity = next_conflicting_identity;
+    }
+
+    void fail_next_query(metadata_error failure) {
+        std::scoped_lock lock{metadata_mutex_};
+        next_failure_ = failure;
     }
 
     void block_next_queries(std::size_t count) noexcept {
@@ -56,9 +111,14 @@ public:
     }
 
 private:
+    std::atomic<std::size_t> query_calls_{0U};
+    std::atomic<std::size_t> completed_queries_{0U};
+    std::atomic<bool> busy_next_query_;
     std::atomic<std::size_t> blocked_queries_;
     std::counting_semaphore<8> blocked_{0};
     std::counting_semaphore<8> release_{0};
+    std::mutex metadata_mutex_;
+    std::optional<metadata_error> next_failure_;
 };
 
 class scoped_query_release final {

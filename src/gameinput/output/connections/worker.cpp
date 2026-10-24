@@ -1,5 +1,6 @@
 #include "state.hpp"
 
+#include "backend_selection.hpp"
 #include "manager.hpp"
 #include "schedule.hpp"
 #include <inputnext/device_identity.hpp>
@@ -11,8 +12,6 @@
 #include <cstddef>
 #include <mutex>
 #include <optional>
-
-#include "../../runtime/output_access.hpp"
 
 namespace inputnext::gameinput_detail {
 namespace {
@@ -28,17 +27,20 @@ constexpr std::array retry_delays{std::chrono::milliseconds{4},
     return left.runtime == right.runtime && left.device == right.device;
 }
 
-[[nodiscard]] bool has_rumble_capability(
-    const std::optional<rumble_capabilities>& capabilities) noexcept {
-    return capabilities.has_value() &&
-           (capabilities->low_frequency || capabilities->high_frequency);
-}
-
 } // namespace
 
 bool gameinput_output_connections::implementation::any_backend_locked() const noexcept {
     return std::ranges::any_of(backends, [](const auto& record) {
         return record.state != backend_state::free && record.handle.has_value();
+    });
+}
+
+bool gameinput_output_connections::implementation::has_usb_route_locked(
+    const connection_target target) const noexcept {
+    return std::ranges::any_of(backends, [target](const auto& backend) {
+        return backend.target == target && backend.kind == output_backend_kind::dualsense_usb &&
+               backend.state != backend_state::free &&
+               backend.state != backend_state::terminal_unresolved;
     });
 }
 
@@ -51,7 +53,8 @@ gameinput_output_connections::implementation::creation_state_locked(
         .admissions_frozen = admissions_frozen,
         .occupied = entry.occupied,
         .description_known = entry.description_known,
-        .has_rumble_capability = has_rumble_capability(entry.capabilities),
+        .has_output_backend =
+            entry.selection.has_value() && entry.selection != output_backend_kind::none,
         .retry_blocked = entry.retry_blocked};
 }
 
@@ -121,6 +124,16 @@ void gameinput_output_connections::implementation::fail_locked(
 void gameinput_output_connections::implementation::fallback_locked(
     connection_control_failure failure) noexcept {
     fail_locked(failure);
+    for (auto const& entry : desired) {
+        if (entry.qualification != nullptr) {
+            entry.qualification->revoke();
+        }
+    }
+    for (auto const& backend : backends) {
+        if (backend.qualification != nullptr) {
+            backend.qualification->revoke();
+        }
+    }
     fallback = true;
     admissions_frozen = true;
     phase = connection_control_phase::needs_executor_shutdown;
@@ -186,15 +199,24 @@ void gameinput_output_connections::implementation::publish_backend_progress_lock
 }
 
 bool gameinput_output_connections::implementation::should_retire_locked(
-    const connection_target target) const noexcept {
+    const backend_record& backend) const noexcept {
     if (phase == connection_control_phase::stopping) {
         return true;
     }
-    const auto* const entry = find_desired_locked(target);
+    const auto* const entry = find_desired_locked(backend.target);
     if (entry == nullptr) {
         return true;
     }
-    return entry->description_known && !has_rumble_capability(entry->capabilities);
+    if (entry->description_known && entry->selection != backend.kind) {
+        return true;
+    }
+    if (backend.kind == output_backend_kind::dualsense_usb) {
+        return backend.qualification == nullptr || backend.qualification != entry->qualification ||
+               backend.qualification->target() != backend.target ||
+               backend.qualification->catalogue_generation() != entry->catalogue_generation ||
+               !backend.qualification->admits(backend.target, clock::now());
+    }
+    return false;
 }
 
 std::optional<gameinput_output_connections::implementation::clock::time_point>
@@ -212,11 +234,11 @@ gameinput_output_connections::implementation::next_deadline_locked() const noexc
         }
     };
 
-    if (phase == connection_control_phase::accepting) {
-        for (const auto& entry : desired) {
-            if (!entry.occupied) {
-                continue;
-            }
+    for (const auto& entry : desired) {
+        if (!entry.occupied) {
+            continue;
+        }
+        if (phase == connection_control_phase::accepting) {
             include(entry.next_description);
             const auto state = creation_state_locked(entry);
             const connection_schedule::retry_state retry{.retry_armed = entry.retry_armed,
@@ -224,6 +246,12 @@ gameinput_output_connections::implementation::next_deadline_locked() const noexc
                 .resource_waiting = entry.resource_waiting,
                 .resource_due = entry.resource_due};
             connection_schedule::include_creation_deadline(nearest, state, retry);
+        }
+        const bool live_usb_route = has_usb_route_locked(entry.target);
+        if (needs_usb_qualification(entry.model) &&
+            (phase == connection_control_phase::accepting ||
+                (phase == connection_control_phase::admission_closed && live_usb_route))) {
+            include(entry.next_qualification);
         }
     }
     if (any_backend_locked() && next_progress_scan.has_value()) {
@@ -253,6 +281,7 @@ void gameinput_output_connections::implementation::run_cycle() noexcept {
             }
         }
         scan_descriptions();
+        scan_qualifications();
         attempt_one_creation();
         schedule_after_cycle();
     } catch (...) {

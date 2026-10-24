@@ -4,6 +4,8 @@
 #include "cpp/integration/gameinput/runtime/runtime_test_support.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/output/connections/manager.hpp"
+#include "gameinput/runtime/output_access.hpp"
+#include "output/authority_fixture.hpp"
 #include "output/composition/composition.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_metadata.hpp>
@@ -20,10 +22,6 @@
 #include <stdexcept>
 #include <thread>
 #include <utility>
-
-#include <gameinput/runtime/output_access.hpp>
-
-#include <output/authority_fixture.hpp>
 
 namespace inputnext::gameinput_detail::test_support {
 using namespace std::chrono_literals;
@@ -67,11 +65,17 @@ private:
 
 class connection_fixture final {
 public:
-    connection_fixture() = default;
+    connection_fixture() {
+        backing.native->device_facts.vendor_id.value = 0x045EU;
+        backing.native->device_facts.product_id.value = 0x02FDU;
+    }
 
     ~connection_fixture() noexcept {
         if (controls != nullptr) {
             controls->release_all();
+        }
+        if (raw_controls != nullptr) {
+            raw_controls->release_all();
         }
         if (connections != nullptr) {
             connections->close_admission();
@@ -98,6 +102,7 @@ public:
     [[nodiscard]] bool start(const bool synchronize_output = true,
         const bool seed_pad_for_presentation = false) {
         controls = backing.native->rumble_script();
+        raw_controls = backing.native->raw_report_script();
         backing.native->device_facts.gameinput_capabilities =
             metadata_field<native_gameinput_capabilities>{.availability =
                                                               metadata_availability::available,
@@ -178,6 +183,19 @@ public:
         });
     }
 
+    [[nodiscard]] std::optional<connection_target> add_generic_connection() {
+        auto saved_facts = backing.native->device_facts;
+        backing.native->device_facts.vendor_id.value = 0x045EU;
+        backing.native->device_facts.product_id.value = 0x02FDU;
+        backing.native->device_facts.gameinput_capabilities.value.low_frequency_rumble = true;
+        backing.native->device_facts.gameinput_capabilities.value.high_frequency_rumble = true;
+        backing.connect(handle(backing.device_memory[1U]));
+        backing.maintain();
+        backing.native->device_facts = std::move(saved_facts);
+        const auto inventory = backing.runtime->connections();
+        return inventory.size == 2U ? std::optional{inventory.entries[1U].target} : std::nullopt;
+    }
+
     [[nodiscard]] static runtime_id focus_incarnation() noexcept {
         auto result = test_runtime_id();
         result.bytes[1U] = std::byte{0x72};
@@ -186,6 +204,7 @@ public:
 
     runtime_fixture backing;
     std::shared_ptr<rumble_test_controls> controls;
+    std::shared_ptr<raw_report_test_controls> raw_controls;
     std::unique_ptr<focus::observer> focus_observer;
     std::unique_ptr<output::detail::composition> composition;
     std::unique_ptr<output::executor> output_executor;
@@ -196,5 +215,17 @@ public:
     connection_target target{};
     bool runtime_started{};
 };
+
+inline void configure_dualsense(connection_fixture const& fixture,
+    const metadata_device_model model = metadata_device_model::dualsense,
+    const physical_transport transport = physical_transport::usb) {
+    fixture.backing.metadata->model = {.availability = metadata_availability::available,
+        .value = model};
+    fixture.backing.metadata->transport = {.availability = metadata_availability::available,
+        .value = {.value = transport, .provenance = transport_provenance::native_bus_type}};
+    fixture.backing.native->device_facts.vendor_id.value = 0x054CU;
+    fixture.backing.native->device_facts.product_id.value =
+        model == metadata_device_model::dualsense_edge ? 0x0DF2U : 0x0CE6U;
+}
 
 } // namespace inputnext::gameinput_detail::test_support

@@ -1,8 +1,13 @@
 add_executable(inputnext_gameinput_probe_child_fixture probe_child_fixture.cpp)
 inputnext_configure_target(inputnext_gameinput_probe_child_fixture)
 
-add_executable(inputnext_gameinput_probe_tests probe_tests.cpp)
+add_executable(inputnext_gameinput_probe_tests
+    probe_tests.cpp
+    manual_window_tests.cpp
+    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/rumble_window.cpp"
+)
 target_include_directories(inputnext_gameinput_probe_tests PRIVATE
+    "${PROJECT_SOURCE_DIR}/tests/support"
     "${PROJECT_SOURCE_DIR}/tools/gameinput_probe"
 )
 target_link_libraries(inputnext_gameinput_probe_tests PRIVATE

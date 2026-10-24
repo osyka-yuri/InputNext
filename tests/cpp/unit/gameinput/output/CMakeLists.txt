@@ -14,3 +14,26 @@ catch_discover_tests(inputnext_gameinput_output_schedule_unit_tests
     OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/results"
     OUTPUT_SUFFIX .txt
 )
+
+add_executable(inputnext_gameinput_output_qualification_unit_tests
+    usb_output_qualification_tests.cpp
+    dualsense_usb_qualification_observation_tests.cpp
+    "${PROJECT_SOURCE_DIR}/src/gameinput/output/usb/qualification.cpp"
+)
+target_link_libraries(inputnext_gameinput_output_qualification_unit_tests PRIVATE
+    Catch2::Catch2WithMain
+)
+target_include_directories(inputnext_gameinput_output_qualification_unit_tests PRIVATE
+    "${PROJECT_SOURCE_DIR}/include"
+    "${PROJECT_SOURCE_DIR}/src"
+    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe"
+)
+inputnext_configure_target(inputnext_gameinput_output_qualification_unit_tests)
+
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/results")
+catch_discover_tests(inputnext_gameinput_output_qualification_unit_tests
+    ADD_TAGS_AS_LABELS
+    PROPERTIES TIMEOUT 20
+    OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/results"
+    OUTPUT_SUFFIX .txt
+)

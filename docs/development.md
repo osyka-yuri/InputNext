@@ -15,7 +15,7 @@ Project C++ targets define `NOMINMAX`; dependency targets retain their own compi
 
 MSVC also enables additional conversion, enum-switch and virtual-destructor warnings, `/sdl` security checks, and `/options:strict`. Compiler-specific options are excluded from clang-cl builds.
 
-Catch2 3.16.1 is downloaded and SHA-256 verified during the first test-enabled configure. Native GameInput builds also download and verify Microsoft GameInput 4.0.300. Subsequent builds reuse dependencies in their build directory. Ordinary tests require no controller hardware. Dependencies are pinned; builds do not silently follow upstream releases.
+Catch2 3.16.1 is downloaded and SHA-256 verified during the first test-enabled configure. It builds as C++23 to match the test executables and their standard-library support. Native GameInput builds also download and verify Microsoft GameInput 4.0.300. Subsequent builds reuse dependencies in their build directory. Ordinary tests require no controller hardware. Dependencies are pinned; builds do not silently follow upstream releases.
 
 The scripts declare PowerShell 7.6 through `#Requires` and run in the process used to invoke them. Use `pwsh -NoProfile -File ./tools/verify.ps1` from an appropriate Developer shell when selecting an installed PowerShell executable explicitly.
 
@@ -47,7 +47,7 @@ Without `-CheckQuality`, the script explicitly disables clang-tidy for the build
 
 Headers must compile on their own. Include directly used declarations rather than relying on unrelated headers, and keep a source file's corresponding header first. Preserve required SDK include order. Use narrow exceptions for external umbrella headers and IWYU annotations for intentional project re-exports.
 
-### Native diagnostics
+### Native analysis and sanitizers
 
 Select a native profile:
 
@@ -73,7 +73,7 @@ Undefined pins clang-cl 23.1.3 and verifies both compiler-rt library hashes. Its
 
 The XInput export test checks the complete PE export tables. Default, Release and Address require only the established InputNext exports. Undefined additionally requires the exact compiler-rt name set in `tests/cpp/integration/xinput/dll/ubsan_runtime_exports.hpp`, independently of its ordinal assignment. Prefix masks and unknown symbols are rejected. Review this list and the runtime hashes in `cmake/Sanitizers.cmake` together when updating LLVM.
 
-Diagnostic test configurations also have matching build and test presets, for example:
+These profiles also have matching build and test presets, for example:
 
 ```powershell
 cmake --preset windows-x64-asan
@@ -120,10 +120,21 @@ cmake --preset windows-x64 -B build/windows-x64-no-tests -DBUILD_TESTING=OFF
 cmake --build build/windows-x64-no-tests
 ```
 
-This omits Catch2 and builds the production libraries and diagnostic. `INPUTNEXT_BUILD_GAMEINPUT` defaults to `ON` for both architectures. Each build deploys the matching GameInput runtime and Raw Input proxy. Configure a portable-only build explicitly to omit the SDK and diagnostic:
+`INPUTNEXT_BUILD_DIAGNOSTICS` controls the interactive diagnostic independently of tests and defaults to `OFF`. The x86 and x64 development presets enable it; Release and production presets disable it. It requires the GameInput runtime and is separate from the runtime DLLs and XInput bundle.
+
+For a production bundle without tests or interactive diagnostics:
 
 ```powershell
-cmake --preset windows-x64 -B build/windows-x64-portable -DBUILD_TESTING=OFF -DINPUTNEXT_BUILD_GAMEINPUT=OFF
+cmake --preset windows-x64-production
+cmake --build --preset windows-x64-production
+```
+
+Use `windows-x86-production` from an x86 Developer PowerShell for the corresponding 32-bit bundle.
+
+`INPUTNEXT_BUILD_GAMEINPUT` defaults to `ON` for both architectures. Each build deploys the matching GameInput runtime and Raw Input proxy. Configure a portable-only build explicitly to omit the SDK and diagnostic:
+
+```powershell
+cmake --preset windows-x64 -B build/windows-x64-portable -DBUILD_TESTING=OFF -DINPUTNEXT_BUILD_GAMEINPUT=OFF -DINPUTNEXT_BUILD_DIAGNOSTICS=OFF
 cmake --build build/windows-x64-portable
 ```
 
@@ -179,17 +190,18 @@ Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2
 - `tests/cpp/unit/xinput` checks translation, query projections, key mapping, and repeat tracking. `tests/cpp/component/xinput` checks assignments, packets, eligibility, rumble caching and restoration, prepared event retrieval, Guide waits, and query validation through production bindings and focus observation.
 - `tests/cpp/unit/history` and `tests/cpp/unit/gameinput/clock` check retention values and timestamp arithmetic without the SDK.
 - `tests/cpp/unit/gameinput/output` checks description and creation deadlines without the SDK or workers.
+- `tests/cpp/unit/gameinput/dualsense` checks USB report vectors, trigger layouts, quantization and payload capacities without the SDK.
 - `tests/cpp/component/history` checks reader admission, independent progress, recovery, and reclamation with controlled cursors.
 - `tests/cpp/component/gameinput/history` checks capture and native/Guide merging with a controlled native port. `tests/cpp/component/gameinput/native_history` checks the native cursor through a scripted API seam.
 - `tests/cpp/unit/metadata` checks text bounds, transport policy, and physical capability facts.
-- `tests/cpp/unit/gameinput/native` checks SDK value mapping without loading the native runtime.
-- `tests/cpp/unit/gameinput/probe` checks diagnostic evidence, formatting, and text escaping without the SDK or hardware.
+- `tests/cpp/unit/gameinput/native` checks SDK value mapping and raw-output result classification without loading the native runtime.
+- `tests/cpp/unit/gameinput/probe` checks manual sequence progress, native evidence, formatting and text escaping without the SDK or hardware.
 - `tests/cpp/component/metadata` checks Windows metadata selection with a controlled OS port.
 - `tests/cpp/integration/gameinput/publication` checks partial reading merge through the production publisher and device registry.
-- `tests/cpp/integration/gameinput/runtime` checks lifecycle, history, and query coordination through production registry and publication components, using a controlled native port.
+- `tests/cpp/integration/gameinput/runtime` checks lifecycle, history, query coordination, raw-report delivery and retained native ownership through production registry and publication components, using a controlled native port.
 - `tests/cpp/integration/gameinput/presentation` checks GameInput/XInput composition, events, waiter shutdown, and metadata and focus progress during blocked native work, using narrow native and metadata ports.
-- `tests/cpp/integration/gameinput/output` checks rumble delivery, backend admission and retirement, reconnect, capacity, and diagnostic evidence through production runtime, presentation, authority, and executor components with a controlled native port.
-- `tests/cpp/integration/gameinput/probe` checks real child-process supervision and app-local initialization and cleanup.
+- `tests/cpp/integration/gameinput/output` checks generic rumble and DualSense USB selection, backend admission and retirement, reconnect, capacity, and diagnostic evidence through production runtime, presentation, authority, and executor components with a controlled native port.
+- `tests/cpp/integration/gameinput/probe` checks child-process supervision, manual window controls, and app-local initialization and cleanup. It requires the diagnostic build option.
 - `tests/cpp/unit/runtime/abi` checks private ABI layout, complete tables and pure argument policy.
 - `tests/cpp/component/runtime/bootstrap` checks discovery and owner creation without native startup.
 - `tests/cpp/integration/runtime` checks the real ABI adapters and session composition with controlled native ports, including early Enable, concurrent publication, autonomous progress and retained shutdown owners.

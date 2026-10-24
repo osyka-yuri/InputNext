@@ -2,8 +2,10 @@
 
 #include "gameinput/reading_parts.hpp"
 #include "gameinput_value_mapping.hpp"
+#include "native_raw_output_report.hpp"
 #include "native_rumble_endpoint.hpp"
 #include "windows_history_cursor.hpp"
+#include "windows_raw_output_report.hpp"
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_execution.hpp>
@@ -331,6 +333,26 @@ public:
             return std::unexpected(
                 failure(native_failure_cause::resource_exhausted, E_OUTOFMEMORY));
         }
+    }
+
+    [[nodiscard]] raw_report_result create_raw_output_report(native_device_handle device,
+        const std::uint32_t report_id) override {
+        if (game_input_ == nullptr || !device.valid()) {
+            return std::unexpected(output::native_result{
+                .status = output::native_status::failed,
+                .native_code = static_cast<std::int64_t>(static_cast<std::uint32_t>(E_INVALIDARG)),
+            });
+        }
+
+        auto* const native_device = as_device(device);
+        if (!native_device->IsConnected()) {
+            return std::unexpected(output::native_result{
+                .status = output::native_status::disconnected,
+                .native_code = static_cast<std::int64_t>(
+                    static_cast<std::uint32_t>(gameinput::GAMEINPUT_E_DEVICE_DISCONNECTED)),
+            });
+        }
+        return create_windows_raw_output_report(native_device, report_id);
     }
 
     void retain(native_device_handle device) noexcept override {

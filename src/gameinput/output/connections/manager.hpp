@@ -2,6 +2,7 @@
 
 #include "gameinput/native/native_gameinput.hpp"
 #include <inputnext/device_identity.hpp>
+#include <inputnext/device_metadata.hpp>
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/output_execution.hpp>
 #include <inputnext/output_executor.hpp>
@@ -25,6 +26,7 @@ enum class connection_control_phase : std::uint8_t {
 
 enum class connection_control_operation : std::uint8_t {
     describe,
+    qualify_backend,
     reserve,
     create_sink,
     register_backend,
@@ -41,6 +43,7 @@ struct connection_control_failure final {
     std::optional<gameinput_failure> runtime_failure{std::nullopt};
     std::optional<native_failure> native_failure{std::nullopt};
     std::optional<output::execution_error> executor_failure{std::nullopt};
+    std::optional<metadata_error> metadata_failure{std::nullopt};
 };
 
 struct connection_control_report final {
@@ -74,7 +77,11 @@ public:
     void close_admission() noexcept;
     void request_stop() noexcept;
     [[nodiscard]] connection_control_report progress() const noexcept;
+    // Control-worker snapshot; pending native work may be newer.
     [[nodiscard]] std::optional<output::backend_progress> backend_progress(
+        connection_target target) const noexcept;
+    // Queries the exact managed backend outside the control gate.
+    [[nodiscard]] std::optional<output::backend_progress> query_backend_progress(
         connection_target target) const noexcept;
     void shutdown() noexcept;
 
