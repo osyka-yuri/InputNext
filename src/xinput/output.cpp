@@ -31,6 +31,9 @@ namespace {
     case output::error::revision_exhausted:
     case output::error::logical_version_exhausted:
     case output::error::deadline_overflow:
+    case output::error::busy:
+    case output::error::stale_lease:
+    case output::error::stale_audio:
         return ERROR_GEN_FAILURE;
     }
     return ERROR_GEN_FAILURE;

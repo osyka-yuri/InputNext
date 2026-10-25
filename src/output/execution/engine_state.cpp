@@ -197,6 +197,7 @@ void execution_engine::implementation::retire_locked(backend_record& backend,
     const auto handle = backend.handle;
     backend.state = backend_state::retiring;
     backend.delivery_needed = false;
+    backend.acknowledged_body_route.reset();
     backend.retry_requested = false;
     backend.refresh_requested = false;
     backend.receipt = retirement_receipt{.backend = handle, .reason = reason};

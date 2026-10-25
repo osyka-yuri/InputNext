@@ -24,13 +24,15 @@ execution_result<void> execution_engine::publish(const backend_handle handle,
         return std::unexpected{execution_error::invalid_argument};
     }
 
-    auto projected = project_representation(snapshot, backend->supported_channels);
+    auto projected =
+        project_representation(snapshot, backend->supported_channels, backend->route_support);
     if (!projected.has_value()) {
         return std::unexpected{projected.error()};
     }
     backend->unsupported_channels = snapshot.present_channels() & ~backend->supported_channels;
 
     if (backend->projection.has_value() && *backend->projection == *projected) {
+        implementation::retain_body_ack_for(*backend, represented_body_route(*projected));
         if (backend->refresh_requested) {
             backend->refresh_requested = false;
             if (backend->delivery == delivery_state::pending && !backend->write_in_flight) {
@@ -58,6 +60,7 @@ execution_result<void> execution_engine::publish(const backend_handle handle,
         ++backend->next_publication_id;
     }
     backend->projection = *projected;
+    implementation::retain_body_ack_for(*backend, represented_body_route(*projected));
     backend->consecutive_retryable_failures = 0U;
     backend->delivery = delivery_state::pending;
     backend->delivery_needed = true;

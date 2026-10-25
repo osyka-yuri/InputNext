@@ -3,6 +3,7 @@
 #include "output/execution/engine.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/output.hpp>
+#include <inputnext/output_body.hpp>
 #include <inputnext/output_execution.hpp>
 #include <inputnext/output_executor.hpp>
 
@@ -55,6 +56,7 @@ struct executor::implementation final {
     [[nodiscard]] execution_result<backend_handle> register_backend(connection_target target,
         std::unique_ptr<native_sink>& candidate,
         channel_mask supported_channels,
+        body_route_support route_support,
         std::optional<backend_handle> expected);
     [[nodiscard]] execution_result<void> start_delivery_worker(
         const detail::registration_reservation& reservation);

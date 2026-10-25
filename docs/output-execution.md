@@ -18,7 +18,9 @@ The limits are 16 current device lanes, 128 resident backends and 128 resident l
 
 ## Publication and admission
 
-Registration declares an immutable, nonzero subset of the four supported channel bits. Publications retain the represented winners and their full provenance. Unsupported requested channels are reported separately. Native acceptance covers only the represented channels.
+Registration declares an immutable, nonzero subset of the four supported channel bits. Publications retain the effective represented winners and their full provenance. A body lease masks ordinary rumble in this projection; the logical snapshot retains it for restoration after clear or expiry. Diagnostic rumble remains represented. Unsupported requested channels are reported separately. Native acceptance covers only the represented channels.
+
+Registration also declares immutable body-route support, defaulting to classic-only. HD support requires represented rumble. A classic-only backend projects an HD body intent to its classic fallback with `unsupported_transport`; it retains the lease and route identity for qualification. Current production GameInput backends are classic-only.
 
 Absent represented intents produce neutral values. A present zero or OFF intent remains distinct from absence for qualification. The initial publication requires a real native call even when it is neutral.
 
@@ -32,13 +34,19 @@ An admitted call may overlap a later logical close, focus loss, retirement or re
 
 `native_sink::write` is synchronous and `noexcept`. The command is borrowed for that call only. The sink must finish all native work using it before returning; it must not retain command storage or schedule an unqualified later send. An adapter using asynchronous OS I/O must wait for its actual completion within this boundary.
 
-`accepted` records setter acceptance without measuring hardware output. `failed` and `unsupported` block automatic retries until a changed represented publication or explicit retry. `disconnected` retires the backend.
+A sink declaring HD support must preserve an accepted exact HD route while processing later commands carrying that same route intent, including during trigger and LED writes. Any inability to maintain it must return a nonaccepted result. This setter-route obligation does not establish physical audio playback. Current production sinks declare classic-only support.
 
-Consecutive qualifying `retryable_failure` results schedule automatic retries after nominal delays of 4, 8, 16, 32 and then 64 milliseconds. Further failures retain the 64-millisecond delay; there is no total retry budget. A changed represented publication starts a fresh cycle immediately.
+`accepted` records setter acceptance without measuring hardware output. For classic output, `failed` and `unsupported` block automatic retries until a changed represented publication or explicit retry. `disconnected` retires the backend.
 
-`request_retry` expedites an attempt, including identical values, without resetting consecutive failures. Requests accepted before successful admission can coalesce into that attempt. Any request accepted after admission requires a later qualified attempt; multiple pending requests can coalesce. Retirement cancels future admission, and replacement starts without an old backend's pending retry.
+Consecutive qualifying `retryable_failure` results for classic output schedule automatic retries after nominal delays of 4, 8, 16, 32 and then 64 milliseconds. Further failures retain the 64-millisecond delay; there is no total retry budget. A changed represented publication starts a fresh cycle immediately.
+
+`request_retry` expedites an attempt, including identical values, without resetting consecutive failures. Requests accepted before successful admission can coalesce into that attempt. Any request accepted after admission requires a later qualified attempt; multiple pending requests can coalesce. An explicit retry clears the route acknowledgement immediately, and refresh or unrelated publication changes preserve the pending retry. Retirement cancels future admission, and replacement starts without an old backend's pending retry.
 
 `progress` reports stored facts without requalifying the connection or foreground. The newest admitted attempt and latest completed attempt are distinct. Each completion owns its attempt and publication identities, returned result and exact command payload, including failed or stale completions. That payload is independent of later logical changes; setter acceptance remains historical for its publication.
+
+For [body output](body-output.md), progress also retains a historical accepted HD route acknowledgement. The same exact route preserves that proof across unrelated publication changes, admissions and accepted writes. `qualifies_route` freshly checks the stored acknowledgement, backend and authoritative body route independently of full-command delivery. A route proof can remain valid while the latest trigger or LED command is pending.
+
+A different route, explicit retry, reported native failure, retirement or replacement clears the proof. A qualifying HD failure latches that lease to classic and schedules a fresh fallback publication even when an unrelated publication has superseded the failed command. A stale route cannot change a newer lease. A disconnected completion still retires its exact backend regardless of route qualification.
 
 `consecutive_retryable_failures` counts qualifying transient failures for the observed publication and saturates. A qualifying accepted, failed or unsupported result resets it; retirement freezes it. `scheduled_retry_delay` reports the nominal automatic delay while that schedule applies, including after its due time. It is zero during a write, explicit retry, deferred refresh or retirement, and does not report remaining time.
 

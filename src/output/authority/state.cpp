@@ -1,11 +1,13 @@
 #include "state.hpp"
 
+#include "output/policy/body.hpp"
 #include "output/policy/policy.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_registry.hpp>
 #include <inputnext/focus.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_body.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -13,6 +15,7 @@
 #include <cstdint>
 #include <expected>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 
 namespace inputnext::output {
@@ -38,8 +41,8 @@ policy_detail::deadline authority::implementation::now() const noexcept {
     if (test_clock_ticks != nullptr) {
         using duration = policy_detail::clock::duration;
         using rep = duration::rep;
-        return policy_detail::deadline{
-            duration{static_cast<rep>(test_clock_ticks->load(std::memory_order_acquire))}};
+        const auto ticks = test_clock_ticks->load(std::memory_order_acquire);
+        return policy_detail::deadline{duration{static_cast<rep>(ticks)}};
     }
     return policy_detail::clock::now();
 }
@@ -69,8 +72,33 @@ std::size_t authority::implementation::active_finite_count() const noexcept {
     return count;
 }
 
+std::size_t authority::implementation::active_body_count() const noexcept {
+    return static_cast<std::size_t>(std::ranges::count_if(records,
+        [](const record& entry) { return entry.state == phase::open && entry.body.has_value(); }));
+}
+
+std::size_t authority::implementation::hd_body_count() const noexcept {
+    return static_cast<std::size_t>(std::ranges::count_if(records, [](const record& entry) {
+        return entry.state == phase::open && entry.body.has_value() &&
+               entry.body->intent.route == body_actuator_route::hd;
+    }));
+}
+
+std::size_t authority::implementation::occupied_audio_count() const noexcept {
+    return static_cast<std::size_t>(std::ranges::count_if(audio_routes,
+        [](const audio_route_record& entry) { return entry.facts.has_value(); }));
+}
+
+std::size_t authority::implementation::ready_audio_count() const noexcept {
+    return static_cast<std::size_t>(
+        std::ranges::count_if(audio_routes, [](const audio_route_record& entry) {
+            return entry.facts.has_value() && entry.facts->ready;
+        }));
+}
+
 std::size_t authority::implementation::reservation_count() const noexcept {
-    return open_count() + active_finite_count();
+    return open_count() + active_finite_count() + active_body_count() + hd_body_count() +
+           occupied_audio_count() + ready_audio_count();
 }
 
 bool authority::implementation::valid_context_identity(context_identity identity,
@@ -155,6 +183,59 @@ result<std::uint64_t> authority::implementation::take_context_id() noexcept {
         ++next_context_id;
     }
     return value;
+}
+
+result<body_lease_id> authority::implementation::take_body_lease_id() noexcept {
+    if (next_body_lease_id == 0U) {
+        return std::unexpected{error::identity_exhausted};
+    }
+    const auto value = next_body_lease_id;
+    next_body_lease_id = value == std::numeric_limits<std::uint64_t>::max() ? 0U : value + 1U;
+    return body_lease_id{value};
+}
+
+result<audio_instance_id> authority::implementation::take_audio_instance_id() noexcept {
+    if (next_audio_instance_id == 0U) {
+        return std::unexpected{error::identity_exhausted};
+    }
+    const auto value = next_audio_instance_id;
+    next_audio_instance_id = value == std::numeric_limits<std::uint64_t>::max() ? 0U : value + 1U;
+    return audio_instance_id{value};
+}
+
+authority::implementation::audio_route_record* authority::implementation::find_audio(
+    const audio_instance instance) noexcept {
+    const auto found =
+        std::ranges::find_if(audio_routes, [instance](const audio_route_record& row) {
+            return row.facts.has_value() && row.facts->instance == instance;
+        });
+    return found == audio_routes.end() ? nullptr : &*found;
+}
+
+const authority::implementation::audio_route_record* authority::implementation::find_audio(
+    const audio_instance instance) const noexcept {
+    const auto found =
+        std::ranges::find_if(audio_routes, [instance](const audio_route_record& row) {
+            return row.facts.has_value() && row.facts->instance == instance;
+        });
+    return found == audio_routes.end() ? nullptr : &*found;
+}
+
+authority::implementation::audio_route_record* authority::implementation::find_audio_target(
+    const connection_target target) noexcept {
+    const auto found = std::ranges::find_if(audio_routes, [target](const audio_route_record& row) {
+        return row.facts.has_value() && row.facts->instance.target == target;
+    });
+    return found == audio_routes.end() ? nullptr : &*found;
+}
+
+std::optional<detail::body_policy::audio_route_facts> authority::implementation::audio_facts(
+    const audio_instance instance) const noexcept {
+    const auto* const found = find_audio(instance);
+    if (found == nullptr) {
+        return std::nullopt;
+    }
+    return found->facts;
 }
 
 } // namespace inputnext::output

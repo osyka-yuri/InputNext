@@ -1,11 +1,13 @@
 #pragma once
 
 #include "engine.hpp"
+#include "output/authority/execution.hpp"
 #include "output/projection/represented.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/native_output.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_body.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <array>
@@ -48,6 +50,7 @@ struct execution_engine::implementation final {
         std::optional<backend_handle> expected_backend;
         backend_handle handle{};
         channel_mask supported_channels{};
+        body_route_support route_support{body_route_support::classic_only};
         channel_mask unsupported_channels{};
         std::unique_ptr<native_sink> sink;
         std::optional<represented_projection> projection;
@@ -63,6 +66,7 @@ struct execution_engine::implementation final {
         clock::time_point due;
         std::optional<attempt_id> last_attempt;
         std::optional<completed_attempt> last_completed_attempt;
+        std::optional<body_route_ack> acknowledged_body_route;
         std::optional<retirement_receipt> receipt;
     };
 
@@ -114,11 +118,18 @@ struct execution_engine::implementation final {
     [[nodiscard]] execution_result<registration_reservation> reserve_selected_lane(
         connection_target target,
         channel_mask supported_channels,
+        body_route_support route_support,
         std::optional<backend_handle> expected,
         lane_selection selection) noexcept;
     [[nodiscard]] drive_action prepare_drive(lane_token token) noexcept;
     void finish_cleanup(lane_token token, backend_handle handle) noexcept;
     void finish_attempt(const native_command& command, native_result result) noexcept;
+    static void retain_body_ack_for(backend_record& backend,
+        const std::optional<body_route_intent>& route) noexcept;
+    [[nodiscard]] execution_result<completion_disposition> complete_body_route(
+        backend_record& backend,
+        const native_command& command,
+        native_result result) noexcept;
     void apply_native_result(backend_record& backend, native_result result) noexcept;
     [[nodiscard]] bool apply_qualification_result(backend_record& backend,
         const execution_result<bool>& result) noexcept;

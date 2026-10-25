@@ -2,11 +2,13 @@
 
 #include "engine.hpp"
 #include "output/authority/execution.hpp"
+#include "output/policy/body.hpp"
 #include "output/projection/represented.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/native_output.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_body.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <algorithm>
@@ -78,6 +80,7 @@ execution_engine::implementation::select_lane(const connection_target target,
 execution_result<registration_reservation> execution_engine::implementation::reserve_selected_lane(
     const connection_target target,
     const channel_mask supported_channels,
+    const body_route_support route_support,
     const std::optional<backend_handle> expected,
     const lane_selection selection) noexcept {
     const auto free_backend = std::ranges::find_if(backends,
@@ -117,6 +120,7 @@ execution_result<registration_reservation> execution_engine::implementation::res
     backend.lane = lane.token;
     backend.reserved_target = target;
     backend.supported_channels = supported_channels;
+    backend.route_support = route_support;
     backend.expected_backend = expected;
 
     return registration_reservation{.reserved_backend = reserved_backend,
@@ -124,16 +128,20 @@ execution_result<registration_reservation> execution_engine::implementation::res
         .target = target,
         .supported_channels = supported_channels,
         .expected_backend = expected,
-        .start_worker = selection.start_worker};
+        .start_worker = selection.start_worker,
+        .route_support = route_support};
 }
 
 execution_result<registration_reservation> execution_engine::reserve_backend(
     const connection_target target,
     const std::unique_ptr<native_sink>& candidate,
     const channel_mask supported_channels,
-    const std::optional<backend_handle> expected) {
+    const std::optional<backend_handle> expected,
+    const body_route_support route_support) {
     if (!target.valid() || candidate == nullptr || supported_channels == 0U ||
-        (supported_channels & ~supported_channel_mask) != 0U) {
+        (supported_channels & ~supported_channel_mask) != 0U ||
+        !body_policy::valid_route_support(route_support) ||
+        (route_support == body_route_support::hd && (supported_channels & rumble_mask) == 0U)) {
         return std::unexpected{execution_error::invalid_argument};
     }
 
@@ -150,7 +158,7 @@ execution_result<registration_reservation> execution_engine::reserve_backend(
     if (!lane.has_value()) {
         return std::unexpected{lane.error()};
     }
-    return state.reserve_selected_lane(target, supported_channels, expected, *lane);
+    return state.reserve_selected_lane(target, supported_channels, route_support, expected, *lane);
 }
 
 execution_result<void> execution_engine::worker_started(const lane_token token) noexcept {
@@ -202,6 +210,7 @@ execution_result<backend_handle> execution_engine::commit_backend(
     auto* const backend = state.find_reserved(reservation.reserved_backend, reservation.lane);
     if (lane == nullptr || backend == nullptr || backend->reserved_target != reservation.target ||
         backend->supported_channels != reservation.supported_channels ||
+        backend->route_support != reservation.route_support ||
         backend->expected_backend != reservation.expected_backend) {
         return std::unexpected{execution_error::stale_backend};
     }
@@ -231,7 +240,8 @@ execution_result<backend_handle> execution_engine::commit_backend(
     logical_snapshot initial{};
     initial.target = reservation.target;
     initial.incarnation = state.execution.authority;
-    auto initial_projection = project_representation(initial, reservation.supported_channels);
+    auto initial_projection =
+        project_representation(initial, reservation.supported_channels, reservation.route_support);
     if (!initial_projection.has_value()) {
         return std::unexpected{initial_projection.error()};
     }
@@ -242,6 +252,7 @@ execution_result<backend_handle> execution_engine::commit_backend(
     backend->handle = handle;
     backend->sink = std::move(candidate);
     backend->projection = *initial_projection;
+    backend->route_support = reservation.route_support;
     backend->publication = publication_id{1U};
     backend->next_publication_id = 2U;
     backend->delivery = delivery_state::pending;

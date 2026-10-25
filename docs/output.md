@@ -28,6 +28,8 @@ Internal submit, clear, close and acknowledgement require the producer's complet
 
 Four channels arbitrate independently: left trigger, right trigger, rumble, and the LED group. Each channel selects the highest eligible priority, then the latest accepted commit at that priority. The entire rumble value belongs to one winner.
 
+A [body lease](body-output.md) supplies a separate coherent rumble overlay. It takes precedence over ordinary rumble, including when its fallback is zero; diagnostic rumble overrides it. The four discrete winners remain available in the logical snapshot. Native projection applies the body overlay to represented rumble and excludes masked ordinary rumble until the body lease is removed. Changes to that hidden contribution do not publish another native command.
+
 All provided value fields are validated, including unselected channels. Trigger kinds and layouts must be known; floating values must be finite. Trigger positions and strengths and rumble amplitudes range from 0 to 1, trigger end is at least start, frequency ranges from 0 to 255, and each of ten zone levels ranges from 0 to 8. Player LEDs range from 0 to 4. RGB consists of three bytes, and the microphone LED is boolean.
 
 OFF, zero rumble, and zero trigger strength are present intents. They can mask lower-priority owners. Clear and expiry remove a contribution and can reveal the next owner.
@@ -42,7 +44,7 @@ Finite TTL ranges from 1 to 60,000 milliseconds for both public and internal con
 
 TTL starts at submission entry, before waiting for the authority mutex. Checked arithmetic rejects an unrepresentable deadline. A request already expired when admitted is rejected. Evaluation time never moves backward, expiry includes the exact deadline, and reads do not renew TTL.
 
-`read_snapshot(target)` performs targeted cleanup and returns owned copies of four optional winners, their exact identities and per-channel provenance, the authority incarnation, logical version, evaluation time, and earliest finite expiry among eligible active contributions. Empty snapshots and maintenance reports also identify their authority. Expiry preserves the last accepted channel revision and sequence. A snapshot remains unchanged after later mutations or record reuse.
+`read_snapshot(target)` performs targeted cleanup and returns owned copies of the four optional channel winners and optional body overlay. It includes exact owner identities, per-channel provenance, the authority incarnation, logical version, evaluation time, and earliest finite expiry among eligible active contributions. Empty snapshots and maintenance reports also identify their authority. Expiry preserves the last accepted channel revision and sequence. A snapshot remains unchanged after later mutations or record reuse.
 
 Logical versions order context admission, accepted mutations, expiry, and revocation within one authority incarnation. Compare versions only when their incarnations match. Acknowledgement reclaims capacity without advancing the logical version. A snapshot at or after a context's revocation version cannot include that context. Snapshot qualification describes its observation point; execution must qualify the target and authority again before sending output.
 

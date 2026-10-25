@@ -1,5 +1,6 @@
 #pragma once
 
+#include "output/policy/body.hpp"
 #include "output/policy/policy.hpp"
 #include "output/xinput/rumble.hpp"
 #include <inputnext/device_identity.hpp>
@@ -9,6 +10,7 @@
 #include <inputnext/input_binding.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_body.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <array>
@@ -51,9 +53,19 @@ struct authority::implementation final {
         std::uint64_t accepted_sequence{};
         channel_values accepted_values{};
         std::array<channel_state, channel_count> channels{};
+        std::optional<body_snapshot> body;
         std::optional<close_receipt> receipt;
 
         void reset() noexcept { *this = record{}; }
+    };
+
+    struct audio_route_record final {
+        std::optional<detail::body_policy::audio_route_facts> facts;
+    };
+
+    struct body_submission_time final {
+        policy_detail::deadline entered_at;
+        policy_detail::deadline expires_at;
     };
 
     implementation(runtime_id runtime_value,
@@ -67,6 +79,11 @@ struct authority::implementation final {
         policy_detail::deadline lower_bound = policy_detail::deadline::min()) noexcept;
     [[nodiscard]] std::size_t open_count() const noexcept;
     [[nodiscard]] std::size_t active_finite_count() const noexcept;
+    [[nodiscard]] std::size_t active_body_count() const noexcept;
+    [[nodiscard]] std::size_t hd_body_count() const noexcept;
+    [[nodiscard]] std::size_t hd_body_count(connection_target target) const noexcept;
+    [[nodiscard]] std::size_t occupied_audio_count() const noexcept;
+    [[nodiscard]] std::size_t ready_audio_count() const noexcept;
     [[nodiscard]] std::size_t reservation_count() const noexcept;
     [[nodiscard]] bool valid_context_identity(context_identity identity,
         owner_class expected_class) const noexcept;
@@ -79,6 +96,20 @@ struct authority::implementation final {
     [[nodiscard]] record* find_free(owner_class kind) noexcept;
     [[nodiscard]] bool ordinary_headroom(std::size_t reservations_after) const noexcept;
     [[nodiscard]] result<std::uint64_t> take_context_id() noexcept;
+    [[nodiscard]] result<body_lease_id> take_body_lease_id() noexcept;
+    [[nodiscard]] result<audio_instance_id> take_audio_instance_id() noexcept;
+    [[nodiscard]] audio_route_record* find_audio(audio_instance instance) noexcept;
+    [[nodiscard]] const audio_route_record* find_audio(audio_instance instance) const noexcept;
+    [[nodiscard]] audio_route_record* find_audio_target(connection_target target) noexcept;
+    [[nodiscard]] std::optional<detail::body_policy::audio_route_facts> audio_facts(
+        audio_instance instance) const noexcept;
+    [[nodiscard]] bool diagnostic_rumble_wins(connection_target target,
+        policy_detail::deadline evaluation_time,
+        std::optional<focus::foreground_epoch> epoch) const noexcept;
+    [[nodiscard]] std::size_t latch_hd_bodies(connection_target target,
+        body_fallback_reason reason,
+        std::uint64_t version,
+        std::optional<audio_instance> audio = std::nullopt) noexcept;
     [[nodiscard]] std::optional<focus::foreground_epoch> fresh_epoch() const;
     [[nodiscard]] inputnext::result<read_pin> capture(connection_target target) const;
     [[nodiscard]] std::size_t retire(connection_target target) noexcept;
@@ -102,6 +133,10 @@ struct authority::implementation final {
         const submit_request& request,
         policy_detail::optional_deadline deadline,
         policy_detail::deadline entry_time) noexcept;
+    [[nodiscard]] result<body_receipt>
+    commit_body_locked(record& entry, const body_request& request, body_submission_time timing);
+    [[nodiscard]] result<void> validate_body_lease_locked(const record& entry,
+        const body_request& request) const;
     [[nodiscard]] result<logical_snapshot> compose_snapshot(connection_target target,
         policy_detail::deadline evaluation_time,
         bool permit_bound,
@@ -119,7 +154,10 @@ struct authority::implementation final {
     focus::observer& focus_observer;
     mutable std::mutex gate;
     std::array<record, 64U> records{};
+    std::array<audio_route_record, 16U> audio_routes{};
     std::uint64_t next_context_id{};
+    std::uint64_t next_body_lease_id{1U};
+    std::uint64_t next_audio_instance_id{1U};
     std::uint64_t next_execution_id{1U};
     std::optional<execution_owner> attached_execution;
     std::uint64_t logical_version{};

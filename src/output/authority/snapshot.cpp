@@ -135,6 +135,35 @@ template <typename Record>
     return {};
 }
 
+template <typename State>
+[[nodiscard]] result<void> project_body(State& state,
+    logical_snapshot& snapshot,
+    const connection_target target,
+    const policy_detail::deadline evaluation_time,
+    const bool permit_bound,
+    const std::optional<focus::foreground_epoch> epoch) noexcept {
+    for (const auto& entry : state.records) {
+        if (entry.state != State::phase::open || entry.identity.target != target ||
+            !entry.body.has_value()) {
+            continue;
+        }
+        const bool eligible = entry.foreground == foreground_policy::background ||
+                              (permit_bound && epoch.has_value() && entry.opening_epoch == epoch);
+        if (!eligible || policy_detail::is_expired(entry.body->expires_at, evaluation_time)) {
+            continue;
+        }
+        if (snapshot.body.has_value()) {
+            return std::unexpected{error::resources};
+        }
+        snapshot.body = entry.body;
+        if (!snapshot.earliest_expiry.has_value() ||
+            entry.body->expires_at < *snapshot.earliest_expiry) {
+            snapshot.earliest_expiry = entry.body->expires_at;
+        }
+    }
+    return {};
+}
+
 } // namespace
 
 result<logical_snapshot> authority::implementation::compose_snapshot(connection_target target,
@@ -164,6 +193,11 @@ result<logical_snapshot> authority::implementation::compose_snapshot(connection_
     const auto projected = project_winners(snapshot, *collected, *winners);
     if (!projected.has_value()) {
         return std::unexpected{projected.error()};
+    }
+    const auto body =
+        project_body(*this, snapshot, target, final_evaluation_time, permit_bound, epoch);
+    if (!body.has_value()) {
+        return std::unexpected{body.error()};
     }
     return snapshot;
 }

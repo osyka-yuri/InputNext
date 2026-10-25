@@ -12,7 +12,10 @@ struct native_command final {
 };
 
 // The command is borrowed only for the duration of write. Implementations finish all native work
-// before returning and do not retain its memory or defer an unqualified operation.
+// before returning and do not retain its memory or defer an unqualified operation. A sink
+// registered with HD route support must preserve an accepted exact HD body route while later
+// commands carry the same intent, including writes to other channels. If it cannot, it must return
+// a nonaccepted result. This promise covers setter-route continuity, not physical playback.
 class native_sink {
 public:
     native_sink() = default;

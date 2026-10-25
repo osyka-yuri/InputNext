@@ -47,6 +47,9 @@ namespace {
     case output::error::stale_revision:
     case output::error::expired:
     case output::error::deadline_overflow:
+    case output::error::busy:
+    case output::error::stale_lease:
+    case output::error::stale_audio:
         return true;
     }
     return true;

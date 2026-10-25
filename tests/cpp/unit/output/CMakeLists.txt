@@ -1,4 +1,7 @@
-add_executable(inputnext_output_policy_unit_tests policy_tests.cpp)
+add_executable(inputnext_output_policy_unit_tests
+    body_policy_tests.cpp
+    policy_tests.cpp
+)
 target_link_libraries(inputnext_output_policy_unit_tests
     PRIVATE inputnext_output_policy Catch2::Catch2WithMain
 )
@@ -14,11 +17,13 @@ catch_discover_tests(inputnext_output_policy_unit_tests
 )
 
 add_executable(inputnext_output_qualification_unit_tests
+    body_projection_tests.cpp
     execution_projection_tests.cpp
     qualification_tests.cpp
 )
 target_include_directories(inputnext_output_qualification_unit_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
+    "${PROJECT_SOURCE_DIR}/tests/support"
 )
 target_link_libraries(inputnext_output_qualification_unit_tests PRIVATE
     inputnext_output_authority Catch2::Catch2WithMain

@@ -3,6 +3,11 @@ add_executable(inputnext_output_component_tests
     authority_identity_tests.cpp
     authority_lifecycle_tests.cpp
     authority_tests.cpp
+    body_audio_route_tests.cpp
+    body_authority_tests.cpp
+    body_capacity_tests.cpp
+    body_lifecycle_tests.cpp
+    body_route_qualification_tests.cpp
     concurrency_tests.cpp
     execution_owner_tests.cpp
     execution_qualification_tests.cpp
@@ -30,6 +35,7 @@ catch_discover_tests(inputnext_output_component_tests
 )
 
 add_executable(inputnext_output_execution_component_tests
+    body_route_registration_tests.cpp
     execution_engine_backoff_qualification_tests.cpp
     execution_engine_backoff_tests.cpp
     execution_engine_capacity_tests.cpp

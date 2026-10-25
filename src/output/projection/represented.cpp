@@ -1,23 +1,37 @@
 #include "represented.hpp"
 
+#include "output/policy/body.hpp"
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_body.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <expected>
+#include <optional>
 
 namespace inputnext::output::detail {
+namespace {
+
+[[nodiscard]] bool has_diagnostic_rumble(
+    const std::optional<channel_snapshot<rumble_value>>& rumble) noexcept {
+    return rumble.has_value() && rumble->provenance.priority == internal_priority::diagnostic;
+}
+
+} // namespace
 
 execution_result<represented_projection> project_representation(const logical_snapshot& snapshot,
-    const channel_mask channels) noexcept {
+    const channel_mask channels,
+    const body_route_support route_support) noexcept {
     if (!snapshot.target.valid() || !snapshot.incarnation.valid() || channels == 0U ||
-        (channels & ~supported_channel_mask) != 0U) {
+        (channels & ~supported_channel_mask) != 0U ||
+        !body_policy::valid_route_support(route_support)) {
         return std::unexpected{execution_error::invalid_argument};
     }
 
     represented_projection projection{.target = snapshot.target,
         .incarnation = snapshot.incarnation,
-        .channels = channels};
+        .channels = channels,
+        .route_support = route_support};
 
     if ((channels & left_trigger_mask) != 0U) {
         projection.left_trigger = snapshot.left_trigger;
@@ -26,13 +40,26 @@ execution_result<represented_projection> project_representation(const logical_sn
         projection.right_trigger = snapshot.right_trigger;
     }
     if ((channels & rumble_mask) != 0U) {
-        projection.rumble = snapshot.rumble;
+        projection.body = snapshot.body;
+        if (!projection.body.has_value() || has_diagnostic_rumble(snapshot.rumble)) {
+            projection.rumble = snapshot.rumble;
+        }
     }
     if ((channels & leds_mask) != 0U) {
         projection.leds = snapshot.leds;
     }
 
     return projection;
+}
+
+std::optional<body_route_intent> represented_body_route(
+    const represented_projection& projection) noexcept {
+    if (!projection.body.has_value()) {
+        return std::nullopt;
+    }
+    return body_policy::represented_route(*projection.body,
+        projection.route_support,
+        has_diagnostic_rumble(projection.rumble));
 }
 
 native_output native_values(const represented_projection& projection) noexcept {
@@ -43,9 +70,14 @@ native_output native_values(const represented_projection& projection) noexcept {
     if (projection.right_trigger.has_value()) {
         output.values.right_trigger = projection.right_trigger->value;
     }
-    if (projection.rumble.has_value()) {
+    const bool diagnostic_winner = has_diagnostic_rumble(projection.rumble);
+    if (projection.body.has_value() && !diagnostic_winner) {
+        output.values.rumble =
+            body_policy::represented_rumble(*projection.body, projection.route_support);
+    } else if (projection.rumble.has_value()) {
         output.values.rumble = projection.rumble->value;
     }
+    output.body = represented_body_route(projection);
     if (projection.leds.has_value()) {
         output.values.leds = projection.leds->value;
     }

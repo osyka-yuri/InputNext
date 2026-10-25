@@ -2,6 +2,7 @@
 
 #include <inputnext/device_identity.hpp>
 #include <inputnext/output.hpp>
+#include <inputnext/output_body.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -111,6 +112,7 @@ struct native_result final {
 struct native_output final {
     channel_mask channels{};
     channel_values values{};
+    std::optional<body_route_intent> body = std::nullopt;
 
     friend constexpr bool operator==(const native_output&, const native_output&) noexcept = default;
 };
@@ -159,6 +161,18 @@ enum class delivery_state : std::uint8_t {
     identity_exhausted,
 };
 
+struct body_route_ack final {
+    backend_handle backend{};
+    // Identifies the accepted call that established this route; it need not be the latest full
+    // channel publication or completion.
+    publication_id publication{};
+    attempt_id attempt{};
+    body_route_intent intent{};
+
+    friend constexpr bool operator==(const body_route_ack&,
+        const body_route_ack&) noexcept = default;
+};
+
 struct backend_progress final {
     backend_handle backend{};
     backend_phase phase{backend_phase::current};
@@ -176,6 +190,7 @@ struct backend_progress final {
     std::optional<completed_attempt> last_completed_attempt;
     bool write_in_flight{};
     bool retry_requested{};
+    std::optional<body_route_ack> acknowledged_body_route = std::nullopt;
 };
 
 } // namespace inputnext::output

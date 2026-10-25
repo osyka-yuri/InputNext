@@ -25,6 +25,9 @@ enum class error : std::uint8_t {
     stale_revision,
     expired,
     deadline_overflow,
+    busy,
+    stale_lease,
+    stale_audio,
 };
 
 template <typename T>

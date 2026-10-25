@@ -2,6 +2,7 @@
 
 #include <inputnext/device_identity.hpp>
 #include <inputnext/output.hpp>
+#include <inputnext/output_body.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <memory>
@@ -29,16 +30,20 @@ public:
 
     [[nodiscard]] execution_result<backend_handle> register_backend(connection_target target,
         std::unique_ptr<native_sink>& candidate,
-        channel_mask supported_channels);
+        channel_mask supported_channels,
+        body_route_support route_support = body_route_support::classic_only);
     [[nodiscard]] execution_result<backend_handle> replace_backend(backend_handle expected,
         connection_target target,
         std::unique_ptr<native_sink>& candidate,
-        channel_mask supported_channels);
+        channel_mask supported_channels,
+        body_route_support route_support = body_route_support::classic_only);
 
     [[nodiscard]] execution_result<void> request_retry(backend_handle backend);
     void request_drive() noexcept;
     [[nodiscard]] execution_result<retirement_receipt> retire(backend_handle backend);
     [[nodiscard]] execution_result<backend_progress> progress(backend_handle backend) const;
+    [[nodiscard]] execution_result<bool> qualifies_route(
+        const body_route_ack& acknowledgement) const;
     [[nodiscard]] execution_result<void> acknowledge_retirement(const retirement_receipt& receipt);
 
     void shutdown() noexcept;

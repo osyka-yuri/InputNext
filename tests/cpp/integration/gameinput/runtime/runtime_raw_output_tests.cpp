@@ -13,6 +13,7 @@
 #include <inputnext/input_sample.hpp>
 #include <inputnext/native_output.hpp>
 #include <inputnext/output.hpp>
+#include <inputnext/output_body.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -179,6 +180,10 @@ TEST_CASE("gameinput.runtime.dualsense_usb_sink_selects_exact_report_payload_cap
         auto wrong_mask = raw_command(target, values);
         wrong_mask.output.channels = output::rumble_mask;
         CHECK(sink->write(wrong_mask).status == output::native_status::unsupported);
+        auto unexpected_hd = raw_command(target, values);
+        unexpected_hd.output.body =
+            output::body_route_intent{.route = output::body_actuator_route::hd};
+        CHECK(sink->write(unexpected_hd).status == output::native_status::unsupported);
         CHECK(controls->factory_calls() == index);
 
         const auto result = sink->write(raw_command(target, values));

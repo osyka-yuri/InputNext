@@ -1,4 +1,5 @@
 #include "executor_state.hpp"
+#include <inputnext/output_body.hpp>
 
 #include <inputnext/device_identity.hpp>
 #include <inputnext/native_output.hpp>
@@ -17,8 +18,10 @@ execution_result<backend_handle> executor::implementation::register_backend(
     const connection_target target,
     std::unique_ptr<native_sink>& candidate,
     const channel_mask supported_channels,
+    const body_route_support route_support,
     const std::optional<backend_handle> expected) {
-    auto reservation = engine->reserve_backend(target, candidate, supported_channels, expected);
+    auto reservation =
+        engine->reserve_backend(target, candidate, supported_channels, expected, route_support);
     if (!reservation.has_value()) {
         return std::unexpected{reservation.error()};
     }
@@ -60,23 +63,33 @@ execution_result<backend_handle> executor::implementation::register_backend(
 
 execution_result<backend_handle> executor::register_backend(const connection_target target,
     std::unique_ptr<native_sink>& candidate,
-    const channel_mask supported_channels) {
+    const channel_mask supported_channels,
+    const body_route_support route_support) {
     const implementation::operation active{*implementation_};
     if (!active.entered()) {
         return std::unexpected{execution_error::not_running};
     }
-    return implementation_->register_backend(target, candidate, supported_channels, std::nullopt);
+    return implementation_->register_backend(target,
+        candidate,
+        supported_channels,
+        route_support,
+        std::nullopt);
 }
 
 execution_result<backend_handle> executor::replace_backend(const backend_handle expected,
     const connection_target target,
     std::unique_ptr<native_sink>& candidate,
-    const channel_mask supported_channels) {
+    const channel_mask supported_channels,
+    const body_route_support route_support) {
     const implementation::operation active{*implementation_};
     if (!active.entered()) {
         return std::unexpected{execution_error::not_running};
     }
-    return implementation_->register_backend(target, candidate, supported_channels, expected);
+    return implementation_->register_backend(target,
+        candidate,
+        supported_channels,
+        route_support,
+        expected);
 }
 
 } // namespace inputnext::output

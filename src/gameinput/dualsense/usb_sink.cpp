@@ -6,6 +6,7 @@
 #include "usb_report.hpp"
 #include <inputnext/native_output.hpp>
 #include <inputnext/output.hpp>
+#include <inputnext/output_body.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <cstdint>
@@ -29,6 +30,10 @@ public:
             return output::native_result{.status = output::native_status::disconnected};
         }
         if (command.output.channels != output::supported_channel_mask) {
+            return output::native_result{.status = output::native_status::unsupported};
+        }
+        if (command.output.body.has_value() &&
+            command.output.body->route == output::body_actuator_route::hd) {
             return output::native_result{.status = output::native_status::unsupported};
         }
 

@@ -38,6 +38,7 @@ void authority::implementation::install_close_receipt(record& entry,
         value.active = false;
         value.expires_at.reset();
     }
+    entry.body.reset();
 }
 
 std::size_t authority::implementation::retire(connection_target target) noexcept {
@@ -50,12 +51,21 @@ std::size_t authority::implementation::retire(connection_target target) noexcept
         open_removed += static_cast<std::size_t>(entry.state == phase::open);
         ++removed;
     }
-    if (open_removed != 0U) {
+    const auto audio_removed = static_cast<std::size_t>(
+        std::ranges::count_if(audio_routes, [target](const audio_route_record& entry) {
+            return entry.facts.has_value() && entry.facts->instance.target == target;
+        }));
+    if (open_removed != 0U || audio_removed != 0U) {
         advance_cleanup_version();
     }
     for (auto& entry : records) {
         if (entry.state != phase::free && entry.identity.target == target) {
             entry.reset();
+        }
+    }
+    for (auto& entry : audio_routes) {
+        if (entry.facts.has_value() && entry.facts->instance.target == target) {
+            entry.facts.reset();
         }
     }
     return removed;
@@ -64,6 +74,7 @@ std::size_t authority::implementation::retire(connection_target target) noexcept
 std::size_t authority::implementation::expire_target(connection_target target,
     policy_detail::deadline evaluation_time) noexcept {
     std::size_t expired = 0U;
+    bool body_expired = false;
     for (const auto& entry : records) {
         if (entry.state != phase::open || entry.identity.target != target) {
             continue;
@@ -72,8 +83,11 @@ std::size_t authority::implementation::expire_target(connection_target target,
             std::ranges::count_if(entry.channels, [evaluation_time](const channel_state& value) {
                 return value.active && policy_detail::is_expired(value.expires_at, evaluation_time);
             }));
+        if (entry.body.has_value()) {
+            body_expired = body_expired || evaluation_time >= entry.body->expires_at;
+        }
     }
-    if (expired == 0U) {
+    if (expired == 0U && !body_expired) {
         return 0U;
     }
 
@@ -86,6 +100,13 @@ std::size_t authority::implementation::expire_target(connection_target target,
             if (value.active && policy_detail::is_expired(value.expires_at, evaluation_time)) {
                 value.active = false;
                 value.expires_at.reset();
+            }
+        }
+        const auto& body = entry.body;
+        if (body.has_value()) {
+            const auto expires_at = body->expires_at;
+            if (evaluation_time >= expires_at) {
+                entry.body.reset();
             }
         }
     }

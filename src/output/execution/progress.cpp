@@ -66,7 +66,8 @@ execution_result<backend_progress> execution_engine::progress(
         .last_attempt = backend->last_attempt,
         .last_completed_attempt = backend->last_completed_attempt,
         .write_in_flight = backend->write_in_flight,
-        .retry_requested = backend->retry_requested};
+        .retry_requested = backend->retry_requested,
+        .acknowledged_body_route = backend->acknowledged_body_route};
 }
 
 } // namespace inputnext::output::detail

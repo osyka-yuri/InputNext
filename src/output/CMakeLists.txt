@@ -1,10 +1,12 @@
 add_library(inputnext_output_policy STATIC
+    policy/body.cpp
     policy/policy.cpp
 )
 target_include_directories(inputnext_output_policy PUBLIC "${PROJECT_SOURCE_DIR}/include")
 inputnext_configure_target(inputnext_output_policy)
 
 add_library(inputnext_output_authority STATIC
+    body/audio_route_control.cpp
     authority/incarnation.cpp
     authority/execution.cpp
     authority/state.cpp
@@ -13,6 +15,8 @@ add_library(inputnext_output_authority STATIC
     authority/mutation.cpp
     authority/facts.cpp
     authority/snapshot.cpp
+    body/authority.cpp
+    body/lifecycle.cpp
     composition/composition.cpp
     composition/internal_producer.cpp
     xinput/rumble.cpp
@@ -30,6 +34,7 @@ target_link_libraries(inputnext_output_authority
 inputnext_configure_target(inputnext_output_authority)
 
 add_library(inputnext_output_execution_engine OBJECT
+    execution/body_route.cpp
     execution/drive.cpp
     execution/drive_policy.cpp
     execution/engine_state.cpp

@@ -1,4 +1,5 @@
 #include "gameinput/runtime/output_access.hpp"
+#include <inputnext/output_body.hpp>
 
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/rumble/rumble_sink.hpp"
@@ -91,6 +92,11 @@ TEST_CASE("gameinput.runtime.output_access_owns_exact_lease_and_rumble_sink",
     CHECK(sink->write(command).status == output::native_status::accepted);
     CHECK(fixture.native->rumble_script()->writes() == 1U);
     CHECK(fixture.native->rumble_script()->last_value() == command.output.values.rumble);
+
+    auto unexpected_hd = command;
+    unexpected_hd.output.body = output::body_route_intent{.route = output::body_actuator_route::hd};
+    CHECK(sink->write(unexpected_hd).status == output::native_status::unsupported);
+    CHECK(fixture.native->rumble_script()->writes() == 1U);
 
     auto wrong_target = command;
     wrong_target.backend.target.connection.value += 1U;

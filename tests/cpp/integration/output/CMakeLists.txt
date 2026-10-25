@@ -1,4 +1,10 @@
 add_executable(inputnext_output_integration_tests
+    body_route_ack_tests.cpp
+    body_route_completion_tests.cpp
+    body_route_failure_tests.cpp
+    body_route_independence_tests.cpp
+    body_route_masking_tests.cpp
+    body_route_stale_completion_tests.cpp
     execution_input_progress_tests.cpp
     input_progress_tests.cpp
 )

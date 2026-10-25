@@ -1,6 +1,7 @@
 #pragma once
 
 #include "internal_producer.hpp"
+#include "output/body/audio_route_control.hpp"
 #include "output/xinput/rumble.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_registry.hpp>
@@ -28,6 +29,7 @@ public:
     composition& operator=(composition&&) = delete;
 
     [[nodiscard]] authority& public_authority() & noexcept;
+    [[nodiscard]] audio_route_control audio_routes() & noexcept;
     [[nodiscard]] result<internal_producer> make_producer(
         const internal_context_options& options) & noexcept;
     [[nodiscard]] result<std::unique_ptr<xinput_rumble>> make_xinput_rumble() & noexcept;

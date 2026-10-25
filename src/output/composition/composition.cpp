@@ -1,6 +1,7 @@
 #include "composition.hpp"
 
 #include "internal_producer.hpp"
+#include "output/body/audio_route_control.hpp"
 #include "output/policy/policy.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_registry.hpp>
@@ -21,6 +22,10 @@ composition::composition(runtime_id runtime,
 
 authority& composition::public_authority() & noexcept {
     return owner_;
+}
+
+audio_route_control composition::audio_routes() & noexcept {
+    return audio_route_control{owner_};
 }
 
 result<internal_producer> composition::make_producer(

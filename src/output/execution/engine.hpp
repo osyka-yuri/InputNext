@@ -4,6 +4,7 @@
 #include <inputnext/native_output.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_body.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <array>
@@ -43,6 +44,7 @@ struct registration_reservation final {
     channel_mask supported_channels{};
     std::optional<backend_handle> expected_backend;
     bool start_worker{};
+    body_route_support route_support{body_route_support::classic_only};
 
     [[nodiscard]] constexpr bool valid() const noexcept {
         return reserved_backend.valid() && lane.valid();
@@ -65,7 +67,8 @@ public:
         connection_target target,
         const std::unique_ptr<native_sink>& candidate,
         channel_mask supported_channels,
-        std::optional<backend_handle> expected = std::nullopt);
+        std::optional<backend_handle> expected = std::nullopt,
+        body_route_support route_support = body_route_support::classic_only);
     [[nodiscard]] execution_result<void> worker_started(lane_token token) noexcept;
     [[nodiscard]] execution_result<void> worker_start_failed(lane_token token) noexcept;
     [[nodiscard]] execution_result<backend_handle> commit_backend(
@@ -90,6 +93,8 @@ public:
     [[nodiscard]] execution_result<retirement_receipt> retire(backend_handle handle,
         retirement_reason reason = retirement_reason::requested) noexcept;
     [[nodiscard]] execution_result<backend_progress> progress(backend_handle handle) const noexcept;
+    [[nodiscard]] execution_result<bool> qualifies_route(
+        const body_route_ack& acknowledgement) const noexcept;
     [[nodiscard]] execution_result<void> acknowledge_retirement(
         const retirement_receipt& receipt) noexcept;
     void close_all() noexcept;

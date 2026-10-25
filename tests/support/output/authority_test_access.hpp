@@ -9,6 +9,7 @@
 #include <inputnext/input_binding.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_body.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <array>
@@ -31,6 +32,7 @@ public:
         std::uint64_t accepted_sequence{};
         channel_revisions revisions{};
         std::array<bool, channel_count> active{};
+        std::optional<body_snapshot> body;
         std::optional<close_receipt> receipt;
         std::uint64_t logical_version{};
     };
@@ -71,6 +73,7 @@ public:
         observation.open = open;
         observation.accepted_sequence = entry->accepted_sequence;
         observation.receipt = entry->receipt;
+        observation.body = entry->body;
         observation.logical_version = value.implementation_->logical_version;
         for (std::size_t index = 0U; index < channel_count; ++index) {
             observation.revisions[index] = entry->channels[index].revision;
@@ -87,6 +90,28 @@ public:
         value.implementation_->test_clock_ticks = &ticks;
     }
 
+    [[nodiscard]] static result<body_receipt> commit_body_locked(authority& value,
+        context_identity identity,
+        const body_request& request,
+        std::chrono::steady_clock::time_point entry_time) {
+        auto lock = lock_gate(value);
+        auto* const entry = value.implementation_->find_open(identity);
+        if (entry == nullptr) {
+            return std::unexpected{error::stale_context};
+        }
+        const auto expires =
+            policy_detail::make_deadline(entry_time, request.ttl, ttl_permission::finite_only);
+        if (!expires.has_value()) {
+            return std::unexpected{expires.error()};
+        }
+        if (!expires->has_value()) {
+            return std::unexpected{error::deadline_overflow};
+        }
+        return value.implementation_->commit_body_locked(*entry,
+            request,
+            {.entered_at = entry_time, .expires_at = **expires});
+    }
+
     static void set_logical_version(authority& value, std::uint64_t version) {
         auto lock = lock_gate(value);
         value.implementation_->logical_version = version;
@@ -95,6 +120,21 @@ public:
     static void set_next_execution_id(authority& value, std::uint64_t next_id) {
         auto lock = lock_gate(value);
         value.implementation_->next_execution_id = next_id;
+    }
+
+    static void set_next_body_lease_id(authority& value, std::uint64_t next_id) {
+        auto lock = lock_gate(value);
+        value.implementation_->next_body_lease_id = next_id;
+    }
+
+    [[nodiscard]] static std::uint64_t next_body_lease_id(authority& value) {
+        auto lock = lock_gate(value);
+        return value.implementation_->next_body_lease_id;
+    }
+
+    static void set_next_audio_instance_id(authority& value, std::uint64_t next_id) {
+        auto lock = lock_gate(value);
+        value.implementation_->next_audio_instance_id = next_id;
     }
 
     [[nodiscard]] static std::uint64_t next_execution_id(authority& value) {
@@ -117,6 +157,18 @@ public:
             return false;
         }
         entry->channels[static_cast<std::size_t>(selected)].revision = revision;
+        return true;
+    }
+
+    [[nodiscard]] static bool set_opening_epoch(authority& value,
+        context_identity identity,
+        std::optional<focus::foreground_epoch> epoch) {
+        auto lock = lock_gate(value);
+        auto* const entry = value.implementation_->find_open(identity);
+        if (entry == nullptr) {
+            return false;
+        }
+        entry->opening_epoch = epoch;
         return true;
     }
 

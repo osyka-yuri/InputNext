@@ -3,6 +3,7 @@
 #include "output/policy/policy.hpp"
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_body.hpp>
 
 #include <bit>
 #include <cstddef>
@@ -264,8 +265,13 @@ result<mutation_receipt> authority::implementation::commit_submit_locked(record&
                                  std::popcount(request.selected_channels & supported_channel_mask))
                            : 0U;
     const auto reservations_before = reservation_count();
-    const auto reservations_after =
-        reservations_before - static_cast<std::size_t>(removed) + static_cast<std::size_t>(added);
+    const bool mutates_diagnostic_rumble = entry.priority == internal_priority::diagnostic &&
+                                           (request.selected_channels & rumble_mask) != 0U;
+
+    const auto preempted_hd_bodies =
+        mutates_diagnostic_rumble ? hd_body_count(entry.identity.target) : 0U;
+    const auto reservations_after = reservations_before - static_cast<std::size_t>(removed) +
+                                    static_cast<std::size_t>(added) - preempted_hd_bodies;
     if (!ordinary_headroom(reservations_after)) {
         return std::unexpected{error::logical_version_exhausted};
     }
@@ -284,6 +290,10 @@ result<mutation_receipt> authority::implementation::commit_submit_locked(record&
         value.expires_at = deadline;
     }
     entry.accepted_sequence = request.sequence;
+    if (mutates_diagnostic_rumble) {
+        static_cast<void>(
+            latch_hd_bodies(entry.identity.target, body_fallback_reason::preempted, commit_order));
+    }
     logical_version = commit_order;
     return make_receipt(entry, commit_order);
 }

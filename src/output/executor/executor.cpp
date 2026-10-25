@@ -150,6 +150,14 @@ execution_result<backend_progress> executor::progress(const backend_handle backe
     return implementation_->engine->progress(backend);
 }
 
+execution_result<bool> executor::qualifies_route(const body_route_ack& acknowledgement) const {
+    const implementation::operation active{*implementation_};
+    if (!active.entered()) {
+        return std::unexpected{execution_error::not_running};
+    }
+    return implementation_->engine->qualifies_route(acknowledgement);
+}
+
 execution_result<void> executor::acknowledge_retirement(const retirement_receipt& receipt) {
     const implementation::operation active{*implementation_};
     if (!active.entered()) {

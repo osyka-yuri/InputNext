@@ -71,6 +71,7 @@ execution_engine::implementation::drive_action execution_engine::implementation:
         .output = native_values(*backend->projection)};
     action.sink = backend->sink.get();
 
+    retain_body_ack_for(*backend, action.command.output.body);
     backend->last_attempt = attempt;
     backend->write_in_flight = true;
     backend->delivery = delivery_state::in_flight;
@@ -158,11 +159,27 @@ void execution_engine::implementation::finish_attempt(const native_command& comm
         notify_lane(backend->lane);
         return;
     }
+
+    if (result.status != native_status::accepted) {
+        backend->acknowledged_body_route.reset();
+    }
+    const auto route_completion = complete_body_route(*backend, command, result);
     if (result.status == native_status::disconnected) {
-        // Disconnection applies to this backend even when the completed publication is stale.
-        apply_native_result(*backend, result);
+        // Retire this exact backend even when fresh authority qualification is stale or fails.
+        retire_locked(*backend, retirement_reason::disconnected);
         return;
     }
+
+    if (!route_completion.has_value()) {
+        const execution_result<bool> route_error = std::unexpected{route_completion.error()};
+        static_cast<void>(apply_qualification_result(*backend, route_error));
+        return;
+    }
+    if (*route_completion != completion_disposition::current) {
+        static_cast<void>(apply_qualification_result(*backend, execution_result<bool>{false}));
+        return;
+    }
+
     if (backend->publication != command.publication) {
         notify_lane(backend->lane);
         return;
@@ -176,9 +193,9 @@ void execution_engine::implementation::finish_attempt(const native_command& comm
         return;
     }
 
-    const auto still_current =
+    const auto qualified =
         authority_execution_access::qualifies(owner, execution, *backend->projection);
-    if (!apply_qualification_result(*backend, still_current)) {
+    if (!apply_qualification_result(*backend, qualified)) {
         return;
     }
 
@@ -286,6 +303,7 @@ execution_result<void> execution_engine::request_retry(const backend_handle hand
         return std::unexpected{execution_error::identity_exhausted};
     }
     backend->retry_requested = true;
+    backend->acknowledged_body_route.reset();
     backend->delivery_needed = true;
     backend->delivery = delivery_state::pending;
     backend->due = clock::now();

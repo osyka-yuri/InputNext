@@ -4,6 +4,7 @@
 #include <inputnext/device_registry.hpp>
 #include <inputnext/focus.hpp>
 #include <inputnext/output.hpp>
+#include <inputnext/output_body.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -61,11 +62,13 @@ struct logical_snapshot final {
     std::optional<channel_snapshot<trigger_value>> right_trigger;
     std::optional<channel_snapshot<rumble_value>> rumble;
     std::optional<channel_snapshot<led_value>> leds;
+    std::optional<body_snapshot> body;
 
     [[nodiscard]] constexpr channel_mask present_channels() const noexcept {
         return (left_trigger.has_value() ? left_trigger_mask : 0U) |
                (right_trigger.has_value() ? right_trigger_mask : 0U) |
-               (rumble.has_value() ? rumble_mask : 0U) | (leds.has_value() ? leds_mask : 0U);
+               ((rumble.has_value() || body.has_value()) ? rumble_mask : 0U) |
+               (leds.has_value() ? leds_mask : 0U);
     }
 
     friend bool operator==(const logical_snapshot&, const logical_snapshot&) = default;
@@ -87,6 +90,7 @@ class xinput_rumble;
 class xinput_rumble_transaction;
 class authority_test_access;
 class authority_execution_access;
+class audio_route_control;
 enum class incarnation_creation : std::uint8_t;
 } // namespace detail
 
@@ -111,6 +115,10 @@ public:
         const submit_request& request);
     [[nodiscard]] result<mutation_receipt> clear(public_context context,
         const clear_request& request);
+    [[nodiscard]] result<body_receipt> submit_body(public_context context,
+        const body_request& request);
+    [[nodiscard]] result<void> clear_body(public_context context,
+        const body_clear_request& request);
     // Returns stored open-record state and performs local TTL maintenance. The opening foreground
     // epoch is historical; inspection does not requalify focus or connection liveness and does
     // not authorize execution or a later operation.
@@ -129,6 +137,7 @@ private:
     friend class detail::xinput_rumble_transaction;
     friend class detail::authority_test_access;
     friend class detail::authority_execution_access;
+    friend class detail::audio_route_control;
 
     authority(runtime_id runtime,
         device_registry& registry,

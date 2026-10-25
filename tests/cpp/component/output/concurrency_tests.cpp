@@ -15,6 +15,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -169,7 +170,7 @@ TEST_CASE("output.concurrent_close_write_and_snapshots_are_whole_owner_projectio
     REQUIRE(initial_b.has_value());
 
     constexpr std::size_t snapshot_count = 8U;
-    std::array<std::optional<result<logical_snapshot>>, snapshot_count> snapshots{};
+    std::vector<std::optional<result<logical_snapshot>>> snapshots(snapshot_count);
     auto submit_result = result<mutation_receipt>{std::unexpected{error::resources}};
     auto close_result = result<close_receipt>{std::unexpected{error::resources}};
     controlled_start start;

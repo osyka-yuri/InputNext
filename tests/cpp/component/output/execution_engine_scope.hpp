@@ -6,6 +6,7 @@
 #include <inputnext/native_output.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_body.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <array>
@@ -85,9 +86,14 @@ public:
     register_backend(const inputnext::connection_target target,
         std::unique_ptr<inputnext::output::native_sink>& candidate,
         const inputnext::output::channel_mask supported_channels,
-        const std::optional<inputnext::output::backend_handle> expected = std::nullopt) {
-        auto reservation =
-            engine_->reserve_backend(target, candidate, supported_channels, expected);
+        const std::optional<inputnext::output::backend_handle> expected = std::nullopt,
+        const inputnext::output::body_route_support route_support =
+            inputnext::output::body_route_support::classic_only) {
+        auto reservation = engine_->reserve_backend(target,
+            candidate,
+            supported_channels,
+            expected,
+            route_support);
         if (!reservation.has_value()) {
             return std::unexpected{reservation.error()};
         }
