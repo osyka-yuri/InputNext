@@ -11,7 +11,7 @@
 
 Use a Visual Studio Developer PowerShell configured for x64 or x86. Configure defaults to `cl` when no compiler is supplied, using the compiler and SDK from that environment. It preserves the resolved compiler on subsequent configurations and rejects a target that does not match the preset. C++23, standard C++ exception handling (`/EHsc`), the static MSVC runtime, strict conformance, and warnings as errors apply to project targets. Dependency sources do not inherit project warning options.
 
-Project C++ targets define `NOMINMAX`; dependency targets retain their own compile definitions.
+Project targets define `NOMINMAX`; dependency targets retain their own compile definitions. Core SDK C consumers build as C17 with the matching C compiler; C++ consumers retain C++23.
 
 MSVC also enables additional conversion, enum-switch and virtual-destructor warnings, `/sdl` security checks, and `/options:strict`. Compiler-specific options are excluded from clang-cl builds.
 
@@ -41,7 +41,7 @@ Run the quality gates as well:
 ./tools/verify.ps1 -Architecture x64 -CheckQuality
 ```
 
-This first checks PowerShell analysis and formatting and C++ formatting, then enables clang-tidy for the Default native profile while compiling project targets, builds, and runs CTest. clang-tidy uses the same target architecture and exception model as the build. Analysis warnings fail the build. Third-party targets are excluded from the project analysis policy. Unchanged objects reuse their previous analysis; changes to `.clang-tidy` invalidate project objects.
+This first checks PowerShell analysis and formatting and C/C++ formatting, then enables clang-tidy for the Default native profile while compiling project targets, builds, and runs CTest. clang-tidy uses the same target architecture and exception model as the build. Analysis warnings fail the build. Third-party targets are excluded from the project analysis policy. Unchanged objects reuse their previous analysis; changes to `.clang-tidy` invalidate project objects.
 
 Without `-CheckQuality`, the script explicitly disables clang-tidy for the build. Quality checks never rewrite sources or install tools.
 
@@ -67,7 +67,7 @@ Select a native profile:
 
 Profiles use separate build directories with `-analyze`, `-asan`, or `-ubsan` suffixes and retain verification logs there. `Analyze` also builds a separate production-only tree. Diagnostic profiles keep compiler warnings as errors; `-CheckQuality` checks formatting and PowerShell without adding clang-tidy to their compilation.
 
-The Address profile requires the MSVC AddressSanitizer component. It disables incompatible runtime checks and incremental linking. Undefined uses the static release CRT and checks C++ sanitizer runtime linkage during configuration. These profiles instrument project targets and Catch2; prebuilt SDK binaries are unchanged.
+The Address profile requires the MSVC AddressSanitizer component. It disables incompatible runtime checks and incremental linking. Undefined uses the static release CRT and checks C++ sanitizer runtime linkage during configuration. Pure C targets use the C sanitizer runtime; C++ links also require vptr support. These profiles instrument project targets and Catch2; prebuilt SDK binaries are unchanged.
 
 Undefined pins clang-cl 23.1.3 and verifies both compiler-rt library hashes. Its isolated overflow probe must produce the expected UBSan report and terminate with recovery disabled. An uninstrumented or recovering probe fails this check.
 
@@ -148,17 +148,19 @@ Focus observation and XInput presentation also build for both architectures with
 
 See [XInput DLL bundle](xinput-dll.md) for Release build commands, deployment and manual checks. The bundle is omitted when GameInput is disabled.
 
+The [Core SDK](core-sdk.md) is exposed by the same runtime. `INPUTNEXT_BUILD_SDK_EXAMPLES=ON` builds its optional C/C++ example separately from the bundle. Pure C and C++ ABI contract checks are included in ordinary tests.
+
 ## Formatting
 
 The C++ style starts from LLVM with four-space indentation, a 100-column limit, left-aligned pointers and references, and LF line endings. Wrapped parameter and argument lists use one item per line. Includes are sorted within existing blocks; comment text is preserved.
 
-Use the repository's `.clang-format` with clang-format 23.1.3. Check the current C++ source without changing it:
+Use the repository's `.clang-format` with clang-format 23.1.3. Check C/C++ source without changing it:
 
 ```powershell
 clang-format --dry-run --Werror tests/harness/runner_checks.cpp
 ```
 
-Run PowerShell analysis and formatting and C++ formatting without rebuilding:
+Run PowerShell analysis and formatting and C/C++ formatting without rebuilding:
 
 ```powershell
 ./tools/check_quality.ps1
@@ -206,6 +208,8 @@ Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2
 - `tests/cpp/integration/gameinput/output` checks generic rumble and DualSense USB selection, backend admission and retirement, reconnect, capacity, and diagnostic evidence through production runtime, presentation, authority, and executor components with a controlled native port.
 - `tests/cpp/integration/gameinput/probe` checks child-process supervision, manual window controls, and app-local initialization and cleanup. It requires the diagnostic build option.
 - `tests/cpp/unit/runtime/abi` checks private ABI layout, complete tables and pure argument policy.
+- `tests/cpp/unit/core/abi` checks the public C/C++ header, layouts, calling convention and pure projection.
+- `tests/cpp/integration/core` checks discovery, exact targets, cached latest reads and reader ownership through the production runtime with controlled native ports. Reader delivery, focus, opening and closure have separate suites.
 - `tests/cpp/component/runtime/bootstrap` checks discovery and owner creation without native startup.
 - `tests/cpp/integration/runtime` checks the real ABI adapters and session composition with controlled native ports, including early Enable, concurrent publication, autonomous progress and retained shutdown owners.
 - `tests/cpp/integration/xinput/dll` checks actual PE exports against independent ABI manifests, facade dispatch, provider lifetime and normal executable imports. Its explicit native probe is separate from ordinary tests.

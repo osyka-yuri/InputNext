@@ -10,10 +10,15 @@ if(INPUTNEXT_ENABLE_CLANG_TIDY)
     endif()
 endif()
 
-function(inputnext_configure_target target)
-    target_compile_features(${target} PUBLIC cxx_std_23)
+function(inputnext_configure_native_target target)
     target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_compile_options(${target} PRIVATE /W4 /WX /EHsc /permissive- /utf-8 /Zc:__cplusplus)
+    target_compile_options(${target} PRIVATE
+        /W4 /WX
+        $<$<COMPILE_LANGUAGE:CXX>:/EHsc>
+        $<$<COMPILE_LANGUAGE:CXX>:/permissive->
+        /utf-8
+        $<$<COMPILE_LANGUAGE:CXX>:/Zc:__cplusplus>
+    )
     if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         target_compile_options(${target} PRIVATE
             /Zc:preprocessor
@@ -32,11 +37,24 @@ function(inputnext_configure_target target)
         endif()
         set_property(TARGET ${target} PROPERTY CXX_CLANG_TIDY
             "${INPUTNEXT_CLANG_TIDY};--extra-arg=/EHsc;--extra-arg=--target=${analysis_target}")
+        set_property(TARGET ${target} PROPERTY C_CLANG_TIDY
+            "${INPUTNEXT_CLANG_TIDY};--extra-arg=--target=${analysis_target}")
         get_target_property(sources ${target} SOURCES)
         foreach(source IN LISTS sources)
-            if(source MATCHES "\\.(cpp|cxx|cc)$")
+            if(source MATCHES "\\.(c|cpp|cxx|cc)$")
                 set_property(SOURCE "${source}" APPEND PROPERTY OBJECT_DEPENDS "${PROJECT_SOURCE_DIR}/.clang-tidy")
             endif()
         endforeach()
     endif()
+endfunction()
+
+function(inputnext_configure_target target)
+    target_compile_features(${target} PUBLIC cxx_std_23)
+    inputnext_configure_native_target(${target})
+endfunction()
+
+function(inputnext_configure_c_target target)
+    target_compile_features(${target} PRIVATE c_std_17)
+    set_target_properties(${target} PROPERTIES C_STANDARD_REQUIRED ON)
+    inputnext_configure_native_target(${target})
 endfunction()

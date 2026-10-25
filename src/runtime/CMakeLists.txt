@@ -17,6 +17,7 @@ target_link_libraries(inputnext_runtime_session PRIVATE
     inputnext_focus
     inputnext_profiles
     inputnext_profile_application
+    inputnext_core
     ole32
 )
 
@@ -32,10 +33,12 @@ inputnext_configure_target(inputnext_runtime_query_front)
 
 add_library(inputnext_runtime_core OBJECT
     abi/runtime_api.cpp
+    abi/core_api.cpp
+    abi/core_api_projection.cpp
     bootstrap/bootstrap_owner.cpp
 )
 target_include_directories(inputnext_runtime_core
-    PUBLIC "${PROJECT_SOURCE_DIR}/include"
+    PUBLIC "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/sdk"
     PRIVATE "${PROJECT_SOURCE_DIR}/src"
 )
 target_link_libraries(inputnext_runtime_core PUBLIC

@@ -27,6 +27,9 @@ void native_session::implementation::request_stop() noexcept {
 }
 
 bool native_session::implementation::close_admission_and_presentation() noexcept {
+    if (core_service != nullptr) {
+        core_service->close_admission();
+    }
     bool closed{};
     try {
         std::scoped_lock control_lock{control_gate};
@@ -154,6 +157,7 @@ void native_session::implementation::shutdown() noexcept {
 
     drain_owned_domains();
 
+    core_service.reset();
     profile_application.reset();
     if (presentation_service != nullptr) {
         presentation_service.reset();

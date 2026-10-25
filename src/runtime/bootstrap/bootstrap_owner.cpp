@@ -1,16 +1,15 @@
 #include "bootstrap_owner.hpp"
 
-#include <atomic>
+#include <inputnext/focus.hpp>
+#include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/xinput.hpp>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
-
-#include <inputnext/focus.hpp>
-#include <inputnext/gameinput_runtime.hpp>
 
 namespace inputnext::runtime_detail {
 namespace {
@@ -153,6 +152,10 @@ xinput::service* bootstrap_owner::bootstrap() noexcept {
 xinput::service* bootstrap_owner::presentation_if_published() noexcept {
     auto* const session = published_session_.load(std::memory_order_acquire);
     return session != nullptr ? &session->presentation() : nullptr;
+}
+
+native_session* bootstrap_owner::session_if_published() noexcept {
+    return published_session_.load(std::memory_order_acquire);
 }
 
 void bootstrap_owner::accept_enable(const BOOL enabled) {

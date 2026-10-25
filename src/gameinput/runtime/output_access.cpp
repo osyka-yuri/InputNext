@@ -3,6 +3,7 @@
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/native/native_raw_output_report.hpp"
 #include "gameinput/native/native_rumble_endpoint.hpp"
+#include "gameinput/output/usb/dualsense_eligibility.hpp"
 #include "metadata/policy.hpp"
 #include "owner_identity.hpp"
 #include "state.hpp"
@@ -143,17 +144,7 @@ metadata_result<bool> runtime_output_access::qualify_dualsense_usb(const connect
         queried->catalogue_generation != expected_catalogue_generation) {
         return std::unexpected(metadata_error::stale);
     }
-    if (queried->container_id_source == container_id_provenance::conflicting ||
-        !queried->model.has_value() ||
-        (queried->model.value != metadata_device_model::dualsense &&
-            queried->model.value != metadata_device_model::dualsense_edge) ||
-        !queried->transport.has_value() ||
-        queried->transport.value.value != physical_transport::usb) {
-        return false;
-    }
-
-    return queried->transport.value.provenance == transport_provenance::native_bus_type ||
-           queried->transport.value.provenance == transport_provenance::native_enumerator;
+    return is_dualsense_usb_eligible(*queried);
 }
 
 gameinput_result<runtime_output_lease> runtime_output_access::reserve(connection_target target) {

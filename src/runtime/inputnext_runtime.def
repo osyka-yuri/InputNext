@@ -1,3 +1,4 @@
 LIBRARY inputnext_runtime
 EXPORTS
     input_next_runtime_query_api @1
+    input_next_runtime_query_core_api @3

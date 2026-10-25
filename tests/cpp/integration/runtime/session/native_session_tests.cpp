@@ -1,5 +1,6 @@
 #include "native_session_test_support.hpp"
 
+#include "core/core.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_history_test_support.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include "runtime/session/native_session_dependencies.hpp"
@@ -80,6 +81,12 @@ TEST_CASE("runtime.session.startup_failure_is_terminal_and_drains_the_partial_na
     fixture.session->activate();
     REQUIRE(wait_until([&] { return fixture.rumble_controls->native_cleanup_complete(); }));
     CHECK(fixture.initialize_calls->load(std::memory_order_relaxed) == 1U);
+
+    const auto core_info = fixture.session->core().info();
+    CHECK(core_info.runtime.valid());
+    const auto inventory = fixture.session->core().enumerate();
+    REQUIRE_FALSE(inventory.has_value());
+    CHECK(inventory.error() == core::status::unavailable);
     CHECK(retained_failure.code == gameinput_error::registration_failed);
 
     XINPUT_STATE state{};

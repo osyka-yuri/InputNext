@@ -2,6 +2,7 @@
   "library": "inputnext_runtime.dll",
   "version": "1.0.0",
   "exports": [
-    { "ordinal": 1, "name": "input_next_runtime_query_api", "noname": false }
+    { "ordinal": 1, "name": "input_next_runtime_query_api", "noname": false },
+    { "ordinal": 3, "name": "input_next_runtime_query_core_api", "noname": false }
   ]
 }

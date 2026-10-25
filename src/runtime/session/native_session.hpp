@@ -12,6 +12,10 @@ namespace inputnext::xinput {
 class service;
 } // namespace inputnext::xinput
 
+namespace inputnext::core {
+class service;
+} // namespace inputnext::core
+
 namespace inputnext::runtime_detail {
 
 enum class native_session_drain_phase : std::uint8_t {
@@ -54,6 +58,8 @@ public:
 
     // Returns a stable borrow; callers must stop using it before shutdown().
     [[nodiscard]] xinput::service& presentation() noexcept;
+
+    [[nodiscard]] core::service& core() noexcept;
 
     // Requires external service callers to be quiescent. May wait for native calls to finish.
     void shutdown() noexcept;

@@ -1,5 +1,6 @@
 #include "native_session_state.hpp"
 
+#include "core/core.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/output/connections/manager.hpp"
 #include "gameinput/runtime/factory.hpp"
@@ -121,6 +122,13 @@ std::unique_ptr<native_session> native_session::implementation::prepare(
         *state->focus_observer,
         state->qpc_frequency,
         std::move(*rumble));
+
+    state->core_service = std::make_unique<core::service>(state->identity,
+        state->qpc_frequency,
+        state->registry,
+        *state->runtime,
+        *state->focus_observer,
+        state->presentation_service->presentation());
 
     const auto profile_producer = state->output_composition->make_producer({.owner = profile_owner,
         .priority = output::internal_priority::game_profile,

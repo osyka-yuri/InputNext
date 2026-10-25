@@ -30,7 +30,7 @@ if ($version -notmatch '^clang-format version 23\.1\.3(\s|$)') {
     throw 'InputNext requires clang-format 23.1.3.'
 }
 
-$cppFiles = foreach ($root in 'src', 'include', 'tests', 'tools') {
+$cppFiles = foreach ($root in 'src', 'include', 'sdk', 'tests', 'tools', 'examples') {
     $path = Join-Path $projectRoot $root
     if (Test-Path -LiteralPath $path) {
         Get-ChildItem -LiteralPath $path -Recurse -File -Include '*.cpp', '*.hpp', '*.h', '*.c'
@@ -47,4 +47,4 @@ if ($cppFiles) {
     }
 }
 
-Write-Information 'PowerShell analysis, PowerShell formatting, and C++ formatting passed.' -InformationAction Continue
+Write-Information 'PowerShell analysis, PowerShell formatting, and C/C++ formatting passed.' -InformationAction Continue

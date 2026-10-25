@@ -75,6 +75,7 @@ add_executable(inputnext_xinput_dll_probe
     dll_probe_companion_boundaries.cpp
     dll_probe_imports.cpp
     dll_probe_child.cpp
+    dll_probe_core.cpp
     dll_probe_forwarding.cpp
     dll_probe_production.cpp
     dll_probe_provider_addresses.cpp
@@ -87,7 +88,7 @@ target_include_directories(inputnext_xinput_dll_probe PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 inputnext_configure_target(inputnext_xinput_dll_probe)
-target_link_libraries(inputnext_xinput_dll_probe PRIVATE dbghelp)
+target_link_libraries(inputnext_xinput_dll_probe PRIVATE inputnext_core_sdk dbghelp)
 
 add_executable(inputnext_xinput_import_probe xinput_import_probe.cpp)
 target_link_libraries(inputnext_xinput_import_probe PRIVATE xinput)

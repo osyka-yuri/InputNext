@@ -119,6 +119,7 @@ void expect_reentry_result(snapshot_fn get_snapshot,
 [[nodiscard]] int run_companion_missing(const std::filesystem::path& directory);
 [[nodiscard]] int run_companion_system_path(const std::filesystem::path& bundle);
 [[nodiscard]] int run_production(const std::filesystem::path& bundle);
+[[nodiscard]] int run_core_query(const std::filesystem::path& bundle);
 [[nodiscard]] int run_provider_lifetime(const std::filesystem::path& directory);
 [[nodiscard]] int run_external_addresses(const std::filesystem::path& directory);
 [[nodiscard]] int run_table_dispatch(const std::filesystem::path& directory);

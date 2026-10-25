@@ -137,6 +137,14 @@ TEST_CASE("xinput.dll.production_bundle_lazy_shared_runtime_reload",
     require_child_success(result, "production_table_state=");
 }
 
+TEST_CASE("core.dll.query_preserves_the_shared_provider_without_native_startup",
+    "[integration][core][dll][process][abi]") {
+    const auto result =
+        inputnext::xinput_dll_tests::run_probe({L"core-query", bundle_directory().native()},
+            std::chrono::seconds{30});
+    require_child_success(result, "core_query_lifetime=passed");
+}
+
 TEST_CASE("xinput.dll.companion_loads_before_runtime_and_unloads_with_facade",
     "[integration][xinput][dll][process][lifetime]") {
     const auto result = run_isolated(L"companion", bundle_directory());

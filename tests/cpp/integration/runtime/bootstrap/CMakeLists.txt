@@ -1,5 +1,6 @@
 add_executable(inputnext_runtime_bootstrap_tests
     bootstrap_tests.cpp
+    core_bootstrap_tests.cpp
     runtime_api_adapter_tests.cpp
     runtime_api_guard_tests.cpp
     runtime_api_test_composition.cpp

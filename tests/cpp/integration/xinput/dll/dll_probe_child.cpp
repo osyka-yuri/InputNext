@@ -27,6 +27,9 @@ int wmain(const int argc, wchar_t** const argv) {
         if (scenario == L"companion-system-path") {
             return run_companion_system_path(directory);
         }
+        if (scenario == L"core-query") {
+            return run_core_query(directory);
+        }
         if (scenario == L"provider-lifetime") {
             return run_provider_lifetime(directory);
         }

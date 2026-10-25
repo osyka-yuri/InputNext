@@ -55,4 +55,4 @@ An accepted runtime provider remains loaded until process termination. Facades c
 
 Argument checks precede runtime discovery. Invalid indices and required null outputs return `ERROR_BAD_ARGUMENTS`; `XInputGetKeystroke` also accepts `XUSER_INDEX_ANY`. Flavor-specific unsupported queries take precedence, and reserved Guide arguments remain ignored. Valid calls without an available service return their connection or unsupported outcome without modifying outputs.
 
-The bundle preserves the established export names and ordinals. Native Guide wait/cancel and controller power-off retain their unsupported outcomes; the [typed C++ Guide waits](xinput-events.md) have a separate contract. Core and Effects SDK exports are not part of this XInput bundle.
+The facades preserve the established XInput export names and ordinals. Native Guide wait/cancel and controller power-off retain their unsupported outcomes; the [typed C++ Guide waits](xinput-events.md) have a separate contract. The shared runtime also exports the [Core C SDK](core-sdk.md) query at ordinal 3; the Effects SDK is not yet exposed.

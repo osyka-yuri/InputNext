@@ -37,7 +37,7 @@ Checks: >
 CheckOptions:
   bugprone-exception-escape.FunctionsThatShouldNotThrow: 'wmain'
   misc-include-cleaner.IgnoreHeaders: '(^|[/\\])([Ww]indows|share|corecrt_share|corecrt_wstring)\.h;[/\\]Windows Kits[/\\]10[/\\]Include[/\\][^/\\]+[/\\](um|shared)[/\\].*;(^|[/\\])toml\+\+[/\\](toml\.hpp|impl[/\\].*)'
-  cppcoreguidelines-macro-usage.AllowedRegexp: '^(INPUTNEXT_EXTERNAL_CALLBACK_FIXTURE_IMPORT|INPUTNEXT_XINPUT_FIXTURE_DEFAULT_QUERY_MODE)$'
+  cppcoreguidelines-macro-usage.AllowedRegexp: '^(INPUTNEXT_ABI_ASSERT|INPUTNEXT_EXTERNAL_CALLBACK_FIXTURE_IMPORT|INPUTNEXT_XINPUT_FIXTURE_DEFAULT_QUERY_MODE)$'
   misc-const-correctness.AnalyzeParameters: false
   misc-const-correctness.AllowedTypes: '^std::(scoped_lock|unique_lock|shared_lock|lock_guard)$'
   readability-function-cognitive-complexity.IgnoreMacros: true

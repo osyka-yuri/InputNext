@@ -43,6 +43,7 @@ public:
 
     [[nodiscard]] xinput::service* bootstrap() noexcept;
     [[nodiscard]] xinput::service* presentation_if_published() noexcept;
+    [[nodiscard]] native_session* session_if_published() noexcept;
     void accept_enable(BOOL enabled);
 
     [[nodiscard]] bootstrap_state state() const noexcept;

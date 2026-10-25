@@ -164,8 +164,9 @@ function(inputnext_configure_sanitizer target)
     target_link_directories(${target} ${link_scope} "${INPUTNEXT_UBSAN_RUNTIME_DIRECTORY}")
 
     if(NOT target_type STREQUAL "STATIC_LIBRARY" AND NOT target_type STREQUAL "OBJECT_LIBRARY")
+        # Pure C targets use the C runtime; C++ links also require vptr support.
         target_link_options(${target} PRIVATE
-            "LINKER:/INCLUDE:__ubsan_handle_dynamic_type_cache_miss_abort"
+            "$<$<LINK_LANGUAGE:CXX>:LINKER:/INCLUDE:__ubsan_handle_dynamic_type_cache_miss_abort>"
         )
     endif()
 endfunction()

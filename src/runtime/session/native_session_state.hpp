@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/core.hpp"
 #include "gameinput/output/connections/manager.hpp"
 #include "gameinput/runtime/output_access.hpp"
 #include "native_session.hpp"
@@ -60,6 +61,7 @@ struct native_session::implementation final {
     std::unique_ptr<gameinput_detail::gameinput_output_connections> connections;
     std::unique_ptr<gameinput_xinput> presentation_service;
     std::unique_ptr<profiles::application> profile_application;
+    std::unique_ptr<core::service> core_service;
     std::thread worker;
 
     mutable std::mutex control_gate;
