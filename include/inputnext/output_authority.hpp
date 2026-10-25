@@ -5,6 +5,8 @@
 #include <inputnext/focus.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_body.hpp>
+#include <inputnext/output_body_pcm.hpp>
+#include <inputnext/output_body_playback.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -117,6 +119,13 @@ public:
         const clear_request& request);
     [[nodiscard]] result<body_receipt> submit_body(public_context context,
         const body_request& request);
+    [[nodiscard]] result<body_playback_receipt> submit_body(public_context context,
+        const body_request& request,
+        const body_playback_update& playback);
+    [[nodiscard]] body_pcm_preparer pcm_preparer() const noexcept;
+    // Moves completed and retired sample owners out of the authority gate. Destruction occurs
+    // after the gate is released, so callers may use this as ordinary control progress.
+    void collect_body_pcm() noexcept;
     [[nodiscard]] result<void> clear_body(public_context context,
         const body_clear_request& request);
     // Returns stored open-record state and performs local TTL maintenance. The opening foreground

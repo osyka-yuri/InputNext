@@ -4,6 +4,8 @@ A body lease gives one public output context exclusive semantic rumble ownership
 
 The native models are declared in [output_body.hpp](../include/inputnext/output_body.hpp). Lease operations belong to the [output authority](output.md); native route completion belongs to the [executor](output-execution.md).
 
+[Body PCM](body-pcm.md) adds owned clips and offline rendering to the same lease.
+
 ## Acquire, renew and clear
 
 Call `authority::submit_body` with an open public context. Acquisition uses lease ID zero and body sequence one. TTL ranges from 1 to 60,000 milliseconds and starts at API entry, before waiting for the authority gate. Fallback amplitudes must be finite values in `[0, 1]`.
@@ -30,6 +32,6 @@ The executor acknowledges an HD route only after an accepted native call with a 
 
 An unchanged HD route retains the same acknowledgement across trigger and LED publications, including while their native writes are pending or in flight. Those writes still deliver their requested values. The route proof does not confirm delivery of a newer full command; `last_completed_attempt` reports each completed call separately. Masked ordinary rumble changes leave the effective publication unchanged.
 
-`backend_progress::acknowledged_body_route` is stored observation. `executor::qualifies_route` freshly checks that exact acknowledgement against current authority and execution state. Renewal, expiry, close, audio loss, preemption, explicit retry or backend replacement can invalidate it before the next coordinator refresh. A reported native failure clears the proof and latches its still-current HD route to classic even if trigger or LED changes have superseded the completed publication. A retry requested during a write requires a later accepted attempt. Neither operation grants an audio render permit or measures a physical effect.
+`backend_progress::acknowledged_body_route` is stored observation. `executor::qualifies_route` freshly checks that exact acknowledgement against current authority and execution state. Route changes, expiry, close, audio loss, preemption, explicit retry or backend replacement can invalidate it before the next coordinator refresh. Renewal preserves the route revision when its exact identity, selected route and fallback reason are unchanged. A reported native failure clears the proof and latches its still-current HD route to classic even if trigger or LED changes have superseded the completed publication. A retry requested during a write requires a later accepted attempt. Neither operation grants an audio render permit or measures a physical effect.
 
 The authority has 32 public and 32 internal context records, with at most one active body lease per target and 16 scalar audio attachments. Lease and audio IDs never repeat within an authority incarnation. Admission reserves logical-version capacity for expiry, route invalidation, readiness loss, detach and context close. Rejected admission does not consume an identity or partially install a lease.

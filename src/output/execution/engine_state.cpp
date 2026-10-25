@@ -201,6 +201,7 @@ void execution_engine::implementation::retire_locked(backend_record& backend,
     backend.retry_requested = false;
     backend.refresh_requested = false;
     backend.receipt = retirement_receipt{.backend = handle, .reason = reason};
+    authority_execution_access::retire_body_backend(owner, handle);
     notify_lane(backend.lane);
     notify_coordinator_refresh();
 }

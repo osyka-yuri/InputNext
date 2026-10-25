@@ -5,6 +5,7 @@
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
 #include <inputnext/output_body.hpp>
+#include <inputnext/output_body_playback.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <array>
@@ -95,6 +96,10 @@ public:
     [[nodiscard]] execution_result<backend_progress> progress(backend_handle handle) const noexcept;
     [[nodiscard]] execution_result<bool> qualifies_route(
         const body_route_ack& acknowledgement) const noexcept;
+    [[nodiscard]] execution_result<std::optional<body_render_permit>> admit_body_render(
+        const body_route_ack& acknowledgement,
+        body_playback_identity expected_playback,
+        std::size_t requested_frames) noexcept;
     [[nodiscard]] execution_result<void> acknowledge_retirement(
         const retirement_receipt& receipt) noexcept;
     void close_all() noexcept;

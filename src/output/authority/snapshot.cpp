@@ -1,3 +1,4 @@
+#include "output/body/pcm_collection.hpp"
 #include "state.hpp"
 
 #include "output/policy/policy.hpp"
@@ -280,6 +281,7 @@ result<logical_snapshot> authority::implementation::qualify_snapshot_locked(
 }
 
 result<logical_snapshot> authority::read_snapshot(connection_target target) {
+    const detail::body_pcm_collection_on_exit collect{*this};
     if (!target.valid()) {
         return std::unexpected{error::invalid_argument};
     }

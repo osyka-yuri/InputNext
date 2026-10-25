@@ -139,9 +139,16 @@ TEST_CASE("output.body_route_stale_disconnection_retires_without_mutating_renewe
     const auto disconnected_command = native_state->call(0U);
     REQUIRE(disconnected_command.output.body.has_value());
     CHECK(required_value(disconnected_command.output.body).route == body_actuator_route::hd);
-    const body_request renewal{.lease = initial_body->identity.lease,
+    const body_request classic{.lease = initial_body->identity.lease,
         .audio = *audio,
         .sequence = 2U,
+        .ttl = 5s,
+        .preference = body_route_preference::classic,
+        .fallback = request.fallback};
+    REQUIRE(fixture.owner.submit_body(*context, classic).has_value());
+    const body_request renewal{.lease = initial_body->identity.lease,
+        .audio = *audio,
+        .sequence = 3U,
         .ttl = 5s,
         .preference = body_route_preference::prefer_hd,
         .fallback = request.fallback};

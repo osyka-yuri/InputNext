@@ -1,4 +1,5 @@
 add_executable(inputnext_output_integration_tests
+    body_playback_admission_tests.cpp
     body_route_ack_tests.cpp
     body_route_completion_tests.cpp
     body_route_failure_tests.cpp
@@ -7,6 +8,9 @@ add_executable(inputnext_output_integration_tests
     body_route_stale_completion_tests.cpp
     execution_input_progress_tests.cpp
     input_progress_tests.cpp
+    pcm_input_progress_tests.cpp
+    pcm_lifetime_tests.cpp
+    pcm_render_qualification_tests.cpp
 )
 target_include_directories(inputnext_output_integration_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/src"

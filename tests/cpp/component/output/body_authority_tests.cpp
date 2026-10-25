@@ -63,6 +63,8 @@ TEST_CASE("output.body_lease_is_exact_and_has_an_independent_sequence", "[compon
     const auto renewed_receipt = fixture.owner.submit_body(*first, renewed);
     REQUIRE(renewed_receipt.has_value());
     CHECK(renewed_receipt->accepted_sequence == 2U);
+    CHECK(renewed_receipt->intent == acquired->intent);
+    CHECK(renewed_receipt->logical_version > acquired->logical_version);
 
     discrete.sequence = 41U;
     discrete.values.rumble = {.low_frequency = 0.8F, .high_frequency = 0.7F};

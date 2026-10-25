@@ -2,6 +2,7 @@
 
 #include "engine.hpp"
 #include "output/authority/execution.hpp"
+#include "output/body/pcm_collection.hpp"
 #include "output/policy/body.hpp"
 #include "output/projection/represented.hpp"
 #include <inputnext/device_identity.hpp>
@@ -197,6 +198,7 @@ execution_result<void> execution_engine::worker_start_failed(const lane_token to
 execution_result<backend_handle> execution_engine::commit_backend(
     const registration_reservation& reservation,
     std::unique_ptr<native_sink>& candidate) {
+    const body_pcm_collection_on_exit collect{implementation_->owner};
     if (!reservation.valid() || candidate == nullptr) {
         return std::unexpected{execution_error::invalid_argument};
     }

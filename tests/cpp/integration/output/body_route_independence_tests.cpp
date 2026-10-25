@@ -40,6 +40,41 @@ using inputnext::test::output::release_blocked_write;
     return request;
 }
 
+TEST_CASE("output.body_route_keep_renewals_preserve_effective_publication_and_ack",
+    "[integration][output][body_route]") {
+    manual_body_route_fixture fixture;
+    const auto initial = fixture.snapshot();
+    REQUIRE(initial.has_value());
+    REQUIRE(fixture.publish(*initial).has_value());
+    REQUIRE(fixture.drive());
+    const auto acknowledgement = fixture.accepted_ack();
+
+    for (std::uint64_t sequence = 2U; sequence <= 257U; ++sequence) {
+        const auto renewed = fixture.authority.owner.submit_body(fixture.context,
+            body_request{.lease = fixture.body.identity.lease,
+                .audio = fixture.audio,
+                .sequence = sequence,
+                .ttl = sequence % 2U == 0U ? 4s : 5s,
+                .preference = body_route_preference::prefer_hd,
+                .fallback = {.low_frequency = sequence % 2U == 0U ? 0.2F : 0.8F,
+                    .high_frequency = 0.5F}});
+        REQUIRE(renewed.has_value());
+        CHECK(renewed->intent == acknowledgement.intent);
+        const auto current = fixture.snapshot();
+        REQUIRE(current.has_value());
+        REQUIRE(fixture.publish(*current).has_value());
+        CHECK_FALSE(fixture.drive());
+        const auto progress = fixture.progress();
+        REQUIRE(progress.has_value());
+        CHECK(progress->observed_publication == acknowledgement.publication);
+        CHECK(progress->acknowledged_body_route == acknowledgement);
+        const auto qualified = fixture.qualifies(acknowledgement);
+        REQUIRE(qualified.has_value());
+        CHECK(*qualified);
+    }
+    CHECK(fixture.native_state->call_count() == 1U);
+}
+
 TEST_CASE("output.body_route_ack_survives_trigger_led_publications_and_blocked_same_route_write",
     "[integration][output][body_route][concurrency]") {
     manual_body_route_fixture fixture;

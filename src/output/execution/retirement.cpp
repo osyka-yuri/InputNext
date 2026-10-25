@@ -1,6 +1,7 @@
 #include "engine_state.hpp"
 
 #include "engine.hpp"
+#include "output/body/pcm_collection.hpp"
 #include <inputnext/output_execution.hpp>
 
 #include <cstddef>
@@ -11,6 +12,7 @@ namespace inputnext::output::detail {
 
 execution_result<retirement_receipt> execution_engine::retire(const backend_handle handle,
     const retirement_reason reason) noexcept {
+    const body_pcm_collection_on_exit collect{implementation_->owner};
     std::scoped_lock lock{implementation_->gate};
     auto* const backend = implementation_->find_backend(handle);
     if (backend == nullptr) {
@@ -43,6 +45,7 @@ execution_result<void> execution_engine::acknowledge_retirement(
 }
 
 void execution_engine::close_all() noexcept {
+    const body_pcm_collection_on_exit collect{implementation_->owner};
     std::scoped_lock lock{implementation_->gate};
     auto& state = *implementation_;
     state.closed = true;
@@ -69,6 +72,7 @@ bool execution_engine::worker_should_exit(const lane_token token) const noexcept
 }
 
 execution_result<void> execution_engine::worker_joined(const lane_token token) noexcept {
+    const body_pcm_collection_on_exit collect{implementation_->owner};
     std::scoped_lock lock{implementation_->gate};
     auto* const lane = implementation_->find_lane(token);
     if (lane == nullptr || !implementation_->lane_should_exit(token)) {

@@ -11,6 +11,7 @@
 #include <inputnext/output_execution.hpp>
 
 #include <array>
+#include <atomic>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -78,6 +79,7 @@ struct execution_engine::implementation final {
         native_command command{};
         native_sink* sink{};
         std::unique_ptr<native_sink> cleanup_sink = nullptr;
+        std::atomic<bool>* render_busy{};
     };
 
     struct lane_selection final {
@@ -140,6 +142,7 @@ struct execution_engine::implementation final {
     std::condition_variable_any refresh_changed;
     std::array<lane_record, execution_lane_capacity> lanes{};
     std::array<backend_record, execution_backend_capacity> backends{};
+    std::array<std::atomic<bool>, execution_backend_capacity> render_busy{};
     std::uint64_t next_lane_generation{1U};
     std::uint64_t next_backend_id{1U};
     bool closed{};

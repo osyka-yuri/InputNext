@@ -3,9 +3,12 @@
 #include "drive_policy.hpp"
 #include "engine.hpp"
 #include "output/authority/execution.hpp"
+#include "output/body/pcm_collection.hpp"
 #include "output/projection/represented.hpp"
 #include <inputnext/output_execution.hpp>
 
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <limits>
@@ -27,12 +30,8 @@ execution_engine::implementation::drive_action execution_engine::implementation:
         drive_action action{};
         action.backend = retiring->handle;
         action.cleanup_sink = std::move(retiring->sink);
-        if (action.cleanup_sink == nullptr) {
-            retiring->state = backend_state::drained;
-            notify_lane(token);
-            action.kind = drive_action_kind::progressed;
-            return action;
-        }
+        const auto slot = static_cast<std::size_t>(retiring - backends.data());
+        action.render_busy = &render_busy[slot];
         retiring->state = backend_state::cleaning;
         action.kind = drive_action_kind::cleanup;
         return action;
@@ -215,6 +214,7 @@ void execution_engine::implementation::finish_attempt(const native_command& comm
 }
 
 bool execution_engine::wait_for_work(const lane_token token, const std::stop_token& stop_token) {
+    const body_pcm_collection_on_exit collect{implementation_->owner};
     std::unique_lock lock{implementation_->gate};
     auto* lane = implementation_->find_lane(token);
     if (lane == nullptr || lane->phase == implementation::lane_phase::free) {
@@ -259,6 +259,7 @@ bool execution_engine::wait_for_work(const lane_token token, const std::stop_tok
 }
 
 bool execution_engine::drive_one(const lane_token token) noexcept {
+    const body_pcm_collection_on_exit collect{implementation_->owner};
     implementation::lane_record* lane = nullptr;
     {
         std::scoped_lock lock{implementation_->gate};
@@ -277,6 +278,9 @@ bool execution_engine::drive_one(const lane_token token) noexcept {
     case implementation::drive_action_kind::progressed:
         return true;
     case implementation::drive_action_kind::cleanup:
+        while (action.render_busy->load(std::memory_order_acquire)) {
+            action.render_busy->wait(true, std::memory_order_acquire);
+        }
         action.cleanup_sink.reset();
         implementation_->finish_cleanup(token, action.backend);
         return true;

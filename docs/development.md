@@ -185,9 +185,9 @@ Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2
 - `tests/cpp/unit/input` checks gamepad value validation.
 - `tests/cpp/component/input` checks coherent publication through the production input library.
 - `tests/cpp/component/devices` checks connection ownership, retirement, and concurrency through the production device library. Stress cases have a separate executable and build option.
-- `tests/cpp/unit/output` checks effect values, deadlines, pure arbitration, body route policy, foreground epoch matching, represented projections, retry timing, and controlled sink synchronization.
-- `tests/cpp/component/output` checks logical contexts, body leases, scalar audio identities and their transactions. Separate engine and executor suites cover native admission, retry, replacement, serialized cleanup, and worker lifecycle.
-- `tests/cpp/integration/output` checks route acknowledgements across authority and execution, plus input, focus and XInput progress while an authority gate or native sink is blocked.
+- `tests/cpp/unit/output` checks effect values, deadlines, pure arbitration, body route policy, PCM mixing, foreground epoch matching, represented projections, retry timing, and controlled sink synchronization.
+- `tests/cpp/component/output` checks logical contexts, body leases, scalar audio identities, PCM preparation and accounting, and playback permits. Separate engine and executor suites cover native admission, retry, replacement, serialized cleanup, and worker lifecycle.
+- `tests/cpp/integration/output` checks route and playback admission across authority and execution, plus input, focus and XInput progress while control gates, native delivery, PCM preparation or reclamation are blocked.
 - `tests/cpp/unit/profiles` checks TOML decoding, trigger rules and bounded stream reads.
 - `tests/cpp/component/profiles` checks persistent profile ownership, assignments, foreground changes and output priority.
 - `tests/cpp/integration/profiles` checks filesystem loading, path resolution, file sharing and size limits.

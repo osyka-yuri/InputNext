@@ -40,8 +40,18 @@ execution_result<represented_projection> project_representation(const logical_sn
         projection.right_trigger = snapshot.right_trigger;
     }
     if ((channels & rumble_mask) != 0U) {
-        projection.body = snapshot.body;
-        if (!projection.body.has_value() || has_diagnostic_rumble(snapshot.rumble)) {
+        const bool diagnostic_winner = has_diagnostic_rumble(snapshot.rumble);
+        if (snapshot.body.has_value()) {
+            projection.body = represented_body{
+                .intent = body_policy::represented_route(*snapshot.body,
+                    route_support,
+                    diagnostic_winner),
+                .rumble = diagnostic_winner
+                              ? rumble_value{}
+                              : body_policy::represented_rumble(*snapshot.body, route_support),
+            };
+        }
+        if (!projection.body.has_value() || diagnostic_winner) {
             projection.rumble = snapshot.rumble;
         }
     }
@@ -57,9 +67,7 @@ std::optional<body_route_intent> represented_body_route(
     if (!projection.body.has_value()) {
         return std::nullopt;
     }
-    return body_policy::represented_route(*projection.body,
-        projection.route_support,
-        has_diagnostic_rumble(projection.rumble));
+    return projection.body->intent;
 }
 
 native_output native_values(const represented_projection& projection) noexcept {
@@ -72,8 +80,7 @@ native_output native_values(const represented_projection& projection) noexcept {
     }
     const bool diagnostic_winner = has_diagnostic_rumble(projection.rumble);
     if (projection.body.has_value() && !diagnostic_winner) {
-        output.values.rumble =
-            body_policy::represented_rumble(*projection.body, projection.route_support);
+        output.values.rumble = projection.body->rumble;
     } else if (projection.rumble.has_value()) {
         output.values.rumble = projection.rumble->value;
     }

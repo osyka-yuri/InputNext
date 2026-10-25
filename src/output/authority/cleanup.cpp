@@ -38,6 +38,7 @@ void authority::implementation::install_close_receipt(record& entry,
         value.active = false;
         value.expires_at.reset();
     }
+    retire_playback_locked(entry);
     entry.body.reset();
 }
 
@@ -60,6 +61,7 @@ std::size_t authority::implementation::retire(connection_target target) noexcept
     }
     for (auto& entry : records) {
         if (entry.state != phase::free && entry.identity.target == target) {
+            retire_playback_locked(entry);
             entry.reset();
         }
     }
@@ -106,6 +108,7 @@ std::size_t authority::implementation::expire_target(connection_target target,
         if (body.has_value()) {
             const auto expires_at = body->expires_at;
             if (evaluation_time >= expires_at) {
+                retire_playback_locked(entry);
                 entry.body.reset();
             }
         }

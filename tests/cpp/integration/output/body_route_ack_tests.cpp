@@ -246,7 +246,7 @@ TEST_CASE("output.body_route_ack_is_requalified_against_authority_before_refresh
         .audio = *audio,
         .sequence = 2U,
         .ttl = 5s,
-        .preference = body_route_preference::prefer_hd,
+        .preference = body_route_preference::classic,
         .fallback = request.fallback};
     REQUIRE(fixture.owner.submit_body(*context, renewal).has_value());
 

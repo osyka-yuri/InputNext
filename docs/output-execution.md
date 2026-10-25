@@ -54,11 +54,11 @@ A different route, explicit retry, reported native failure, retirement or replac
 
 Retirement closes future admission and returns a repeatable causal receipt. It does not cancel an already admitted native call or prove that neutral output reached hardware. Logical context close and its acknowledgement remain separate from backend retirement.
 
-The delivery lane destroys a retired sink after its admitted call returns. Destruction uses the same physical serialization as writes. The backend remains `cleaning` until its destructor returns; only then is it `drained`. Retirement acknowledgement requires the exact receipt and a drained backend before releasing its record. An old receipt cannot release a replacement.
+The delivery lane destroys a retired sink after its admitted native call and any [PCM render block](body-pcm.md) finish. Destruction uses the same physical serialization as writes. The backend remains `cleaning` until its destructor returns; only then is it `drained`. Retirement acknowledgement requires the exact receipt and a drained backend before releasing its record. An old receipt cannot release a replacement.
 
 Automatic retirement and replacement also retain records until acknowledgement. Keep every registration handle. Call `retire(handle)` to retrieve its original receipt, observe `progress(handle)` until `drained`, then call `acknowledge_retirement(receipt)` to release capacity.
 
-Shutdown is terminal. It closes admission, stops the coordinator, finishes registration rollback, waits for native calls and sink destruction, joins delivery workers and detaches from the authority. It can wait indefinitely for a blocked native call or destructor. Return means quiescence, not successful neutralization or a bounded stopping time.
+Shutdown is terminal. It closes admission, stops the coordinator, finishes registration rollback, waits for native calls, admitted render blocks and sink destruction, joins delivery workers and detaches from the authority. It can wait indefinitely for an unreleased render permit, blocked native call or destructor. Return means quiescence, not successful neutralization or a bounded stopping time.
 
 To request neutralization, first clear or close logical contributions and observe delivery on the live backend before retiring it.
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "output/playback/body_playback_bank.hpp"
 #include "output/policy/body.hpp"
 #include "output/policy/policy.hpp"
 #include "output/xinput/rumble.hpp"
@@ -11,6 +12,8 @@
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
 #include <inputnext/output_body.hpp>
+#include <inputnext/output_body_pcm.hpp>
+#include <inputnext/output_body_playback.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <array>
@@ -54,6 +57,7 @@ struct authority::implementation final {
         channel_values accepted_values{};
         std::array<channel_state, channel_count> channels{};
         std::optional<body_snapshot> body;
+        std::optional<body_playback_identity> playback;
         std::optional<close_receipt> receipt;
 
         void reset() noexcept { *this = record{}; }
@@ -66,6 +70,16 @@ struct authority::implementation final {
     struct body_submission_time final {
         policy_detail::deadline entered_at;
         policy_detail::deadline expires_at;
+    };
+
+    struct body_playback_commit_plan final {
+        body_lease_identity identity{};
+        body_route_intent intent{};
+        std::uint64_t logical_version{};
+        bool new_lease{};
+        std::optional<detail::body_playback_slot_selection> install_selection;
+        std::optional<body_playback_identity> previous_playback;
+        body_playback_identity replacement_identity{};
     };
 
     implementation(runtime_id runtime_value,
@@ -110,11 +124,14 @@ struct authority::implementation final {
         body_fallback_reason reason,
         std::uint64_t version,
         std::optional<audio_instance> audio = std::nullopt) noexcept;
+    void retire_playback_locked(record& entry) noexcept;
+    void retire_playback_audio_locked(audio_instance audio) noexcept;
+    void mark_started_playback_retired_locked(record& entry) noexcept;
     [[nodiscard]] std::optional<focus::foreground_epoch> fresh_epoch() const;
     [[nodiscard]] inputnext::result<read_pin> capture(connection_target target) const;
     [[nodiscard]] std::size_t retire(connection_target target) noexcept;
     void advance_cleanup_version() noexcept;
-    static void
+    void
     install_close_receipt(record& entry, std::uint64_t close_version, close_reason reason) noexcept;
     [[nodiscard]] result<close_receipt> close_with_retry(context_identity identity,
         owner_class expected_class,
@@ -133,8 +150,22 @@ struct authority::implementation final {
         const submit_request& request,
         policy_detail::optional_deadline deadline,
         policy_detail::deadline entry_time) noexcept;
-    [[nodiscard]] result<body_receipt>
-    commit_body_locked(record& entry, const body_request& request, body_submission_time timing);
+    [[nodiscard]] result<body_playback_receipt> commit_body_playback_locked(record& entry,
+        const body_request& request,
+        body_submission_time timing,
+        body_pcm_command command,
+        prepared_body_pcm&& replacement,
+        detail::body_playback_retirement_batch& displaced);
+    [[nodiscard]] result<body_playback_commit_plan> prepare_body_playback_commit_locked(
+        record& entry,
+        const body_request& request,
+        body_submission_time timing,
+        body_pcm_command command,
+        const prepared_body_pcm& replacement);
+    [[nodiscard]] result<void> prepare_body_playback_replacement_locked(record& entry,
+        const body_request& request,
+        const prepared_body_pcm& replacement,
+        body_playback_commit_plan& plan) const;
     [[nodiscard]] result<void> validate_body_lease_locked(const record& entry,
         const body_request& request) const;
     [[nodiscard]] result<logical_snapshot> compose_snapshot(connection_target target,
@@ -155,9 +186,12 @@ struct authority::implementation final {
     mutable std::mutex gate;
     std::array<record, 64U> records{};
     std::array<audio_route_record, 16U> audio_routes{};
+    body_pcm_preparer pcm_preparer;
+    detail::body_playback_bank playback_bank;
     std::uint64_t next_context_id{};
     std::uint64_t next_body_lease_id{1U};
     std::uint64_t next_audio_instance_id{1U};
+    std::uint64_t next_body_playback_revision{1U};
     std::uint64_t next_execution_id{1U};
     std::optional<execution_owner> attached_execution;
     std::uint64_t logical_version{};

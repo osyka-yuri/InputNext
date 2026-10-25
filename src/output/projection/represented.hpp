@@ -10,6 +10,13 @@
 
 namespace inputnext::output::detail {
 
+struct represented_body final {
+    body_route_intent intent{};
+    rumble_value rumble{};
+
+    friend bool operator==(const represented_body&, const represented_body&) = default;
+};
+
 struct represented_projection final {
     connection_target target{};
     authority_incarnation incarnation{};
@@ -18,7 +25,7 @@ struct represented_projection final {
     std::optional<channel_snapshot<trigger_value>> right_trigger = std::nullopt;
     std::optional<channel_snapshot<rumble_value>> rumble = std::nullopt;
     std::optional<channel_snapshot<led_value>> leds = std::nullopt;
-    std::optional<body_snapshot> body = std::nullopt;
+    std::optional<represented_body> body = std::nullopt;
     body_route_support route_support{body_route_support::classic_only};
 
     friend bool operator==(const represented_projection&, const represented_projection&) = default;

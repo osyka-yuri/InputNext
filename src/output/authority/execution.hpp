@@ -4,9 +4,13 @@
 #include <inputnext/device_identity.hpp>
 #include <inputnext/output_authority.hpp>
 #include <inputnext/output_body.hpp>
+#include <inputnext/output_body_playback.hpp>
 #include <inputnext/output_execution.hpp>
 
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 
 namespace inputnext::output::detail {
 
@@ -33,6 +37,14 @@ public:
         execution_owner expected_owner,
         const body_route_intent& expected,
         native_status status);
+    [[nodiscard]] static execution_result<std::optional<body_render_permit>> admit_body_render(
+        authority& owner,
+        execution_owner expected_owner,
+        const body_route_ack& acknowledgement,
+        body_playback_identity expected_playback,
+        std::atomic<bool>* engine_busy,
+        std::size_t requested_frames) noexcept;
+    static void retire_body_backend(authority& owner, backend_handle backend) noexcept;
 };
 
 } // namespace inputnext::output::detail

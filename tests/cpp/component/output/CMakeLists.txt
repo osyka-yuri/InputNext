@@ -7,6 +7,7 @@ add_executable(inputnext_output_component_tests
     body_authority_tests.cpp
     body_capacity_tests.cpp
     body_lifecycle_tests.cpp
+    body_playback_authority_tests.cpp
     body_route_qualification_tests.cpp
     concurrency_tests.cpp
     execution_owner_tests.cpp
@@ -26,7 +27,45 @@ target_link_libraries(inputnext_output_component_tests PRIVATE
 )
 inputnext_configure_target(inputnext_output_component_tests)
 
+add_executable(inputnext_body_pcm_component_tests
+    pcm_accounting_tests.cpp
+    pcm_lifetime_tests.cpp
+    pcm_validation_tests.cpp
+)
+target_include_directories(inputnext_body_pcm_component_tests PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+    "${PROJECT_SOURCE_DIR}/tests/support"
+)
+target_link_libraries(inputnext_body_pcm_component_tests PRIVATE
+    inputnext_output_pcm Catch2::Catch2WithMain
+)
+inputnext_configure_target(inputnext_body_pcm_component_tests)
+
+add_executable(inputnext_body_playback_component_tests playback_bank_tests.cpp)
+target_include_directories(inputnext_body_playback_component_tests PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+    "${PROJECT_SOURCE_DIR}/tests/support"
+)
+target_link_libraries(inputnext_body_playback_component_tests PRIVATE
+    inputnext_body_playback Catch2::Catch2WithMain
+)
+inputnext_configure_target(inputnext_body_playback_component_tests)
+
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/results")
+catch_discover_tests(inputnext_body_playback_component_tests
+    ADD_TAGS_AS_LABELS
+    PROPERTIES TIMEOUT 20
+    OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/results"
+    OUTPUT_SUFFIX .txt
+)
+
+catch_discover_tests(inputnext_body_pcm_component_tests
+    ADD_TAGS_AS_LABELS
+    PROPERTIES TIMEOUT 20
+    OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/results"
+    OUTPUT_SUFFIX .txt
+)
+
 catch_discover_tests(inputnext_output_component_tests
     ADD_TAGS_AS_LABELS
     PROPERTIES TIMEOUT 20

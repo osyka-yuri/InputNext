@@ -2,6 +2,7 @@
 
 #include "output/authority/state.hpp"
 #include "output/policy/body.hpp"
+#include "pcm_collection.hpp"
 
 #include <expected>
 #include <inputnext/device_identity.hpp>
@@ -78,6 +79,7 @@ audio_route_control::audio_route_control(authority& owner) noexcept : owner_(own
 result<audio_instance> audio_route_control::attach(const connection_target target,
     const body_route_support support,
     const bool ready) {
+    const body_pcm_collection_on_exit collect{owner_};
     auto& state = *owner_.implementation_;
     if (!target.valid() || !body_policy::valid_route_support(support)) {
         return std::unexpected{error::invalid_argument};
@@ -143,6 +145,7 @@ result<audio_instance> audio_route_control::attach(const connection_target targe
 }
 
 result<void> audio_route_control::set_ready(const audio_instance expected, const bool ready) {
+    const body_pcm_collection_on_exit collect{owner_};
     auto& state = *owner_.implementation_;
     if (!expected.valid()) {
         return std::unexpected{error::invalid_argument};
@@ -186,6 +189,7 @@ result<void> audio_route_control::set_ready(const audio_instance expected, const
     const auto version = state.logical_version + 1U;
     facts.ready = ready;
     if (!ready) {
+        state.retire_playback_audio_locked(expected);
         static_cast<void>(state.latch_hd_bodies(expected.target,
             body_fallback_reason::not_ready,
             version,
@@ -196,6 +200,7 @@ result<void> audio_route_control::set_ready(const audio_instance expected, const
 }
 
 result<void> audio_route_control::detach(const audio_instance expected) {
+    const body_pcm_collection_on_exit collect{owner_};
     auto& state = *owner_.implementation_;
     if (!expected.valid()) {
         return std::unexpected{error::invalid_argument};
@@ -220,6 +225,7 @@ result<void> audio_route_control::detach(const audio_instance expected) {
     }
 
     const auto version = state.logical_version + 1U;
+    state.retire_playback_audio_locked(expected);
     static_cast<void>(state.latch_hd_bodies(expected.target,
         body_fallback_reason::instance_lost,
         version,

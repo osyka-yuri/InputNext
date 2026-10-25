@@ -139,10 +139,17 @@ TEST_CASE("output.body_route_stale_failure_does_not_fallback_a_renewed_route",
     release_blocked_write unblock{fixture.native_state};
     REQUIRE(fixture.native_state->wait_for_blocked_write());
 
+    const body_request classic{.lease = fixture.body.identity.lease,
+        .audio = fixture.audio,
+        .sequence = 2U,
+        .ttl = 5s,
+        .preference = body_route_preference::classic,
+        .fallback = {.low_frequency = 0.35F, .high_frequency = 0.6F}};
+    REQUIRE(fixture.authority.owner.submit_body(fixture.context, classic).has_value());
     const auto renewed = fixture.authority.owner.submit_body(fixture.context,
         body_request{.lease = fixture.body.identity.lease,
             .audio = fixture.audio,
-            .sequence = 2U,
+            .sequence = 3U,
             .ttl = 5s,
             .preference = body_route_preference::prefer_hd,
             .fallback = {.low_frequency = 0.35F, .high_frequency = 0.6F}});
@@ -164,6 +171,48 @@ TEST_CASE("output.body_route_stale_failure_does_not_fallback_a_renewed_route",
     CHECK_FALSE(progress->acknowledged_body_route.has_value());
     REQUIRE(progress->last_completed_attempt.has_value());
     CHECK(required_value(progress->last_completed_attempt).result.status == native_status::failed);
+}
+
+TEST_CASE("output.body_route_failure_after_keep_still_invalidates_unchanged_route",
+    "[integration][output][body_route][concurrency]") {
+    manual_body_route_fixture fixture;
+    const auto initial = fixture.snapshot();
+    REQUIRE(initial.has_value());
+    REQUIRE(fixture.publish(*initial).has_value());
+    REQUIRE(fixture.drive());
+
+    REQUIRE(fixture.submit(fixture.context, trigger_request()).has_value());
+    const auto with_trigger = fixture.snapshot();
+    REQUIRE(with_trigger.has_value());
+    REQUIRE(fixture.publish(*with_trigger).has_value());
+    fixture.native_state->set_next_result(native_result{.status = native_status::failed});
+    fixture.native_state->block_next_write();
+    bool drive_result = false;
+    std::jthread writer{[&] { drive_result = fixture.drive(); }};
+    const release_blocked_write unblock{fixture.native_state};
+    REQUIRE(fixture.native_state->wait_for_blocked_write());
+
+    const auto renewed = fixture.authority.owner.submit_body(fixture.context,
+        body_request{.lease = fixture.body.identity.lease,
+            .audio = fixture.audio,
+            .sequence = 2U,
+            .ttl = 5s,
+            .preference = body_route_preference::prefer_hd,
+            .fallback = {.low_frequency = 0.35F, .high_frequency = 0.6F}});
+    REQUIRE(renewed.has_value());
+    CHECK(renewed->intent == fixture.body.intent);
+    fixture.native_state->release_write();
+    writer.join();
+    CHECK(drive_result);
+
+    const auto current = fixture.snapshot();
+    REQUIRE(current.has_value());
+    REQUIRE(current->body.has_value());
+    CHECK(required_value(current->body).intent.route == body_actuator_route::classic);
+    CHECK(required_value(current->body).intent.fallback == body_fallback_reason::output_failed);
+    const auto progress = fixture.progress();
+    REQUIRE(progress.has_value());
+    CHECK_FALSE(progress->acknowledged_body_route.has_value());
 }
 
 } // namespace

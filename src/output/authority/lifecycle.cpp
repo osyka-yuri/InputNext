@@ -1,3 +1,4 @@
+#include "output/body/pcm_collection.hpp"
 #include "state.hpp"
 
 #include "incarnation.hpp"
@@ -314,6 +315,7 @@ result<close_receipt> authority::implementation::close_with_retry(context_identi
 }
 
 result<close_receipt> authority::close(public_context context, std::uint64_t close_request_id) {
+    const detail::body_pcm_collection_on_exit collect{*this};
     return implementation_->close_with_retry(context.identity,
         owner_class::public_game,
         close_request_id);
@@ -361,6 +363,7 @@ result<void> authority::acknowledge_internal(const close_receipt& receipt,
 }
 
 result<maintenance_report> authority::maintain(connection_target target) {
+    const detail::body_pcm_collection_on_exit collect{*this};
     if (!target.valid()) {
         return std::unexpected{error::invalid_argument};
     }

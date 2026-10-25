@@ -53,6 +53,7 @@ std::size_t authority::implementation::latch_hd_bodies(const connection_target t
             (audio.has_value() && entry.body->intent.identity.audio != *audio)) {
             continue;
         }
+        mark_started_playback_retired_locked(entry);
         entry.body->intent =
             detail::body_policy::fallback_route(entry.body->intent, reason, version);
         ++changed;

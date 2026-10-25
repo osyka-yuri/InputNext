@@ -2,6 +2,7 @@
 
 #include "output/authority/incarnation.hpp"
 #include "output/authority/state.hpp"
+#include "output/playback/body_playback_bank.hpp"
 #include "output/policy/policy.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_registry.hpp>
@@ -10,6 +11,8 @@
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
 #include <inputnext/output_body.hpp>
+#include <inputnext/output_body_pcm.hpp>
+#include <inputnext/output_body_playback.hpp>
 #include <inputnext/output_execution.hpp>
 
 #include <array>
@@ -33,6 +36,7 @@ public:
         channel_revisions revisions{};
         std::array<bool, channel_count> active{};
         std::optional<body_snapshot> body;
+        std::optional<body_playback_identity> playback;
         std::optional<close_receipt> receipt;
         std::uint64_t logical_version{};
     };
@@ -74,6 +78,7 @@ public:
         observation.accepted_sequence = entry->accepted_sequence;
         observation.receipt = entry->receipt;
         observation.body = entry->body;
+        observation.playback = entry->playback;
         observation.logical_version = value.implementation_->logical_version;
         for (std::size_t index = 0U; index < channel_count; ++index) {
             observation.revisions[index] = entry->channels[index].revision;
@@ -90,10 +95,18 @@ public:
         value.implementation_->test_clock_ticks = &ticks;
     }
 
+    // Call only before preparing samples or submitting any body playback command; this replaces
+    // the authority's empty preparation store with a deterministic controlled memory port.
+    static void use_pcm_preparer(authority& value, body_pcm_preparer preparer) {
+        auto lock = lock_gate(value);
+        value.implementation_->pcm_preparer = std::move(preparer);
+    }
+
     [[nodiscard]] static result<body_receipt> commit_body_locked(authority& value,
         context_identity identity,
         const body_request& request,
         std::chrono::steady_clock::time_point entry_time) {
+        body_playback_retirement_batch displaced;
         auto lock = lock_gate(value);
         auto* const entry = value.implementation_->find_open(identity);
         if (entry == nullptr) {
@@ -107,9 +120,16 @@ public:
         if (!expires->has_value()) {
             return std::unexpected{error::deadline_overflow};
         }
-        return value.implementation_->commit_body_locked(*entry,
+        auto committed = value.implementation_->commit_body_playback_locked(*entry,
             request,
-            {.entered_at = entry_time, .expires_at = **expires});
+            {.entered_at = entry_time, .expires_at = **expires},
+            body_pcm_command::keep,
+            prepared_body_pcm{},
+            displaced);
+        if (!committed.has_value()) {
+            return std::unexpected{committed.error()};
+        }
+        return committed->body;
     }
 
     static void set_logical_version(authority& value, std::uint64_t version) {
@@ -125,6 +145,11 @@ public:
     static void set_next_body_lease_id(authority& value, std::uint64_t next_id) {
         auto lock = lock_gate(value);
         value.implementation_->next_body_lease_id = next_id;
+    }
+
+    static void set_next_body_playback_revision(authority& value, std::uint64_t next_id) {
+        auto lock = lock_gate(value);
+        value.implementation_->next_body_playback_revision = next_id;
     }
 
     [[nodiscard]] static std::uint64_t next_body_lease_id(authority& value) {

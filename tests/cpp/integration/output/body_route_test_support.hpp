@@ -108,7 +108,9 @@ public:
 
     [[nodiscard]] inputnext::output::result<inputnext::output::body_receipt> renew_body(
         const std::uint64_t sequence,
-        const std::chrono::milliseconds ttl = std::chrono::seconds{5}) {
+        const std::chrono::milliseconds ttl = std::chrono::seconds{5},
+        const inputnext::output::body_route_preference preference =
+            inputnext::output::body_route_preference::prefer_hd) {
         if (!context.has_value() || !audio.has_value() || !body.has_value()) {
             return std::unexpected{inputnext::output::error::invalid_argument};
         }
@@ -117,7 +119,7 @@ public:
             .audio = *audio,
             .sequence = sequence,
             .ttl = ttl,
-            .preference = inputnext::output::body_route_preference::prefer_hd,
+            .preference = preference,
             .fallback = {.low_frequency = 0.35F, .high_frequency = 0.6F}};
         auto renewed = authority.owner.submit_body(*context, request);
         if (renewed.has_value()) {

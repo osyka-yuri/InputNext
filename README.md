@@ -8,7 +8,7 @@ The [GameInput runtime](docs/gameinput.md) provides native controller discovery,
 
 The C++ [XInput presentation](docs/xinput.md) maps connections to four positions with packet tracking, [focus observation](docs/focus.md), logical Enable, metadata queries, and [keystrokes and Guide waits](docs/xinput-events.md). Native x86 and x64 [XInput DLL bundles](docs/xinput-dll.md) expose three flavors through one shared runtime per process.
 
-The C++ [output authority](docs/output.md) owns effect contexts, arbitration, expiry, and acknowledged closure. Its [native executor](docs/output-execution.md) schedules qualified attempts and manages retry and sink lifetime.
+The C++ [output authority](docs/output.md) owns effect contexts, arbitration, expiry, and acknowledged closure. Its [native executor](docs/output-execution.md) schedules qualified attempts and manages retry and sink lifetime. [Body PCM](docs/body-pcm.md) provides owned samples and offline playback with explicit render admission.
 
 [Per-game profiles](docs/profiles.md) configure persistent adaptive-trigger effects from `inputnext.toml` beside the game executable.
 

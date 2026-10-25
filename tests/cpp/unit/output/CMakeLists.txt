@@ -68,3 +68,17 @@ catch_discover_tests(inputnext_output_test_support_unit_tests
     OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/results"
     OUTPUT_SUFFIX .txt
 )
+
+add_executable(inputnext_body_mixer_unit_tests body_mixer_tests.cpp)
+target_include_directories(inputnext_body_mixer_unit_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(inputnext_body_mixer_unit_tests PRIVATE
+    inputnext_body_playback Catch2::Catch2WithMain
+)
+inputnext_configure_target(inputnext_body_mixer_unit_tests)
+
+catch_discover_tests(inputnext_body_mixer_unit_tests
+    ADD_TAGS_AS_LABELS
+    PROPERTIES TIMEOUT 20
+    OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/results"
+    OUTPUT_SUFFIX .txt
+)

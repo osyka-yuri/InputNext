@@ -57,7 +57,7 @@ using inputnext::test::output::release_blocked_write;
     });
 }
 
-TEST_CASE("output.body_route_late_accepted_completion_after_renewal_cannot_ack_old_revision",
+TEST_CASE("output.body_route_late_accepted_completion_after_route_change_cannot_ack_old_revision",
     "[integration][output][body_route][concurrency]") {
     body_route_fixture fixture{body_route_support::hd};
     REQUIRE(fixture.attach_audio().has_value());
@@ -67,7 +67,8 @@ TEST_CASE("output.body_route_late_accepted_completion_after_renewal_cannot_ack_o
     REQUIRE(old_command.output.body.has_value());
     CHECK(required_value(old_command.output.body).route == body_actuator_route::hd);
 
-    const auto renewed = fixture.renew_body(2U);
+    REQUIRE(fixture.renew_body(2U, 5s, body_route_preference::classic).has_value());
+    const auto renewed = fixture.renew_body(3U);
     REQUIRE(renewed.has_value());
     CHECK(renewed->intent.revision != required_value(old_command.output.body).revision);
     fixture.native_state->release_write();
