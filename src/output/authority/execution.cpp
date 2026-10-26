@@ -1,5 +1,6 @@
 #include "execution.hpp"
 
+#include "admitted_body_render.hpp"
 #include "output/playback/body_playback_bank.hpp"
 #include "output/policy/body.hpp"
 #include "output/projection/represented.hpp"
@@ -42,6 +43,143 @@ namespace {
            expected.identity.context.target.runtime == runtime && expected.revision != 0U &&
            expected.route == body_actuator_route::hd &&
            expected.fallback == body_fallback_reason::none;
+}
+
+struct body_render_claim final {
+    body_playback_identity playback;
+    body_render_permit permit;
+};
+
+template <typename State>
+void retire_playback_for_route_change_locked(State& state,
+    const body_route_intent& expected,
+    const std::optional<body_route_intent>& current) noexcept {
+    if (!current.has_value() || current->identity != expected.identity ||
+        current->route == body_actuator_route::hd) {
+        return;
+    }
+    if (auto* const entry = state.find_open(expected.identity.context); entry != nullptr) {
+        state.mark_started_playback_retired_locked(*entry);
+    }
+}
+
+[[nodiscard]] bool valid_body_render_request(const execution_owner expected_owner,
+    const backend_handle expected_backend,
+    const body_route_ack& acknowledgement,
+    const std::optional<body_playback_identity> expected_playback,
+    const audio_instance expected_audio,
+    std::atomic<bool>* const engine_busy,
+    const std::size_t requested_frames) noexcept {
+    return expected_owner.valid() && expected_backend.valid() && engine_busy != nullptr &&
+           requested_frames != 0U &&
+           requested_frames <= std::numeric_limits<std::size_t>::max() / 4U &&
+           acknowledgement.backend.valid() && acknowledgement.backend == expected_backend &&
+           acknowledgement.backend.incarnation.owner == expected_owner &&
+           acknowledgement.intent.route == body_actuator_route::hd &&
+           acknowledgement.intent.fallback == body_fallback_reason::none &&
+           acknowledgement.publication.valid() && acknowledgement.attempt.valid() &&
+           (!expected_playback.has_value() ||
+               (expected_playback->valid() &&
+                   acknowledgement.intent.identity == expected_playback->lease &&
+                   expected_playback->lease.audio == expected_audio));
+}
+
+template <typename State>
+[[nodiscard]] execution_result<std::optional<body_render_claim>> qualify_and_claim_body_render(
+    State& state,
+    const execution_owner expected_owner,
+    const backend_handle expected_backend,
+    const body_route_ack& acknowledgement,
+    const std::optional<body_playback_identity> expected_playback,
+    const audio_instance expected_audio,
+    std::atomic<bool>* const engine_busy,
+    const std::size_t requested_frames) noexcept {
+    if (!valid_body_render_request(expected_owner,
+            expected_backend,
+            acknowledgement,
+            expected_playback,
+            expected_audio,
+            engine_busy,
+            requested_frames)) {
+        return std::unexpected{execution_error::invalid_argument};
+    }
+
+    std::scoped_lock lock{state.gate};
+    if (!state.attached_execution.has_value() || *state.attached_execution != expected_owner) {
+        return std::unexpected{execution_error::stale_backend};
+    }
+    if (!valid_expected_hd_route(expected_owner, state.runtime, acknowledgement.intent) ||
+        acknowledgement.backend.target != expected_audio.target ||
+        expected_audio.authority != expected_owner.authority) {
+        return std::optional<body_render_claim>{};
+    }
+
+    auto* const entry = state.find_open(acknowledgement.intent.identity.context);
+    if (entry == nullptr || !entry->body.has_value() || !entry->playback.has_value() ||
+        entry->body->intent != acknowledgement.intent ||
+        entry->body->intent.identity != acknowledgement.intent.identity) {
+        return std::optional<body_render_claim>{};
+    }
+
+    const auto playback = *entry->playback;
+    if (!playback.valid() || playback.lease != acknowledgement.intent.identity ||
+        playback.lease.audio != expected_audio ||
+        (expected_playback.has_value() && playback != *expected_playback)) {
+        return std::optional<body_render_claim>{};
+    }
+
+    const auto current = state.qualify_snapshot_locked(expected_backend.target);
+    if (!current.has_value()) {
+        if (current.error() == error::not_connected) {
+            return std::optional<body_render_claim>{};
+        }
+        return std::unexpected{map_snapshot_error(current.error())};
+    }
+    const auto represented = project_representation(*current, rumble_mask, body_route_support::hd);
+    if (!represented.has_value()) {
+        return std::unexpected{represented.error()};
+    }
+    const auto route = represented_body_route(*represented);
+    if (!route.has_value() || *route != acknowledgement.intent) {
+        retire_playback_for_route_change_locked(state, acknowledgement.intent, route);
+        return std::optional<body_render_claim>{};
+    }
+
+    const auto audio = state.audio_facts(expected_audio);
+    if (!audio.has_value() || audio->instance != expected_audio || !audio->ready ||
+        audio->support != body_route_support::hd) {
+        return std::optional<body_render_claim>{};
+    }
+
+    bool idle = false;
+    if (!engine_busy->compare_exchange_strong(idle,
+            true,
+            std::memory_order_acquire,
+            std::memory_order_relaxed)) {
+        return std::unexpected{execution_error::busy};
+    }
+
+    auto claimed =
+        state.playback_bank.try_claim(playback, expected_backend, engine_busy, requested_frames);
+    if (!claimed.has_value()) {
+        engine_busy->store(false, std::memory_order_release);
+        engine_busy->notify_all();
+        switch (claimed.error()) {
+        case body_playback_admission_error::invalid_argument:
+            return std::unexpected{execution_error::invalid_argument};
+        case body_playback_admission_error::busy:
+            return std::unexpected{execution_error::busy};
+        case body_playback_admission_error::stale_backend:
+            return std::unexpected{execution_error::stale_backend};
+        }
+        return std::unexpected{execution_error::resources};
+    }
+    if (!claimed->has_value()) {
+        engine_busy->store(false, std::memory_order_release);
+        engine_busy->notify_all();
+        return std::optional<body_render_claim>{};
+    }
+    return std::optional<body_render_claim>{body_render_claim{playback, std::move(**claimed)}};
 }
 
 } // namespace
@@ -161,12 +299,7 @@ execution_result<bool> authority_execution_access::qualifies_route(authority& ow
     }
     const auto current_route = represented_body_route(*projected);
     if (!current_route.has_value() || *current_route != expected) {
-        if (current_route.has_value() && current_route->identity == expected.identity &&
-            current_route->route != body_actuator_route::hd) {
-            if (auto* const entry = state.find_open(expected.identity.context); entry != nullptr) {
-                state.mark_started_playback_retired_locked(*entry);
-            }
-        }
+        retire_playback_for_route_change_locked(state, expected, current_route);
         return false;
     }
     return true;
@@ -198,12 +331,7 @@ execution_result<completion_disposition> authority_execution_access::complete_ro
     }
     const auto current_route = represented_body_route(*projected);
     if (!current_route.has_value() || *current_route != expected) {
-        if (current_route.has_value() && current_route->identity == expected.identity &&
-            current_route->route != body_actuator_route::hd) {
-            if (auto* const entry = state.find_open(expected.identity.context); entry != nullptr) {
-                state.mark_started_playback_retired_locked(*entry);
-            }
-        }
+        retire_playback_for_route_change_locked(state, expected, current_route);
         return completion_disposition::stale;
     }
     if (status == native_status::accepted) {
@@ -234,91 +362,51 @@ execution_result<std::optional<body_render_permit>> authority_execution_access::
     const body_playback_identity expected_playback,
     std::atomic<bool>* const engine_busy,
     const std::size_t requested_frames) noexcept {
-    if (!expected_owner.valid() || !expected_playback.valid() || engine_busy == nullptr ||
-        requested_frames == 0U || requested_frames > std::numeric_limits<std::size_t>::max() / 4U ||
-        !acknowledgement.backend.valid() ||
-        acknowledgement.backend.incarnation.owner != expected_owner ||
-        acknowledgement.intent.identity != expected_playback.lease ||
-        acknowledgement.intent.route != body_actuator_route::hd ||
-        acknowledgement.intent.fallback != body_fallback_reason::none ||
-        !acknowledgement.publication.valid() || !acknowledgement.attempt.valid()) {
-        return std::unexpected{execution_error::invalid_argument};
-    }
-
     auto& state = *owner.implementation_;
-    std::scoped_lock lock{state.gate};
-    if (!state.attached_execution.has_value() || *state.attached_execution != expected_owner) {
-        return std::unexpected{execution_error::stale_backend};
-    }
-    if (acknowledgement.backend.target != expected_playback.lease.context.target ||
-        expected_playback.lease.context.incarnation != expected_owner.authority) {
-        return std::optional<body_render_permit>{};
-    }
-
-    auto* const entry = state.find_open(expected_playback.lease.context);
-    if (entry == nullptr || !entry->body.has_value() || !entry->playback.has_value() ||
-        *entry->playback != expected_playback ||
-        entry->body->intent.identity != expected_playback.lease ||
-        entry->body->intent != acknowledgement.intent) {
-        return std::optional<body_render_permit>{};
-    }
-
-    const auto current = state.qualify_snapshot_locked(acknowledgement.backend.target);
-    if (!current.has_value()) {
-        if (current.error() == error::not_connected) {
-            return std::optional<body_render_permit>{};
-        }
-        return std::unexpected{map_snapshot_error(current.error())};
-    }
-    const auto represented = project_representation(*current, rumble_mask, body_route_support::hd);
-    if (!represented.has_value()) {
-        return std::unexpected{represented.error()};
-    }
-    const auto route = represented_body_route(*represented);
-    if (!route.has_value() || *route != acknowledgement.intent) {
-        if (route.has_value() && route->identity == acknowledgement.intent.identity &&
-            route->route != body_actuator_route::hd) {
-            state.mark_started_playback_retired_locked(*entry);
-        }
-        return std::optional<body_render_permit>{};
-    }
-
-    const auto audio = state.audio_facts(expected_playback.lease.audio);
-    if (!audio.has_value() || audio->instance != expected_playback.lease.audio || !audio->ready ||
-        audio->support != body_route_support::hd) {
-        return std::optional<body_render_permit>{};
-    }
-
-    bool idle = false;
-    if (!engine_busy->compare_exchange_strong(idle,
-            true,
-            std::memory_order_acquire,
-            std::memory_order_relaxed)) {
-        return std::unexpected{execution_error::busy};
-    }
-
-    auto claimed = state.playback_bank.try_claim(expected_playback,
+    auto claimed = qualify_and_claim_body_render(state,
+        expected_owner,
         acknowledgement.backend,
+        acknowledgement,
+        expected_playback,
+        expected_playback.lease.audio,
         engine_busy,
         requested_frames);
     if (!claimed.has_value()) {
-        engine_busy->store(false, std::memory_order_release);
-        engine_busy->notify_all();
-        switch (claimed.error()) {
-        case body_playback_admission_error::invalid_argument:
-            return std::unexpected{execution_error::invalid_argument};
-        case body_playback_admission_error::busy:
-            return std::unexpected{execution_error::busy};
-        case body_playback_admission_error::stale_backend:
-            return std::unexpected{execution_error::stale_backend};
-        }
-        return std::unexpected{execution_error::resources};
+        return std::unexpected{claimed.error()};
     }
     if (!claimed->has_value()) {
-        engine_busy->store(false, std::memory_order_release);
-        engine_busy->notify_all();
+        return std::optional<body_render_permit>{};
     }
-    return std::move(*claimed);
+    return std::optional<body_render_permit>{std::move((**claimed).permit)};
+}
+
+execution_result<std::optional<admitted_body_render>>
+authority_execution_access::admit_current_body_render(authority& owner,
+    const execution_owner expected_owner,
+    const backend_handle expected_backend,
+    const body_route_ack& acknowledgement,
+    const audio_instance expected_audio,
+    std::atomic<bool>* const engine_busy,
+    const std::size_t requested_frames) noexcept {
+    auto& state = *owner.implementation_;
+    auto claimed = qualify_and_claim_body_render(state,
+        expected_owner,
+        expected_backend,
+        acknowledgement,
+        std::nullopt,
+        expected_audio,
+        engine_busy,
+        requested_frames);
+    if (!claimed.has_value()) {
+        return std::unexpected{claimed.error()};
+    }
+    if (!claimed->has_value()) {
+        return std::optional<admitted_body_render>{};
+    }
+    auto current = std::move(**claimed);
+    return std::optional<admitted_body_render>{admitted_body_render{.route = acknowledgement,
+        .playback = current.playback,
+        .permit = std::move(current.permit)}};
 }
 
 void authority_execution_access::retire_body_backend(authority& owner,

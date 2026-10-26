@@ -24,6 +24,12 @@ add_executable(inputnext_gameinput_probe
     dualsense_usb_sequence.cpp
     dualsense_usb_evidence.cpp
     dualsense_usb_report.cpp
+    hd_audio_sequence.cpp
+    hd_audio_candidate.cpp
+    hd_audio_evidence.cpp
+    hd_audio_report.cpp
+    hd_audio_step_runner.cpp
+    hd_audio_worker.cpp
     report.cpp
     history_observer.cpp
     history_report.cpp
@@ -40,6 +46,7 @@ target_link_libraries(inputnext_gameinput_probe PRIVATE
     inputnext_gameinput_runtime inputnext_gameinput_xinput inputnext_gameinput_output
     inputnext_output_authority inputnext_output_execution inputnext_focus ole32
     inputnext_gameinput_probe_support
+    inputnext_audio
 )
 inputnext_configure_target(inputnext_gameinput_probe)
 inputnext_deploy_gameinput(inputnext_gameinput_probe)

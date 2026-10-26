@@ -1,5 +1,7 @@
 #include "rumble_session.hpp"
 
+#include "audio/audio_service.hpp"
+#include "audio/native_port.hpp"
 #include "gameinput/output/connections/manager.hpp"
 #include "gameinput/runtime/output_access.hpp"
 #include "output/composition/composition.hpp"
@@ -11,6 +13,9 @@
 #include <inputnext/gameinput_xinput.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_body.hpp>
+#include <inputnext/output_body_pcm.hpp>
+#include <inputnext/output_body_playback.hpp>
 #include <inputnext/output_execution.hpp>
 #include <inputnext/output_executor.hpp>
 #include <inputnext/xinput.hpp>
@@ -18,6 +23,7 @@
 #include <Windows.h>
 #include <objbase.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -27,6 +33,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -151,7 +158,37 @@ struct rumble_session::implementation final {
                 executor->request_drive();
             }
         }
+        synchronize_hd_audio();
         return true;
+    }
+
+    void synchronize_hd_audio() noexcept {
+        if (!hd_audio) {
+            return;
+        }
+        connection_inventory selected{};
+        if (hd_audio_target.has_value()) {
+            for (std::size_t index = 0U; index < latest_inventory.size; ++index) {
+                if (latest_inventory.entries[index].target == *hd_audio_target) {
+                    selected.entries[0U] = latest_inventory.entries[index];
+                    selected.size = 1U;
+                    break;
+                }
+            }
+        }
+        hd_audio->synchronize(selected);
+    }
+
+    void stop_hd_audio() noexcept {
+        if (hd_audio) {
+            hd_audio->close_admission();
+            hd_audio->request_stop();
+            hd_audio->shutdown();
+            hd_audio.reset();
+        }
+        hd_audio_target.reset();
+        hd_render_control.reset();
+        hd_route_control.reset();
     }
 
     [[nodiscard]] rumble_session_stop_report stop() noexcept {
@@ -159,6 +196,7 @@ struct rumble_session::implementation final {
             return stop_report;
         }
 
+        stop_hd_audio();
         if (connections) {
             connections->close_admission();
         }
@@ -210,6 +248,10 @@ struct rumble_session::implementation final {
     std::unique_ptr<output::executor> executor;
     std::unique_ptr<gameinput_xinput> presentation;
     std::unique_ptr<gameinput_output_connections> connections;
+    std::optional<output::detail::audio_route_control> hd_route_control;
+    std::unique_ptr<output::detail::body_render_control> hd_render_control;
+    std::unique_ptr<audio_detail::audio_service> hd_audio;
+    std::optional<connection_target> hd_audio_target;
     connection_inventory latest_inventory{};
     rumble_session_stop_report stop_report{};
     bool runtime_started{};
@@ -288,12 +330,136 @@ metadata_result<bool> rumble_session::qualify_dualsense_usb(const connection_tar
         expected_catalogue_generation);
 }
 
+metadata_result<metadata_snapshot> rumble_session::query_metadata(
+    const connection_target target) const {
+    if (!implementation_->runtime_started || implementation_->runtime_stopped) {
+        return std::unexpected{metadata_error::closed};
+    }
+    return implementation_->runtime.query_metadata(target);
+}
+
 output::result<output::detail::internal_producer>
 rumble_session::make_dualsense_diagnostic_producer() & {
     if (!implementation_->output_composition || implementation_->stop_complete) {
         return std::unexpected{output::error::not_connected};
     }
     return implementation_->output_composition->make_producer(dualsense_output_options);
+}
+
+bool rumble_session::start_hd_audio(const connection_target target) {
+    auto& state = *implementation_;
+    if (state.hd_audio || !state.connections || !state.executor || !state.output_composition ||
+        state.stop_complete || !state.runtime_started || !target.valid()) {
+        return false;
+    }
+    const bool target_present = std::ranges::any_of(
+        std::span{state.latest_inventory.entries.data(), state.latest_inventory.size},
+        [target](const auto& connection) { return connection.target == target; });
+    if (!target_present) {
+        return false;
+    }
+
+    state.hd_route_control.emplace(state.output_composition->audio_routes());
+    state.hd_render_control =
+        std::make_unique<output::detail::body_render_control>(*state.executor);
+    auto created = audio_detail::audio_service::create(audio_detail::audio_dependencies{
+        .runtime = state.runtime,
+        .connections = *state.connections,
+        .route_control = *state.hd_route_control,
+        .render_control = *state.hd_render_control,
+        .native_factory = audio_detail::make_windows_native_port_factory(),
+        .worker_launcher = audio_detail::make_std_audio_worker_launcher(),
+    });
+    if (!created.has_value()) {
+        state.hd_render_control.reset();
+        state.hd_route_control.reset();
+        return false;
+    }
+    state.hd_audio = std::move(*created);
+    state.hd_audio_target = target;
+    state.synchronize_hd_audio();
+    return true;
+}
+
+bool rumble_session::retarget_hd_audio(const connection_target target) noexcept {
+    auto& state = *implementation_;
+    if (!state.hd_audio || state.stop_complete || !target.valid()) {
+        return false;
+    }
+    const bool target_present = std::ranges::any_of(
+        std::span{state.latest_inventory.entries.data(), state.latest_inventory.size},
+        [target](const auto& connection) { return connection.target == target; });
+    if (!target_present) {
+        return false;
+    }
+    state.hd_audio_target = target;
+    state.synchronize_hd_audio();
+    return true;
+}
+
+std::optional<audio_detail::audio_target_progress> rumble_session::hd_audio_progress(
+    const connection_target target) const noexcept {
+    return implementation_->hd_audio ? implementation_->hd_audio->progress(target) : std::nullopt;
+}
+
+output::result<output::public_context> rumble_session::open_body_context(
+    const connection_target target) {
+    if (!implementation_->output_composition || implementation_->stop_complete) {
+        return std::unexpected{output::error::not_connected};
+    }
+    return implementation_->output_composition->public_authority().open(target);
+}
+
+output::result<output::prepared_body_pcm>
+rumble_session::prepare_body_pcm(const std::span<const float> samples, const float gain) {
+    if (!implementation_->output_composition || implementation_->stop_complete) {
+        return std::unexpected{output::error::not_connected};
+    }
+    return implementation_->output_composition->public_authority().pcm_preparer().prepare(
+        output::body_pcm_input{.samples = samples,
+            .frame_count = samples.size(),
+            .channels = 1U,
+            .sample_rate = output::body_pcm_sample_rate,
+            .gain = gain});
+}
+
+output::result<output::body_playback_receipt> rumble_session::submit_body_pcm(
+    const output::public_context context,
+    const output::body_request& request,
+    const output::body_playback_update& playback) {
+    if (!implementation_->output_composition || implementation_->stop_complete) {
+        return std::unexpected{output::error::not_connected};
+    }
+    auto submitted = implementation_->output_composition->public_authority().submit_body(context,
+        request,
+        playback);
+    if (submitted.has_value()) {
+        request_drive();
+    }
+    return submitted;
+}
+
+output::result<output::close_receipt> rumble_session::close_body_context(
+    const output::public_context context) {
+    if (!implementation_->output_composition || implementation_->stop_complete) {
+        return std::unexpected{output::error::not_connected};
+    }
+    return implementation_->output_composition->public_authority().close(context,
+        context.identity.id.value);
+}
+
+output::result<void> rumble_session::acknowledge_body_context_close(
+    const output::close_receipt& receipt) {
+    if (!implementation_->output_composition || implementation_->stop_complete) {
+        return std::unexpected{output::error::not_connected};
+    }
+    return implementation_->output_composition->public_authority().acknowledge(receipt);
+}
+
+void rumble_session::collect_body_pcm() noexcept {
+    if (implementation_->output_composition && !implementation_->stop_complete) {
+        implementation_->output_composition->public_authority().collect_body_pcm();
+    }
 }
 
 std::optional<output::backend_progress> rumble_session::backend_progress(

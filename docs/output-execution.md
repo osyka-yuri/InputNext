@@ -20,7 +20,7 @@ The limits are 16 current device lanes, 128 resident backends and 128 resident l
 
 Registration declares an immutable, nonzero subset of the four supported channel bits. Publications retain the effective represented winners and their full provenance. A body lease masks ordinary rumble in this projection; the logical snapshot retains it for restoration after clear or expiry. Diagnostic rumble remains represented. Unsupported requested channels are reported separately. Native acceptance covers only the represented channels.
 
-Registration also declares immutable body-route support, defaulting to classic-only. HD support requires represented rumble. A classic-only backend projects an HD body intent to its classic fallback with `unsupported_transport`; it retains the lease and route identity for qualification. Current production GameInput backends are classic-only.
+Registration also declares immutable body-route support, defaulting to classic-only. HD support requires represented rumble. A classic-only backend projects an HD body intent to its classic fallback with `unsupported_transport`; it retains the lease and route identity for qualification. Qualified USB DualSense backends support HD; other [GameInput backends](gameinput-output.md) use classic output.
 
 Absent represented intents produce neutral values. A present zero or OFF intent remains distinct from absence for qualification. The initial publication requires a real native call even when it is neutral.
 
@@ -34,7 +34,7 @@ An admitted call may overlap a later logical close, focus loss, retirement or re
 
 `native_sink::write` is synchronous and `noexcept`. The command is borrowed for that call only. The sink must finish all native work using it before returning; it must not retain command storage or schedule an unqualified later send. An adapter using asynchronous OS I/O must wait for its actual completion within this boundary.
 
-A sink declaring HD support must preserve an accepted exact HD route while processing later commands carrying that same route intent, including during trigger and LED writes. Any inability to maintain it must return a nonaccepted result. This setter-route obligation does not establish physical audio playback. Current production sinks declare classic-only support.
+A sink declaring HD support must preserve an accepted exact HD route while processing later commands carrying that same route intent, including during trigger and LED writes. If it cannot preserve the route, it must return a nonaccepted result. Setter acceptance does not establish physical audio playback.
 
 `accepted` records setter acceptance without measuring hardware output. For classic output, `failed` and `unsupported` block automatic retries until a changed represented publication or explicit retry. `disconnected` retires the backend.
 

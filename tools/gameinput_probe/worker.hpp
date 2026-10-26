@@ -17,6 +17,7 @@ struct probe_options final {
     bool xinput_events{};
     bool rumble{};
     bool dualsense_usb{};
+    bool dualsense_hd{};
 };
 
 [[nodiscard]] int run_probe_worker(const probe_options& options, std::ostream& output);

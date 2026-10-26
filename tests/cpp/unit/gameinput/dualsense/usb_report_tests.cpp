@@ -2,6 +2,7 @@
 
 #include "gameinput/dualsense/feedback_payload.hpp"
 #include <inputnext/output.hpp>
+#include <inputnext/output_body.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -166,6 +167,31 @@ TEST_CASE("gameinput.dualsense.usb_report_golden_vector", "[gameinput][dualsense
     for (std::size_t index = 48U; index < report.size(); ++index) {
         CHECK(byte_value(report[index]) == 0U);
     }
+}
+
+TEST_CASE("gameinput.dualsense.hd_route_changes_only_mode_and_motor_bytes",
+    "[gameinput][dualsense][unit]") {
+    const auto values = golden_values();
+    const auto classic = encode_usb_report(values);
+    const auto hd_report = encode_usb_report(values, output::body_actuator_route::hd);
+
+    CHECK(classic.size() == hd_report.size());
+    CHECK(byte_value(classic[1U]) == 0x0FU);
+    CHECK(byte_value(hd_report[1U]) == 0x0CU);
+    CHECK(hd_report[2U] == classic[2U]);
+    CHECK(byte_value(hd_report[3U]) == 0U);
+    CHECK(byte_value(hd_report[4U]) == 0U);
+    for (std::size_t index = 5U; index < classic.size(); ++index) {
+        CHECK(hd_report[index] == classic[index]);
+    }
+
+    const auto full = usb_report_payload(hd_report, 64U).value_or(std::span<const std::byte>{});
+    const auto without_id =
+        usb_report_payload(hd_report, 63U).value_or(std::span<const std::byte>{});
+    const auto compact = usb_report_payload(hd_report, 48U).value_or(std::span<const std::byte>{});
+    CHECK(full.size() == 64U);
+    CHECK(without_id.size() == 63U);
+    CHECK(compact.size() == 48U);
 }
 
 TEST_CASE("gameinput.dualsense.led_updates_do_not_release_led_control",

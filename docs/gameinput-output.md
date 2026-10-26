@@ -1,6 +1,6 @@
 # GameInput output
 
-The native output composition connects exact GameInput connections to the [output executor](output-execution.md). Generic devices use low- and high-frequency GameInput rumble. DualSense and DualSense Edge with confirmed USB transport use one [raw-report backend](dualsense-usb.md) for classic rumble, adaptive triggers and LEDs. InputNext supports only input over Bluetooth for these Sony models.
+The native output composition connects exact GameInput connections to the [output executor](output-execution.md). Generic devices use low- and high-frequency GameInput rumble. DualSense and DualSense Edge with confirmed USB transport use one [raw-report backend](dualsense-usb.md) for actuator mode, classic rumble, adaptive triggers and LEDs. The [audio service](hd-haptics.md) delivers HD samples separately. InputNext supports only input over Bluetooth for these Sony models.
 
 [XInput rumble requests](xinput.md#rumble-and-controls) participate in normal output arbitration. Generic capability reports retain the two motor facts independently; GameInput may adapt a request to the motors available. Its rumble setter returns no status, so executor acceptance records that the synchronous call returned. Raw output instead records the send result. Neither establishes a measured hardware effect.
 
@@ -22,7 +22,7 @@ Creating the executor starts its coordinator; registering backends starts their 
 
 A reconnect receives a fresh registry identity. If GameInput retains the same native device object, its new output sink waits until the previous sink and output lease have finished cleanup. Input admission remains independent; the connection owner retries deferred output creation automatically.
 
-For best-effort neutralization, submit zero while the assignment and backend remain live and observe a matching completed attempt where possible. During shutdown, stop new calls, close connection admission and presentation, and finish outstanding callers. Shut down the connection owner before draining the runtime. It joins its control worker and shuts down the borrowed executor; runtime drain then accounts for device and API cleanup. Keep the registry, authority and focus observer alive throughout cleanup.
+For best-effort neutralization, submit zero while the assignment and backend remain live and observe a matching completed attempt where possible. During shutdown, stop new calls, close audio and connection admission and presentation, and finish outstanding callers. Drain the audio service before shutting down the connection owner. The connection owner joins its control worker and shuts down the borrowed executor; runtime drain then accounts for device and API cleanup. Keep the registry, authority and focus observer alive throughout cleanup.
 
 Native calls and final releases can block indefinitely. A timeout does not establish drain. GameInput applies feedback while its process is in the foreground and can replay its last requested feedback when focus returns. Already admitted calls can overlap logical revocation; immediate physical neutralization is not guaranteed.
 

@@ -7,6 +7,8 @@ add_executable(inputnext_gameinput_probe_unit_tests
     manual_sequence_tests.cpp
     dualsense_usb_evidence_tests.cpp
     dualsense_usb_report_tests.cpp
+    hd_audio_evidence_tests.cpp
+    hd_audio_candidate_tests.cpp
     "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/report.cpp"
     "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/history_report.cpp"
     "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/xinput_report.cpp"
@@ -17,6 +19,9 @@ add_executable(inputnext_gameinput_probe_unit_tests
     "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/dualsense_usb_sequence.cpp"
     "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/dualsense_usb_evidence.cpp"
     "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/dualsense_usb_report.cpp"
+    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/hd_audio_evidence.cpp"
+    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/hd_audio_candidate.cpp"
+    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/hd_audio_sequence.cpp"
 )
 target_link_libraries(inputnext_gameinput_probe_unit_tests PRIVATE Catch2::Catch2WithMain)
 target_include_directories(inputnext_gameinput_probe_unit_tests PRIVATE

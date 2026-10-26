@@ -1,4 +1,5 @@
 #include "connection_test_support.hpp"
+#include <inputnext/output_body.hpp>
 
 #include "cpp/integration/gameinput/runtime/runtime_metadata_test_support.hpp"
 #include "gameinput/dualsense/usb_report.hpp"
@@ -283,6 +284,47 @@ TEST_CASE("gameinput.output.usb_backend_delivers_arbitrated_values_and_live_neut
     const auto final_payloads = fixture.raw_controls->sent_payloads();
     REQUIRE(!final_payloads.empty());
     CHECK((final_payloads.back() == std::vector<std::byte>(neutral.begin(), neutral.end())));
+}
+
+TEST_CASE("gameinput.output.qualified_usb_backend_admits_hd_route_and_sets_hd_mode",
+    "[gameinput][output][integration][dualsense_usb][body]") {
+    connection_fixture fixture;
+    configure_usb(fixture);
+    REQUIRE(fixture.start(false));
+    auto audio_routes = fixture.composition->audio_routes();
+    auto audio = audio_routes.attach(fixture.target, output::body_route_support::hd, true);
+    REQUIRE(audio.has_value());
+
+    REQUIRE(fixture.connections->synchronize(fixture.backing.runtime->connections()).has_value());
+    REQUIRE(wait_until([&] { return has_route(fixture, output::supported_channel_mask); }));
+    auto& authority = fixture.composition->public_authority();
+    auto context = authority.open(fixture.target);
+    REQUIRE(context.has_value());
+    const auto body = authority.submit_body(*context,
+        output::body_request{.audio = *audio,
+            .sequence = 1U,
+            .ttl = std::chrono::seconds{5},
+            .preference = output::body_route_preference::prefer_hd,
+            .fallback = {.low_frequency = 0.4F, .high_frequency = 0.6F}});
+    REQUIRE(body.has_value());
+    fixture.output_executor->request_drive();
+
+    REQUIRE(wait_until([&] {
+        const auto progress = fixture.connections->backend_progress(fixture.target);
+        return progress.has_value() && progress->phase == output::backend_phase::current &&
+               progress->acknowledged_body_route.has_value() &&
+               progress->acknowledged_body_route->intent.route == output::body_actuator_route::hd;
+    }));
+    const auto sent = fixture.raw_controls->sent_payloads();
+    REQUIRE_FALSE(sent.empty());
+    const auto expected =
+        dualsense::encode_usb_report(output::channel_values{}, output::body_actuator_route::hd);
+    CHECK((sent.back() == std::vector<std::byte>(expected.begin(), expected.end())));
+
+    const auto closed = authority.close(*context, context->identity.id.value);
+    REQUIRE(closed.has_value());
+    REQUIRE(authority.acknowledge(*closed).has_value());
+    REQUIRE(audio_routes.detach(*audio).has_value());
 }
 
 TEST_CASE("gameinput.output.dualsense_usb.backend_admission_waits_for_explicit_start",

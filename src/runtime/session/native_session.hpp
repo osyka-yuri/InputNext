@@ -5,6 +5,7 @@
 #include "native_session_dependencies.hpp"
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 
@@ -21,6 +22,7 @@ namespace inputnext::runtime_detail {
 enum class native_session_drain_phase : std::uint8_t {
     not_started,
     closing_admission,
+    stopping_audio,
     stopping_connections,
     stopping_runtime,
     drained,
@@ -31,6 +33,9 @@ struct native_session_drain_progress final {
     std::chrono::steady_clock::duration elapsed{};
     std::uint64_t stop_attempts{};
     std::uint64_t exception_count{};
+    // Last observed during maintenance or immediately before audio drainage.
+    std::size_t resident_audio_slots{};
+    std::size_t retained_audio_slots{};
     bool has_last_stop_report{};
     gameinput_stop_report last_stop_report{};
 };

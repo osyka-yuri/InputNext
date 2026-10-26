@@ -1,3 +1,5 @@
+#include "audio/audio_service.hpp"
+#include "audio/unavailable_native_factory.hpp"
 #include "native_session_test_support.hpp"
 
 #include "cpp/integration/gameinput/runtime/runtime_metadata_test_support.hpp"
@@ -63,6 +65,8 @@ public:
                 current_qpc()));
 
         native_session_dependencies dependencies{};
+        dependencies.audio_factory = test::audio::make_unavailable_native_port_factory();
+        dependencies.audio_launcher = audio_detail::make_std_audio_worker_launcher();
         dependencies.identity = test_runtime_id();
         dependencies.runtime_library = L"C:\\fixture\\GameInputRedist.dll";
         dependencies.native = std::move(port);

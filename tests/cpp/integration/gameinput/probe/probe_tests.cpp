@@ -286,3 +286,23 @@ TEST_CASE("gameinput.probe.supervisor_forwards_usb_without_starting_output",
     CHECK(incompatible.process.cleanup_confirmed);
     CHECK(incompatible.process.exit_code == 2U);
 }
+
+TEST_CASE("gameinput.probe.supervisor_forwards_hd_without_starting_output",
+    "[integration][gameinput][probe][audio]") {
+    const auto result = run_child(L"inputnext_gameinput_probe.exe",
+        {L"--duration-ms", L"150", L"--dualsense-hd"},
+        std::chrono::seconds{20});
+    INFO(result.output);
+    INFO(result.errors);
+    CHECK_FALSE(result.process.timed_out);
+    CHECK(result.process.cleanup_confirmed);
+    CHECK(result.process.exit_code == 4U);
+    CHECK(result.errors.empty());
+    CHECK(result.output.contains("output_mode=dualsense_hd_foreground_ui"));
+    CHECK(result.output.contains("start=waiting_for_user audio_started=false"));
+    CHECK(result.output.contains("usb_setter_before_start=false"));
+    CHECK(result.output.contains("steps=4 user_passed=0 user_failed=0"));
+    CHECK(result.output.contains("rumble_runtime_stop=drained"));
+    CHECK_FALSE(result.output.contains("dualsense_hd_step_submitted"));
+    CHECK_FALSE(result.output.contains("dualsense_hd_start=accepted"));
+}

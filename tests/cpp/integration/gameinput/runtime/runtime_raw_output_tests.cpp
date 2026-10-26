@@ -20,6 +20,7 @@
 
 #include <array>
 #include <atomic>
+#include <bit>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -180,10 +181,10 @@ TEST_CASE("gameinput.runtime.dualsense_usb_sink_selects_exact_report_payload_cap
         auto wrong_mask = raw_command(target, values);
         wrong_mask.output.channels = output::rumble_mask;
         CHECK(sink->write(wrong_mask).status == output::native_status::unsupported);
-        auto unexpected_hd = raw_command(target, values);
-        unexpected_hd.output.body =
-            output::body_route_intent{.route = output::body_actuator_route::hd};
-        CHECK(sink->write(unexpected_hd).status == output::native_status::unsupported);
+        auto invalid_route = raw_command(target, values);
+        invalid_route.output.body = output::body_route_intent{
+            .route = std::bit_cast<output::body_actuator_route>(std::uint8_t{0xFFU})};
+        CHECK(sink->write(invalid_route).status == output::native_status::unsupported);
         CHECK(controls->factory_calls() == index);
 
         const auto result = sink->write(raw_command(target, values));
@@ -209,6 +210,53 @@ TEST_CASE("gameinput.runtime.dualsense_usb_sink_selects_exact_report_payload_cap
 
     CHECK((controls->requested_report_ids() == std::vector<std::uint32_t>{2U, 2U, 2U, 2U, 2U}));
     CHECK(controls->report_releases() == capacities.size());
+    gameinput_stop_report stopped{};
+    CHECK(wait_for_runtime_drain(*fixture.runtime, fixture.now, stopped));
+}
+
+TEST_CASE("gameinput.runtime.dualsense_usb_sink_accepts_only_valid_hd_mode_routes",
+    "[gameinput][runtime][raw_output][integration]") {
+    runtime_fixture fixture;
+    auto access_result = runtime_output_access::create(*fixture.runtime);
+    REQUIRE(access_result.has_value());
+    const auto access = std::move(*access_result);
+    REQUIRE(fixture.start().has_value());
+    const auto device = handle(fixture.device_memory[0U]);
+    fixture.connect(device);
+    fixture.maintain();
+    const auto target = fixture.connection().target;
+    const auto controls = fixture.native->raw_report_script();
+    controls->set_capacity(64U);
+    auto lease = access->reserve(target);
+    REQUIRE(lease.has_value());
+    auto sink_result = make_dualsense_usb_sink(std::move(*lease));
+    REQUIRE(sink_result.has_value());
+    auto sink = std::move(*sink_result);
+
+    const auto values = sample_values();
+    auto hd_command = raw_command(target, values);
+    hd_command.output.body = output::body_route_intent{.route = output::body_actuator_route::hd};
+    CHECK(sink->write(hd_command).status == output::native_status::accepted);
+    const auto hd_image = encode_usb_report(values, output::body_actuator_route::hd);
+    const auto hd_payloads = controls->fill_payloads();
+    REQUIRE(hd_payloads.size() == 1U);
+    CHECK((hd_payloads.back() == std::vector<std::byte>(hd_image.begin(), hd_image.end())));
+
+    auto invalid = raw_command(target, values);
+    invalid.output.body = output::body_route_intent{
+        .route = std::bit_cast<output::body_actuator_route>(std::uint8_t{0xFFU})};
+    CHECK(sink->write(invalid).status == output::native_status::unsupported);
+    CHECK(controls->factory_calls() == 1U);
+    CHECK(controls->fill_calls() == 1U);
+    CHECK(controls->send_calls() == 1U);
+
+    CHECK(sink->write(raw_command(target, values)).status == output::native_status::accepted);
+    const auto classic_image = encode_usb_report(values);
+    const auto payloads = controls->fill_payloads();
+    REQUIRE(payloads.size() == 2U);
+    CHECK((payloads.back() == std::vector<std::byte>(classic_image.begin(), classic_image.end())));
+
+    sink.reset();
     gameinput_stop_report stopped{};
     CHECK(wait_for_runtime_drain(*fixture.runtime, fixture.now, stopped));
 }

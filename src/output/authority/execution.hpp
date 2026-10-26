@@ -1,5 +1,6 @@
 #pragma once
 
+#include "admitted_body_render.hpp"
 #include "output/projection/represented.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/output_authority.hpp>
@@ -42,6 +43,14 @@ public:
         execution_owner expected_owner,
         const body_route_ack& acknowledgement,
         body_playback_identity expected_playback,
+        std::atomic<bool>* engine_busy,
+        std::size_t requested_frames) noexcept;
+    [[nodiscard]] static execution_result<std::optional<admitted_body_render>>
+    admit_current_body_render(authority& owner,
+        execution_owner expected_owner,
+        backend_handle expected_backend,
+        const body_route_ack& acknowledgement,
+        audio_instance expected_audio,
         std::atomic<bool>* engine_busy,
         std::size_t requested_frames) noexcept;
     static void retire_body_backend(authority& owner, backend_handle backend) noexcept;

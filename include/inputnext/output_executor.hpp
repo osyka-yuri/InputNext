@@ -14,10 +14,11 @@ class native_sink;
 
 namespace detail {
 struct executor_test_access;
-}
+class body_render_control;
+} // namespace detail
 
 // Owns the bounded native-output workers for one authority. The authority must outlive the
-// executor. shutdown() waits for every admitted native call and sink destructor to return.
+// executor. shutdown() waits for admitted native calls, render submissions and sink destruction.
 class executor final {
 public:
     [[nodiscard]] static execution_result<std::unique_ptr<executor>> create(authority& owner);
@@ -50,6 +51,7 @@ public:
 
 private:
     friend struct detail::executor_test_access;
+    friend class detail::body_render_control;
     struct implementation;
 
     explicit executor(std::unique_ptr<implementation> implementation) noexcept;

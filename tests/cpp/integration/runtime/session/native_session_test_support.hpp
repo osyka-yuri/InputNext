@@ -1,5 +1,8 @@
 #pragma once
 
+#include "audio/audio_service.hpp"
+#include "audio/unavailable_native_factory.hpp"
+
 #include "cpp/integration/gameinput/runtime/runtime_history_test_support.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_rumble_test_support.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_test_support.hpp"
@@ -221,6 +224,8 @@ public:
         rumble_controls = native->fake->rumble_script();
 
         native_session_dependencies options{};
+        options.audio_factory = test::audio::make_unavailable_native_port_factory();
+        options.audio_launcher = audio_detail::make_std_audio_worker_launcher();
         options.identity = test_runtime_id();
         options.identity.bytes[1U] = std::byte{0xA7U};
         options.runtime_library = L"C:\\fixture\\GameInputRedist.dll";

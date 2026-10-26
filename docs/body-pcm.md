@@ -2,7 +2,7 @@
 
 Body PCM supplies immutable samples for one nonlooping body voice per controller connection.
 It extends the [body lease](body-output.md); it does not open an audio device or establish physical
-HD output.
+HD output. The [WASAPI adapter](hd-haptics.md) provides native USB delivery.
 
 ## Preparation and limits
 
@@ -63,6 +63,11 @@ release every permit and quiesce callers before destroying those owners. Revocat
 admission while an already admitted block may finish. Backend cleanup waits for that block before
 releasing native resources. Render and permit release do not allocate, take control locks or
 destroy sample owners. Control collection reclaims retired or completed buffers outside those locks.
+
+Use `render_for_submission` for native delivery and retain its move-only submission token through
+the native buffer release. The token holds the voice and backend fences after mixing. `render`
+releases those fences before returning and remains suitable for offline rendering. Both operations
+consume the permit; neither releases sample owners.
 
 Rendering fills complete quad frames up to the admitted count and output capacity. Front left
 and right are zero. Mono is duplicated to rear left and right; stereo maps to those channels

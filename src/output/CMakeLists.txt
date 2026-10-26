@@ -83,6 +83,7 @@ inputnext_configure_target(inputnext_output_execution_engine)
 
 function(inputnext_add_output_executor target)
     add_library(${target} STATIC
+        "${PROJECT_SOURCE_DIR}/src/output/render/control.cpp"
         "${PROJECT_SOURCE_DIR}/src/output/executor/executor.cpp"
         "${PROJECT_SOURCE_DIR}/src/output/executor/executor_coordinator.cpp"
         "${PROJECT_SOURCE_DIR}/src/output/executor/executor_registration.cpp"

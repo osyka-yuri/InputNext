@@ -1,5 +1,7 @@
 #include "native_session_state.hpp"
 
+#include "audio/audio_service.hpp"
+#include "audio/native_port.hpp"
 #include "core/core.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/output/connections/manager.hpp"
@@ -9,7 +11,9 @@
 #include "native_paths.hpp"
 #include "native_session.hpp"
 #include "native_session_dependencies.hpp"
+#include "output/body/audio_route_control.hpp"
 #include "output/composition/composition.hpp"
+#include "output/render/control.hpp"
 #include "profiles/application.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/focus.hpp>
@@ -85,7 +89,8 @@ std::unique_ptr<native_session> native_session::implementation::prepare(
     native_session_dependencies dependencies) {
     if (!dependencies.identity.valid() || !dependencies.runtime_library.is_absolute() ||
         dependencies.native == nullptr || dependencies.metadata == nullptr ||
-        dependencies.focus_source == nullptr) {
+        dependencies.focus_source == nullptr || dependencies.audio_factory == nullptr ||
+        dependencies.audio_launcher == nullptr) {
         throw std::invalid_argument{"native session preparation requires valid owned ports"};
     }
 
@@ -152,6 +157,21 @@ std::unique_ptr<native_session> native_session::implementation::prepare(
     }
     state->connections = std::move(*connections);
 
+    state->audio_routes = std::make_unique<output::detail::audio_route_control>(
+        state->output_composition->audio_routes());
+    state->body_render =
+        std::make_unique<output::detail::body_render_control>(*state->output_executor);
+    auto audio = audio_detail::audio_service::create({.runtime = *state->runtime,
+        .connections = *state->connections,
+        .route_control = *state->audio_routes,
+        .render_control = *state->body_render,
+        .native_factory = std::move(dependencies.audio_factory),
+        .worker_launcher = std::move(dependencies.audio_launcher)});
+    if (!audio.has_value()) {
+        throw_preparation_failure("native session audio service creation failed");
+    }
+    state->audio = std::move(*audio);
+
     auto owner = std::unique_ptr<native_session>{new native_session{std::move(state)}};
     auto& prepared = *owner->implementation_;
     prepared.launch(dependencies.launch_worker != nullptr ? dependencies.launch_worker
@@ -168,6 +188,8 @@ std::unique_ptr<native_session> native_session::prepare() {
     options.native = gameinput_detail::make_native_gameinput();
     options.metadata = metadata_detail::make_windows_metadata_provider();
     options.focus_source = focus::make_current_process_source();
+    options.audio_factory = audio_detail::make_windows_native_port_factory();
+    options.audio_launcher = audio_detail::make_std_audio_worker_launcher();
     return prepare(std::move(options));
 }
 

@@ -3,6 +3,7 @@
 #include "executor_test_access.hpp"
 #include "executor_test_support.hpp"
 #include "output/controlled_native_sink.hpp"
+#include "output/render/control.hpp"
 #include <inputnext/output.hpp>
 #include <inputnext/output_execution.hpp>
 #include <inputnext/output_executor.hpp>
@@ -40,6 +41,20 @@ TEST_CASE("output.executor_creation_failure_releases_authority_attachment",
     auto recovered = executor::create(fixture.owner);
     REQUIRE(recovered.has_value());
     (*recovered)->shutdown();
+}
+
+TEST_CASE("output.body_render_control_uses_the_executor_lifecycle_operation_guard",
+    "[component][output][executor][lifecycle]") {
+    authority_fixture fixture{};
+    const auto running = start_executor(fixture.owner);
+    const inputnext::output::detail::body_render_control control{*running};
+
+    const auto active = control.admit_current({}, {}, 1U);
+    CHECK((!active.has_value() && active.error() == execution_error::invalid_argument));
+
+    running->shutdown();
+    const auto closed = control.admit_current({}, {}, 1U);
+    CHECK((!closed.has_value() && closed.error() == execution_error::not_running));
 }
 
 TEST_CASE("output.executor_attaches_once_and_recreation_uses_a_new_owner",

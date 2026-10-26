@@ -186,6 +186,8 @@ Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2
 - `tests/cpp/component/input` checks coherent publication through the production input library.
 - `tests/cpp/component/devices` checks connection ownership, retirement, and concurrency through the production device library. Stress cases have a separate executable and build option.
 - `tests/cpp/unit/output` checks effect values, deadlines, pure arbitration, body route policy, PCM mixing, foreground epoch matching, represented projections, retry timing, and controlled sink synchronization.
+- `tests/cpp/unit/audio` checks endpoint ID bounds, native resource conflicts and audio format policy.
+- `tests/cpp/integration/audio` checks stream setup, render admission, loss and retained ownership with controlled native ports, plus Windows COM affinity without starting hardware output.
 - `tests/cpp/component/output` checks logical contexts, body leases, scalar audio identities, PCM preparation and accounting, and playback permits. Separate engine and executor suites cover native admission, retry, replacement, serialized cleanup, and worker lifecycle.
 - `tests/cpp/integration/output` checks route and playback admission across authority and execution, plus input, focus and XInput progress while control gates, native delivery, PCM preparation or reclamation are blocked.
 - `tests/cpp/unit/profiles` checks TOML decoding, trigger rules and bounded stream reads.

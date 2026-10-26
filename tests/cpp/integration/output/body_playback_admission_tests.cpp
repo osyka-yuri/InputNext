@@ -1,9 +1,11 @@
 #include "body_playback_fixture.hpp"
+#include "output/controlled_native_sink.hpp"
 #include "output/playback_test_support.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <inputnext/native_output.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_body.hpp>
 #include <inputnext/output_body_playback.hpp>
@@ -12,7 +14,9 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <future>
+#include <memory>
 #include <optional>
 #include <thread>
 #include <utility>
@@ -21,6 +25,8 @@ namespace {
 
 using namespace inputnext::output;
 using inputnext::test::output::body_playback_fixture;
+using inputnext::test::output::controlled_native_sink;
+using inputnext::test::output::controlled_native_state;
 using inputnext::test::output::shaped_sample;
 using inputnext::test::output::take_optional_value;
 
@@ -381,6 +387,168 @@ TEST_CASE("output.body_playback_backend_retirement_drains_held_permit_without_bl
     if (control_ready) {
         CHECK(control_progress.get().has_value());
     }
+    CHECK(fixture.authority.owner.pcm_preparer().usage().buffers == 0U);
+    CHECK(fixture.engine->engine().acknowledge_retirement(retired.value()).has_value());
+}
+
+TEST_CASE("output.body_render_current_admission_selects_the_fresh_private_clip",
+    "[integration][output][body_playback]") {
+    body_playback_fixture fixture{};
+    constexpr std::array old_samples{0.1F, 0.2F};
+    constexpr std::array current_samples{-0.35F, -0.7F};
+    auto old_prepared = fixture.prepare(old_samples);
+    REQUIRE(old_prepared.has_value());
+    auto old_clip = fixture.replace(std::move(*old_prepared));
+    REQUIRE(old_clip.has_value());
+    REQUIRE(old_clip->playback.has_value());
+    const auto old_identity = take_optional_value(old_clip->playback);
+    REQUIRE(fixture.publish_and_drive());
+
+    auto current_prepared = fixture.prepare(current_samples);
+    REQUIRE(current_prepared.has_value());
+    auto current_clip = fixture.replace(std::move(*current_prepared), 2U);
+    REQUIRE(current_clip.has_value());
+    REQUIRE(current_clip->playback.has_value());
+    const auto current_identity = take_optional_value(current_clip->playback);
+    REQUIRE(current_identity.clip_revision != old_identity.clip_revision);
+    static_cast<void>(fixture.publish_and_drive());
+    REQUIRE(fixture.acknowledgement().has_value());
+
+    auto admitted =
+        fixture.engine->engine().admit_current_body_render(fixture.backend, fixture.audio, 1U);
+    REQUIRE(admitted.has_value());
+    REQUIRE(admitted->has_value());
+    auto current = take_optional_value(admitted.value());
+    CHECK(current.route.backend == fixture.backend);
+    CHECK(current.playback == current_identity);
+    std::array<float, 4U> output{};
+    const auto rendered = std::move(current.permit).render(output);
+    CHECK(rendered.source_frames_consumed == 1U);
+    CHECK(output[2U] == Catch::Approx(shaped_sample(current_samples[0U])));
+}
+
+TEST_CASE("output.body_render_current_admission_rejects_stale_retry_audio_and_replaced_backend",
+    "[integration][output][body_playback]") {
+    body_playback_fixture fixture{};
+    constexpr std::array samples{0.25F, 0.5F};
+    auto prepared = fixture.prepare(samples);
+    REQUIRE(prepared.has_value());
+    auto installed = fixture.replace(std::move(*prepared));
+    REQUIRE(installed.has_value());
+    REQUIRE(installed->playback.has_value());
+    REQUIRE(fixture.publish_and_drive());
+
+    auto invalid_size =
+        fixture.engine->engine().admit_current_body_render(fixture.backend, fixture.audio, 0U);
+    CHECK((!invalid_size.has_value() && invalid_size.error() == execution_error::invalid_argument));
+
+    auto foreign_backend = fixture.backend;
+    ++foreign_backend.incarnation.id.value;
+    auto stale_backend =
+        fixture.engine->engine().admit_current_body_render(foreign_backend, fixture.audio, 1U);
+    CHECK((!stale_backend.has_value() && stale_backend.error() == execution_error::stale_backend));
+
+    auto foreign_audio = fixture.audio;
+    ++foreign_audio.id.value;
+    auto stale_audio =
+        fixture.engine->engine().admit_current_body_render(fixture.backend, foreign_audio, 1U);
+    REQUIRE(stale_audio.has_value());
+    CHECK_FALSE(stale_audio->has_value());
+
+    REQUIRE(fixture.engine->engine().request_retry(fixture.backend).has_value());
+    auto retry_suspended =
+        fixture.engine->engine().admit_current_body_render(fixture.backend, fixture.audio, 1U);
+    REQUIRE(retry_suspended.has_value());
+    CHECK_FALSE(retry_suspended->has_value());
+    REQUIRE(fixture.engine->engine().drive_one(fixture.lane));
+
+    const auto original_backend = fixture.backend;
+    const auto replacement_state = std::make_shared<controlled_native_state>();
+    std::unique_ptr<native_sink> replacement_sink =
+        std::make_unique<controlled_native_sink>(replacement_state);
+    auto replacement = fixture.engine->register_backend(fixture.authority.connection.target,
+        replacement_sink,
+        rumble_mask,
+        original_backend,
+        body_route_support::hd);
+    REQUIRE(replacement.has_value());
+    fixture.backend = *replacement;
+    const auto replacement_lane = fixture.engine->engine().lane_for(fixture.backend);
+    REQUIRE(replacement_lane.has_value());
+    fixture.lane = *replacement_lane;
+    for (std::size_t attempt = 0U; attempt < 4U && !fixture.acknowledgement().has_value();
+        ++attempt) {
+        const auto snapshot =
+            fixture.authority.owner.read_snapshot(fixture.authority.connection.target);
+        REQUIRE(snapshot.has_value());
+        REQUIRE(fixture.engine->engine().publish(fixture.backend, *snapshot).has_value());
+        static_cast<void>(fixture.engine->engine().drive_one(fixture.lane));
+    }
+    REQUIRE(fixture.acknowledgement().has_value());
+
+    auto replaced_backend =
+        fixture.engine->engine().admit_current_body_render(original_backend, fixture.audio, 1U);
+    REQUIRE(replaced_backend.has_value());
+    CHECK_FALSE(replaced_backend->has_value());
+    CHECK(fixture.authority.owner.pcm_preparer().usage().buffers == 1U);
+
+    REQUIRE(fixture.authority.trusted.audio_routes().set_ready(fixture.audio, false).has_value());
+    auto lost_audio =
+        fixture.engine->engine().admit_current_body_render(fixture.backend, fixture.audio, 1U);
+    REQUIRE(lost_audio.has_value());
+    CHECK_FALSE(lost_audio->has_value());
+}
+
+TEST_CASE("output.body_render_submission_keeps_voice_and_backend_fenced_until_release",
+    "[integration][output][body_playback][concurrency]") {
+    body_playback_fixture fixture{};
+    constexpr std::array samples{0.2F, 0.7F};
+    auto prepared = fixture.prepare(samples);
+    REQUIRE(prepared.has_value());
+    auto installed = fixture.replace(std::move(*prepared));
+    REQUIRE(installed.has_value());
+    REQUIRE(installed->playback.has_value());
+    const auto identity = take_optional_value(installed->playback);
+    REQUIRE(fixture.publish_and_drive());
+
+    auto admitted = fixture.admit(identity);
+    REQUIRE(admitted.has_value());
+    auto permit = take_optional_value(admitted.value());
+    std::array<float, 4U> output{};
+    auto submission = std::move(permit).render_for_submission(output);
+    REQUIRE(submission.valid());
+    CHECK(submission.result().source_frames_consumed == 1U);
+    fixture.authority.owner.collect_body_pcm();
+    CHECK(fixture.authority.owner.pcm_preparer().usage().buffers == 1U);
+
+    auto retired = fixture.engine->engine().retire(fixture.backend);
+    REQUIRE(retired.has_value());
+    std::atomic<bool> cleanup_finished{};
+    auto cleanup = std::async(std::launch::async, [&] {
+        const bool result = fixture.engine->engine().drive_one(fixture.lane);
+        cleanup_finished.store(true, std::memory_order_release);
+        return result;
+    });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    bool entered_cleaning = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+        const auto progress = fixture.engine->engine().progress(fixture.backend);
+        if (progress.has_value() && progress->phase == backend_phase::cleaning) {
+            entered_cleaning = true;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    CHECK(entered_cleaning);
+    CHECK_FALSE(cleanup_finished.load(std::memory_order_acquire));
+    CHECK(cleanup.wait_for(std::chrono::milliseconds{20}) != std::future_status::ready);
+
+    submission = {};
+    CHECK(cleanup.wait_for(std::chrono::seconds{2}) == std::future_status::ready);
+    if (cleanup.wait_for(std::chrono::seconds{0}) == std::future_status::ready) {
+        CHECK(cleanup.get());
+    }
+    fixture.authority.owner.collect_body_pcm();
     CHECK(fixture.authority.owner.pcm_preparer().usage().buffers == 0U);
     CHECK(fixture.engine->engine().acknowledge_retirement(retired.value()).has_value());
 }

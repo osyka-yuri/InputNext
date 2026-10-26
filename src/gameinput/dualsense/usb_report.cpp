@@ -2,6 +2,7 @@
 
 #include "feedback_payload.hpp"
 #include <inputnext/output.hpp>
+#include <inputnext/output_body.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -22,10 +23,11 @@ constexpr std::uint8_t report_id = 0x02U;
 
 } // namespace
 
-usb_report encode_usb_report(const output::channel_values& values) noexcept {
+usb_report encode_usb_report(const output::channel_values& values,
+    const output::body_actuator_route route) noexcept {
     usb_report report{};
     report[report_id_offset] = as_byte(report_id);
-    const feedback_payload payload = encode_feedback_payload(values);
+    const feedback_payload payload = encode_feedback_payload(values, route);
     std::ranges::copy(payload, report.begin() + 1);
     return report;
 }

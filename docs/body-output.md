@@ -24,7 +24,7 @@ An all-zero audio identity is unbound. A bound acquisition names the current exa
 
 Prefer-HD selects classic fallback when audio is unbound, unsupported, unavailable or lost. Diagnostic rumble overrides body output and forces classic. Readiness loss, diagnostic preemption and a qualified failed HD attempt latch the lease to classic. Restoring readiness or removing diagnostics does not restore HD automatically; an explicit renewal may request it again when the original audio binding still exists.
 
-The receipt reports accepted logical intent. An HD intent authorizes an attempt; it does not establish native completion or audio playback. Current production GameInput backends support classic output and have no audio attachment. Controlled sinks can exercise the HD route contract without sending hardware reports.
+The receipt reports accepted logical intent. An HD intent authorizes an attempt; it does not establish native completion or audio playback. Qualified USB DualSense backends support HD mode; the [WASAPI adapter](hd-haptics.md) owns their audio attachments. Other GameInput backends retain classic output. Controlled sinks can exercise the route contract without sending hardware reports.
 
 ## Completion and resources
 

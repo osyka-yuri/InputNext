@@ -107,6 +107,8 @@ native_session_drain_progress native_session::drain_progress() const noexcept {
     }
     result.stop_attempts = state.drain_stop_attempts.load(std::memory_order_relaxed);
     result.exception_count = state.drain_exception_count.load(std::memory_order_relaxed);
+    result.resident_audio_slots = state.resident_audio_slots.load(std::memory_order_relaxed);
+    result.retained_audio_slots = state.retained_audio_slots.load(std::memory_order_relaxed);
     result.has_last_stop_report = state.has_last_stop_report.load(std::memory_order_acquire);
     if (result.has_last_stop_report) {
         result.last_stop_report = gameinput_stop_report{

@@ -1,6 +1,7 @@
 #include "feedback_payload.hpp"
 
 #include <inputnext/output.hpp>
+#include <inputnext/output_body.hpp>
 
 #include <array>
 #include <cmath>
@@ -22,7 +23,8 @@ constexpr std::size_t lightbar_red_offset = 44U;
 constexpr std::size_t lightbar_green_offset = 45U;
 constexpr std::size_t lightbar_blue_offset = 46U;
 
-constexpr std::uint8_t flags0 = 0x0FU;
+constexpr std::uint8_t classic_flags0 = 0x0FU;
+constexpr std::uint8_t hd_flags0 = 0x0CU;
 constexpr unsigned int microphone_led_control = 0x01U;
 constexpr unsigned int lightbar_control = 0x04U;
 constexpr unsigned int player_led_control = 0x10U;
@@ -210,12 +212,16 @@ void write_trigger(feedback_payload& payload,
 
 } // namespace
 
-feedback_payload encode_feedback_payload(const output::channel_values& values) noexcept {
+feedback_payload encode_feedback_payload(const output::channel_values& values,
+    const output::body_actuator_route route) noexcept {
+    const bool hd_mode = route == output::body_actuator_route::hd;
     feedback_payload payload{};
-    payload[flags0_offset] = as_byte(flags0);
+    payload[flags0_offset] = as_byte(hd_mode ? hd_flags0 : classic_flags0);
     payload[flags1_offset] = as_byte(flags1);
-    payload[right_motor_offset] = as_byte(quantize_rumble(values.rumble.high_frequency));
-    payload[left_motor_offset] = as_byte(quantize_rumble(values.rumble.low_frequency));
+    payload[right_motor_offset] =
+        as_byte(hd_mode ? 0U : quantize_rumble(values.rumble.high_frequency));
+    payload[left_motor_offset] =
+        as_byte(hd_mode ? 0U : quantize_rumble(values.rumble.low_frequency));
     payload[microphone_led_offset] = as_byte(values.leds.microphone_led ? 1U : 0U);
 
     write_trigger(payload, values.right_trigger, right_trigger_mode_offset);

@@ -1,6 +1,6 @@
 # DualSense USB feedback
 
-DualSense and DualSense Edge use GameInput 4 raw output reports when [backend selection](gameinput-output.md#backend-selection) confirms USB. One backend represents both adaptive triggers, classic rumble and the LED group. Bluetooth feedback and PCM haptics are not implemented here.
+DualSense and DualSense Edge use GameInput 4 raw output reports when [backend selection](gameinput-output.md#backend-selection) confirms USB. One backend represents both adaptive triggers, rumble and the LED group. The [WASAPI adapter](hd-haptics.md) supplies HD body samples; the USB report selects the actuator route. Bluetooth remains input-only.
 
 ## Report encoding
 
@@ -8,7 +8,7 @@ The portable `inputnext_dualsense_usb_codec` encodes a 47-byte feedback payload 
 
 | Bytes | Contents |
 | --- | --- |
-| 1–2 | Classic feedback flags `0x0F`, LED control flags `0x15` |
+| 1–2 | Feedback flags `0x0F` (classic) or `0x0C` (HD), LED control flags `0x15` |
 | 3–4 | High-frequency/right and low-frequency/left rumble |
 | 9 | Microphone LED |
 | 11–21 | Right trigger mode and ten parameters |
@@ -16,7 +16,7 @@ The portable `inputnext_dualsense_usb_codec` encodes a 47-byte feedback payload 
 | 44 | Player LED pattern |
 | 45–47 | Lightbar red, green and blue |
 
-Other bytes remain zero. LED writes enable microphone, lightbar and player-indicator control without requesting LED release/reset. Rumble rounds normalized amplitude to the nearest byte. Player indices 0–4 map to `00`, `04`, `0A`, `15`, `1B`.
+Other bytes remain zero. HD mode zeros the classic motor bytes. LED writes enable microphone, lightbar and player-indicator control without requesting LED release/reset. Rumble rounds normalized amplitude to the nearest byte. Player indices 0–4 map to `00`, `04`, `0A`, `15`, `1B`.
 
 Trigger modes are off (`05`), feedback (`21`), weapon (`25`) and vibration (`26`). Positions round to zones 0–9; strength rounds to levels 0–8. Feedback and vibration support uniform and per-zone layouts. Active zones use a ten-bit mask and three bits per nonzero strength level. Vibration adds a rounded frequency from 1–255. Weapon uses a uniform start zone 2–7 and a later end zone through 8. Invalid parameters used by the selected mode, unsupported geometry or zero effective strength encode as off with zero parameters. Public requests remain subject to [logical value validation](output.md#requests-and-arbitration).
 

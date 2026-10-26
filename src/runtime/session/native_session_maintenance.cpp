@@ -4,6 +4,7 @@
 #include "native_session_dependencies.hpp"
 #include <inputnext/gameinput_runtime.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -86,7 +87,7 @@ void native_session::implementation::maintenance_loop() noexcept {
     }
 }
 
-std::optional<gameinput_failure> native_session::implementation::run_maintenance_cycle() const {
+std::optional<gameinput_failure> native_session::implementation::run_maintenance_cycle() {
     runtime->maintain(std::chrono::steady_clock::now());
     if (should_stop()) {
         return std::nullopt;
@@ -113,6 +114,10 @@ std::optional<gameinput_failure> native_session::implementation::run_maintenance
     if (!synchronized.has_value()) {
         return synchronized.error();
     }
+    audio->synchronize(inventory);
+    const auto audio_progress = audio->progress();
+    resident_audio_slots.store(audio_progress.resident_slots, std::memory_order_relaxed);
+    retained_audio_slots.store(audio_progress.retained_slots, std::memory_order_relaxed);
     output_executor->request_drive();
     if (should_stop()) {
         return std::nullopt;

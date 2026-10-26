@@ -18,6 +18,7 @@ target_link_libraries(inputnext_runtime_session PRIVATE
     inputnext_profiles
     inputnext_profile_application
     inputnext_core
+    inputnext_audio
     ole32
 )
 

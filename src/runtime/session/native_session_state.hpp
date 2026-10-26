@@ -1,11 +1,14 @@
 #pragma once
 
+#include "audio/audio_service.hpp"
 #include "core/core.hpp"
 #include "gameinput/output/connections/manager.hpp"
 #include "gameinput/runtime/output_access.hpp"
 #include "native_session.hpp"
 #include "native_session_dependencies.hpp"
+#include "output/body/audio_route_control.hpp"
 #include "output/composition/composition.hpp"
+#include "output/render/control.hpp"
 #include "profiles/application.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_registry.hpp>
@@ -47,7 +50,7 @@ struct native_session::implementation final {
     void record_stop_report(const gameinput_stop_report& report) noexcept;
 
     [[nodiscard]] bool should_stop() const noexcept;
-    [[nodiscard]] std::optional<gameinput_failure> run_maintenance_cycle() const;
+    [[nodiscard]] std::optional<gameinput_failure> run_maintenance_cycle();
     void wait_for_next_cycle();
     void terminate_after_failure(gameinput_failure failure) noexcept;
 
@@ -59,6 +62,9 @@ struct native_session::implementation final {
     std::unique_ptr<output::detail::composition> output_composition;
     std::unique_ptr<output::executor> output_executor;
     std::unique_ptr<gameinput_detail::gameinput_output_connections> connections;
+    std::unique_ptr<output::detail::audio_route_control> audio_routes;
+    std::unique_ptr<output::detail::body_render_control> body_render;
+    std::unique_ptr<audio_detail::audio_service> audio;
     std::unique_ptr<gameinput_xinput> presentation_service;
     std::unique_ptr<profiles::application> profile_application;
     std::unique_ptr<core::service> core_service;
@@ -85,6 +91,8 @@ struct native_session::implementation final {
     std::atomic<std::chrono::steady_clock::duration::rep> drain_started_ticks;
     std::atomic<std::uint64_t> drain_stop_attempts;
     std::atomic<std::uint64_t> drain_exception_count;
+    std::atomic<std::size_t> resident_audio_slots{0U};
+    std::atomic<std::size_t> retained_audio_slots{0U};
     std::atomic<bool> has_last_stop_report;
     std::atomic<bool> last_stop_drained;
     std::atomic<std::size_t> last_pending_callback_owners;

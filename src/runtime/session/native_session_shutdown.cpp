@@ -27,6 +27,9 @@ void native_session::implementation::request_stop() noexcept {
 }
 
 bool native_session::implementation::close_admission_and_presentation() noexcept {
+    if (audio != nullptr) {
+        audio->close_admission();
+    }
     if (core_service != nullptr) {
         core_service->close_admission();
     }
@@ -79,6 +82,15 @@ void native_session::implementation::drain_owned_domains() noexcept {
     }
     if (output_executor != nullptr) {
         output_executor->request_drive();
+    }
+    drain_phase.store(native_session_drain_phase::stopping_audio, std::memory_order_release);
+    if (audio != nullptr) {
+        const auto progress = audio->progress();
+        resident_audio_slots.store(progress.resident_slots, std::memory_order_relaxed);
+        retained_audio_slots.store(progress.retained_slots, std::memory_order_relaxed);
+        audio->shutdown();
+        resident_audio_slots.store(0U, std::memory_order_relaxed);
+        retained_audio_slots.store(0U, std::memory_order_relaxed);
     }
     drain_phase.store(native_session_drain_phase::stopping_connections, std::memory_order_release);
     if (connections != nullptr) {
@@ -157,6 +169,9 @@ void native_session::implementation::shutdown() noexcept {
 
     drain_owned_domains();
 
+    audio.reset();
+    body_render.reset();
+    audio_routes.reset();
     core_service.reset();
     profile_application.reset();
     if (presentation_service != nullptr) {

@@ -1,5 +1,6 @@
 #include "dualsense_usb_sequence.hpp"
 #include "dualsense_usb_worker.hpp"
+#include "hd_audio_worker.hpp"
 #include "rumble_worker.hpp"
 #include "worker.hpp"
 
@@ -40,10 +41,12 @@ namespace {
 [[nodiscard]] int usage() {
     std::wcerr << L"Usage: inputnext_gameinput_probe [--duration-ms N] [--require-device] "
                   L"[--require-reading] [--history] [--require-history] [--xinput] "
-                  L"[--xinput-events] [--rumble | --dualsense-usb] [--start-step K]\n"
+                  L"[--xinput-events] [--rumble | --dualsense-usb | --dualsense-hd] "
+                  L"[--start-step K]\n"
                   L"--rumble opens a foreground diagnostic window; output starts only after its "
                   L"Start click. Confirm each step manually.\n"
                   L"--dualsense-usb opens a manual DualSense USB output sequence after Start.\n"
+                  L"--dualsense-hd opens a manual USB HD audio output sequence after Start.\n"
                   L"Output diagnostics have no overall time limit unless --duration-ms is set.\n"
                   L"--start-step selects the first DualSense USB step (1 through 20). Skipped "
                   L"steps are not passed.\n"
@@ -62,11 +65,11 @@ namespace {
     const bool other_probe_mode = options.require_device || options.require_reading ||
                                   options.history || options.require_history || options.xinput ||
                                   options.xinput_events || options.rumble;
-    if (!duration_was_set && (options.rumble || options.dualsense_usb)) {
+    if (!duration_was_set && (options.rumble || options.dualsense_usb || options.dualsense_hd)) {
         options.duration_ms.reset();
     }
-    if (options.dualsense_usb) {
-        return !other_probe_mode;
+    if (options.dualsense_usb || options.dualsense_hd) {
+        return !other_probe_mode && !(options.dualsense_usb && options.dualsense_hd);
     }
     return !options.rumble ||
            !(options.require_device || options.require_reading || options.history ||
@@ -99,6 +102,8 @@ namespace {
             options.rumble = true;
         } else if (argument == L"--dualsense-usb") {
             options.dualsense_usb = true;
+        } else if (argument == L"--dualsense-hd") {
+            options.dualsense_hd = true;
         } else if (argument == L"--duration-ms" && index + 1 < argc) {
             std::uint32_t value{};
             if (!parse_positive(argv[++index], value) || value > 300'000U) {
@@ -132,6 +137,9 @@ int wmain(int argc, wchar_t** argv) try {
         }
         if (options.dualsense_usb) {
             return inputnext::gameinput_detail::run_dualsense_usb_probe_worker(options, std::cout);
+        }
+        if (options.dualsense_hd) {
+            return inputnext::gameinput_detail::run_hd_audio_probe_worker(options, std::cout);
         }
         return inputnext::gameinput_detail::run_probe_worker(options, std::cout);
     }

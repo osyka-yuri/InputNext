@@ -32,12 +32,20 @@ public:
         if (command.output.channels != output::supported_channel_mask) {
             return output::native_result{.status = output::native_status::unsupported};
         }
-        if (command.output.body.has_value() &&
-            command.output.body->route == output::body_actuator_route::hd) {
-            return output::native_result{.status = output::native_status::unsupported};
+        auto route = output::body_actuator_route::classic;
+        if (command.output.body.has_value()) {
+            switch (command.output.body->route) {
+            case output::body_actuator_route::classic:
+                break;
+            case output::body_actuator_route::hd:
+                route = output::body_actuator_route::hd;
+                break;
+            default:
+                return output::native_result{.status = output::native_status::unsupported};
+            }
         }
 
-        const auto image = encode_usb_report(command.output.values);
+        const auto image = encode_usb_report(command.output.values, route);
         if (report_ == nullptr) {
             auto created = lease_.create_raw_output_report(dualsense_usb_output_report_id);
             if (!created.has_value()) {

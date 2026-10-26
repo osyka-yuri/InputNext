@@ -191,6 +191,7 @@ struct backend_progress final {
     bool write_in_flight{};
     bool retry_requested{};
     std::optional<body_route_ack> acknowledged_body_route = std::nullopt;
+    body_route_support body_routes{body_route_support::classic_only};
 };
 
 } // namespace inputnext::output

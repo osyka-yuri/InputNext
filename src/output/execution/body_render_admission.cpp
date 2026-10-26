@@ -1,6 +1,7 @@
 #include "engine_state.hpp"
 
 #include "engine.hpp"
+#include "output/authority/admitted_body_render.hpp"
 #include "output/authority/execution.hpp"
 
 #include <inputnext/output_body.hpp>
@@ -45,6 +46,44 @@ execution_result<std::optional<body_render_permit>> execution_engine::admit_body
         state.execution,
         acknowledgement,
         expected_playback,
+        &backend_busy,
+        requested_frames);
+}
+
+execution_result<std::optional<admitted_body_render>> execution_engine::admit_current_body_render(
+    const backend_handle expected_backend,
+    const audio_instance expected_audio,
+    const std::size_t requested_frames) noexcept {
+    if (!expected_backend.valid() || !expected_audio.valid() || requested_frames == 0U ||
+        requested_frames > std::numeric_limits<std::size_t>::max() / 4U) {
+        return std::unexpected{execution_error::invalid_argument};
+    }
+
+    std::scoped_lock lock{implementation_->gate};
+    auto& state = *implementation_;
+    auto* const backend = state.find_backend(expected_backend);
+    if (backend == nullptr) {
+        return std::unexpected{execution_error::stale_backend};
+    }
+    if (backend->state != implementation::backend_state::current ||
+        backend->handle != expected_backend || !backend->acknowledged_body_route.has_value() ||
+        backend->acknowledged_body_route->backend != expected_backend || backend->retry_requested ||
+        backend->route_support != body_route_support::hd ||
+        backend->acknowledged_body_route->intent.route != body_actuator_route::hd ||
+        backend->acknowledged_body_route->intent.fallback != body_fallback_reason::none ||
+        !backend->acknowledged_body_route->intent.identity.valid() ||
+        !backend->acknowledged_body_route->publication.valid() ||
+        !backend->acknowledged_body_route->attempt.valid()) {
+        return std::optional<admitted_body_render>{};
+    }
+
+    const auto index = static_cast<std::size_t>(backend - state.backends.data());
+    auto& backend_busy = state.render_busy[index];
+    return authority_execution_access::admit_current_body_render(state.owner,
+        state.execution,
+        expected_backend,
+        *backend->acknowledged_body_route,
+        expected_audio,
         &backend_busy,
         requested_frames);
 }

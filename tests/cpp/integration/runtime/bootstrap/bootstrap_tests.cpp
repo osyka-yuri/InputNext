@@ -1,5 +1,7 @@
+#include "audio/audio_service.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_test_support.hpp"
 
+#include "audio/unavailable_native_factory.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_metadata_test_support.hpp"
 #include "runtime/bootstrap/bootstrap_owner.hpp"
 #include "runtime/session/native_session.hpp"
@@ -147,6 +149,8 @@ std::thread fail_after_worker_gate(void* const context,
     }
 
     native_session_dependencies options{};
+    options.audio_factory = inputnext::test::audio::make_unavailable_native_port_factory();
+    options.audio_launcher = inputnext::audio_detail::make_std_audio_worker_launcher();
     options.identity = test_runtime_id();
     options.runtime_library = std::filesystem::path{L"C:\\fixture\\GameInputRedist.dll"};
     auto native = std::make_unique<fake_gameinput>();

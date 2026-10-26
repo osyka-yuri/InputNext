@@ -8,6 +8,8 @@
 #include <inputnext/output_body_playback.hpp>
 #include <inputnext/output_execution.hpp>
 
+#include "output/authority/admitted_body_render.hpp"
+
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -99,6 +101,10 @@ public:
     [[nodiscard]] execution_result<std::optional<body_render_permit>> admit_body_render(
         const body_route_ack& acknowledgement,
         body_playback_identity expected_playback,
+        std::size_t requested_frames) noexcept;
+    [[nodiscard]] execution_result<std::optional<admitted_body_render>> admit_current_body_render(
+        backend_handle expected_backend,
+        audio_instance expected_audio,
         std::size_t requested_frames) noexcept;
     [[nodiscard]] execution_result<void> acknowledge_retirement(
         const retirement_receipt& receipt) noexcept;

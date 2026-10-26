@@ -1,4 +1,5 @@
 #include "state.hpp"
+#include <inputnext/output_body.hpp>
 
 #include "backend_selection.hpp"
 #include "failure.hpp"
@@ -288,9 +289,14 @@ void gameinput_output_connections::implementation::register_candidate(const std:
     std::unique_ptr<output::native_sink> candidate) noexcept {
     output::execution_result<output::backend_handle> registered =
         std::unexpected{output::execution_error::resources};
+    const auto route_support =
+        kind == output_backend_kind::dualsense_usb && qualification != nullptr
+            ? output::body_route_support::hd
+            : output::body_route_support::classic_only;
     bool threw = false;
     try {
-        registered = executor.register_backend(target, candidate, represented_channels(kind));
+        registered =
+            executor.register_backend(target, candidate, represented_channels(kind), route_support);
     } catch (...) {
         threw = true;
     }

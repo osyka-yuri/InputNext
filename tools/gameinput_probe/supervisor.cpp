@@ -415,6 +415,9 @@ void copy_available_output(HANDLE pipe, std::ostream& output, output_pipe_state&
     if (options.dualsense_usb) {
         arguments.emplace_back(L"--dualsense-usb");
     }
+    if (options.dualsense_hd) {
+        arguments.emplace_back(L"--dualsense-hd");
+    }
     return arguments;
 }
 

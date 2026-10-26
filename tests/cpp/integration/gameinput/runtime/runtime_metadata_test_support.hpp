@@ -10,6 +10,7 @@
 #include <mutex>
 #include <optional>
 #include <semaphore>
+#include <thread>
 #include <utility>
 
 namespace inputnext::gameinput_test_support {
@@ -39,7 +40,14 @@ public:
             }
             result.model = model;
             result.transport = transport;
-            failure = std::exchange(next_failure_, std::nullopt);
+            if (thread_failure_remaining_ != 0U &&
+                thread_failure_target_ == std::this_thread::get_id()) {
+                --thread_failure_remaining_;
+                ++thread_failure_observed_;
+                failure = thread_failure_;
+            } else {
+                failure = std::exchange(next_failure_, std::nullopt);
+            }
         }
 
         auto blocks = blocked_queries_.load(std::memory_order_acquire);
@@ -91,6 +99,25 @@ public:
         next_failure_ = failure;
     }
 
+    void fail_queries_on(std::thread::id thread, metadata_error failure, const std::size_t count) {
+        std::scoped_lock lock{metadata_mutex_};
+        thread_failure_target_ = thread;
+        thread_failure_ = failure;
+        thread_failure_remaining_ = count;
+        thread_failure_observed_ = 0U;
+    }
+
+    void clear_thread_query_failures() noexcept {
+        std::scoped_lock lock{metadata_mutex_};
+        thread_failure_target_ = {};
+        thread_failure_remaining_ = 0U;
+    }
+
+    [[nodiscard]] std::size_t observed_thread_failure_count() const noexcept {
+        std::scoped_lock lock{metadata_mutex_};
+        return thread_failure_observed_;
+    }
+
     void block_next_queries(std::size_t count) noexcept {
         blocked_queries_.store(count, std::memory_order_release);
     }
@@ -117,8 +144,12 @@ private:
     std::atomic<std::size_t> blocked_queries_;
     std::counting_semaphore<8> blocked_{0};
     std::counting_semaphore<8> release_{0};
-    std::mutex metadata_mutex_;
+    mutable std::mutex metadata_mutex_;
     std::optional<metadata_error> next_failure_;
+    std::thread::id thread_failure_target_{};
+    metadata_error thread_failure_{metadata_error::busy};
+    std::size_t thread_failure_remaining_{};
+    std::size_t thread_failure_observed_{};
 };
 
 class scoped_query_release final {
