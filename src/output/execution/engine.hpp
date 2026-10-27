@@ -7,6 +7,7 @@
 #include <inputnext/output_body.hpp>
 #include <inputnext/output_body_playback.hpp>
 #include <inputnext/output_execution.hpp>
+#include <inputnext/output_observation.hpp>
 
 #include "output/authority/admitted_body_render.hpp"
 
@@ -96,6 +97,7 @@ public:
     [[nodiscard]] execution_result<retirement_receipt> retire(backend_handle handle,
         retirement_reason reason = retirement_reason::requested) noexcept;
     [[nodiscard]] execution_result<backend_progress> progress(backend_handle handle) const noexcept;
+    [[nodiscard]] execution_result<backend_observation> observe(backend_handle handle) const;
     [[nodiscard]] execution_result<bool> qualifies_route(
         const body_route_ack& acknowledgement) const noexcept;
     [[nodiscard]] execution_result<std::optional<body_render_permit>> admit_body_render(

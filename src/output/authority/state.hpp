@@ -17,7 +17,6 @@
 #include <inputnext/output_execution.hpp>
 
 #include <array>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -70,6 +69,7 @@ struct authority::implementation final {
     struct body_submission_time final {
         policy_detail::deadline entered_at;
         policy_detail::deadline expires_at;
+        bool has_absolute_window{};
     };
 
     struct body_playback_commit_plan final {
@@ -149,7 +149,8 @@ struct authority::implementation final {
     [[nodiscard]] result<mutation_receipt> commit_submit_locked(record& entry,
         const submit_request& request,
         policy_detail::optional_deadline deadline,
-        policy_detail::deadline entry_time) noexcept;
+        policy_detail::deadline entry_time,
+        const finite_submission_window* window = nullptr) noexcept;
     [[nodiscard]] result<body_playback_receipt> commit_body_playback_locked(record& entry,
         const body_request& request,
         body_submission_time timing,
@@ -196,7 +197,9 @@ struct authority::implementation final {
     std::optional<execution_owner> attached_execution;
     std::uint64_t logical_version{};
     policy_detail::deadline last_evaluation_time;
-    const std::atomic<std::int64_t>* test_clock_ticks{};
+    using test_clock_callback = policy_detail::deadline (*)(const void*) noexcept;
+    test_clock_callback test_clock{};
+    const void* test_clock_context{};
 };
 
 } // namespace inputnext::output

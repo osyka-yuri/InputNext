@@ -18,6 +18,7 @@ target_link_libraries(inputnext_runtime_session PRIVATE
     inputnext_profiles
     inputnext_profile_application
     inputnext_core
+    inputnext_effects
     inputnext_audio
     ole32
 )
@@ -36,6 +37,15 @@ add_library(inputnext_runtime_core OBJECT
     abi/runtime_api.cpp
     abi/core_api.cpp
     abi/core_api_projection.cpp
+    abi/session_access.cpp
+    abi/effects_api.cpp
+    abi/effects_api_context.cpp
+    abi/effects_api_mutation.cpp
+    abi/effects_api_progress.cpp
+    abi/effects_projection.cpp
+    abi/effects_projection_body.cpp
+    abi/effects_projection_discrete.cpp
+    abi/effects_projection_progress.cpp
     bootstrap/bootstrap_owner.cpp
 )
 target_include_directories(inputnext_runtime_core

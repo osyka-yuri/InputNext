@@ -3,6 +3,8 @@
 #include "audio/audio_service.hpp"
 #include "audio/native_port.hpp"
 #include "core/core.hpp"
+#include "effects/effects.hpp"
+#include "effects/identity.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/output/connections/manager.hpp"
 #include "gameinput/runtime/factory.hpp"
@@ -38,6 +40,7 @@ namespace inputnext::runtime_detail {
 namespace {
 
 constexpr output::internal_owner_key profile_owner{0x50524F46494C45ULL};
+constinit effects::identity_source production_effect_identities;
 
 [[nodiscard]] runtime_id create_runtime_identity() {
     GUID value{};
@@ -171,6 +174,20 @@ std::unique_ptr<native_session> native_session::implementation::prepare(
         throw_preparation_failure("native session audio service creation failed");
     }
     state->audio = std::move(*audio);
+
+    auto& identities = dependencies.effects_identities != nullptr ? *dependencies.effects_identities
+                                                                  : production_effect_identities;
+    state->effects_service = std::make_unique<effects::service>(effects::service_dependencies{
+        .identity = state->identity,
+        .registry = state->registry,
+        .authority = state->output_composition->public_authority(),
+        .core = *state->core_service,
+        .runtime = *state->runtime,
+        .output_access = *state->runtime_access,
+        .connections = *state->connections,
+        .audio = *state->audio,
+        .identities = identities,
+    });
 
     auto owner = std::unique_ptr<native_session>{new native_session{std::move(state)}};
     auto& prepared = *owner->implementation_;

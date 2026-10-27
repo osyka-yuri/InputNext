@@ -74,6 +74,8 @@ catch_discover_tests(inputnext_output_component_tests
 )
 
 add_executable(inputnext_output_execution_component_tests
+    finite_submission_tests.cpp
+    native_observation_tests.cpp
     body_route_registration_tests.cpp
     execution_engine_backoff_qualification_tests.cpp
     execution_engine_backoff_tests.cpp

@@ -5,6 +5,7 @@
 #include <inputnext/output_authority.hpp>
 #include <inputnext/output_execution.hpp>
 #include <inputnext/output_executor.hpp>
+#include <inputnext/output_observation.hpp>
 
 #include <exception>
 #include <expected>
@@ -148,6 +149,14 @@ execution_result<backend_progress> executor::progress(const backend_handle backe
         return std::unexpected{execution_error::not_running};
     }
     return implementation_->engine->progress(backend);
+}
+
+execution_result<backend_observation> executor::observe(const backend_handle backend) const {
+    const implementation::operation active{*implementation_};
+    if (!active.entered()) {
+        return std::unexpected{execution_error::not_running};
+    }
+    return implementation_->engine->observe(backend);
 }
 
 execution_result<bool> executor::qualifies_route(const body_route_ack& acknowledgement) const {

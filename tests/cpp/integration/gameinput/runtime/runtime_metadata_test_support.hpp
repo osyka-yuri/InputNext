@@ -39,6 +39,7 @@ public:
                 result.container_id_source = container_id_provenance::gameinput_native;
             }
             result.model = model;
+            result.capabilities = capabilities;
             result.transport = transport;
             if (thread_failure_remaining_ != 0U &&
                 thread_failure_target_ == std::this_thread::get_id()) {
@@ -70,6 +71,7 @@ public:
 
     // Use set_observation when queries can run concurrently.
     metadata_field<metadata_device_model> model{};
+    metadata_field<hardware_capabilities> capabilities{};
     metadata_field<transport_metadata> transport{};
     bool conflicting_identity{};
 
@@ -97,6 +99,11 @@ public:
     void fail_next_query(metadata_error failure) {
         std::scoped_lock lock{metadata_mutex_};
         next_failure_ = failure;
+    }
+
+    void set_capabilities(metadata_field<hardware_capabilities> next_capabilities) {
+        std::scoped_lock lock{metadata_mutex_};
+        capabilities = next_capabilities;
     }
 
     void fail_queries_on(std::thread::id thread, metadata_error failure, const std::size_t count) {

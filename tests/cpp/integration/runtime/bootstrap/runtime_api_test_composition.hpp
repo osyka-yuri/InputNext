@@ -12,10 +12,19 @@ namespace inputnext::xinput {
 class service;
 }
 
+namespace inputnext::test::audio {
+struct controlled_native_port_state;
+}
+
 namespace inputnext::runtime_detail {
 
 class bootstrap_owner;
 struct query_front;
+
+struct runtime_api_test_options final {
+    bool fail_native_start{};
+    bool dualsense_hd_audio{};
+};
 
 struct bootstrap_owner_test_access final {
     [[nodiscard]] static bool control_gate_available(bootstrap_owner& owner);
@@ -24,6 +33,7 @@ struct bootstrap_owner_test_access final {
 class runtime_api_test_fixture final {
 public:
     explicit runtime_api_test_fixture(bool fail_native_start = false);
+    explicit runtime_api_test_fixture(runtime_api_test_options options);
     ~runtime_api_test_fixture();
 
     runtime_api_test_fixture(const runtime_api_test_fixture&) = delete;
@@ -51,6 +61,8 @@ public:
     [[nodiscard]] bool owner_is_degraded() const noexcept;
     [[nodiscard]] std::size_t rumble_writes() const noexcept;
     [[nodiscard]] std::optional<output::rumble_value> last_rumble_value() const;
+    [[nodiscard]] std::shared_ptr<test::audio::controlled_native_port_state>
+    controlled_audio_state() const noexcept;
 
 private:
     friend query_front& runtime_query_front() noexcept;

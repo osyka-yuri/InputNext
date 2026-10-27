@@ -10,7 +10,6 @@
 #include <inputnext/output_body.hpp>
 
 #include <algorithm>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -38,11 +37,8 @@ authority::implementation::implementation(runtime_id runtime_value,
 }
 
 policy_detail::deadline authority::implementation::now() const noexcept {
-    if (test_clock_ticks != nullptr) {
-        using duration = policy_detail::clock::duration;
-        using rep = duration::rep;
-        const auto ticks = test_clock_ticks->load(std::memory_order_acquire);
-        return policy_detail::deadline{duration{static_cast<rep>(ticks)}};
+    if (test_clock != nullptr) {
+        return test_clock(test_clock_context);
     }
     return policy_detail::clock::now();
 }

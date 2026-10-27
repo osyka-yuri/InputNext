@@ -17,6 +17,10 @@ namespace inputnext::core {
 class service;
 } // namespace inputnext::core
 
+namespace inputnext::effects {
+class service;
+} // namespace inputnext::effects
+
 namespace inputnext::runtime_detail {
 
 enum class native_session_drain_phase : std::uint8_t {
@@ -65,6 +69,8 @@ public:
     [[nodiscard]] xinput::service& presentation() noexcept;
 
     [[nodiscard]] core::service& core() noexcept;
+
+    [[nodiscard]] effects::service& effects() noexcept;
 
     // Requires external service callers to be quiescent. May wait for native calls to finish.
     void shutdown() noexcept;

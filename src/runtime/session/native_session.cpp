@@ -1,6 +1,7 @@
 #include "native_session.hpp"
 
 #include "core/core.hpp"
+#include "effects/effects.hpp"
 #include "native_session_state.hpp"
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/gameinput_xinput.hpp>
@@ -83,6 +84,10 @@ xinput::service& native_session::presentation() noexcept {
 
 core::service& native_session::core() noexcept {
     return *implementation_->core_service;
+}
+
+effects::service& native_session::effects() noexcept {
+    return *implementation_->effects_service;
 }
 
 void native_session::shutdown() noexcept {

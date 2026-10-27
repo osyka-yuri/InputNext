@@ -1,5 +1,6 @@
 #include "native_session_state.hpp"
 
+#include "effects/effects.hpp"
 #include "native_session.hpp"
 #include <inputnext/gameinput_runtime.hpp>
 
@@ -27,6 +28,12 @@ void native_session::implementation::request_stop() noexcept {
 }
 
 bool native_session::implementation::close_admission_and_presentation() noexcept {
+    bool effects_closed = true;
+    if (effects_service != nullptr) {
+        effects_service->close_admission();
+        const auto report = effects_service->revoke_for_shutdown();
+        effects_closed = report.pending_native_cleanup == 0U && !report.failure.has_value();
+    }
     if (audio != nullptr) {
         audio->close_admission();
     }
@@ -63,7 +70,7 @@ bool native_session::implementation::close_admission_and_presentation() noexcept
     if (connections != nullptr) {
         connections->close_admission();
     }
-    return closed;
+    return effects_closed && closed;
 }
 
 void native_session::implementation::drain_owned_domains() noexcept {
@@ -169,6 +176,7 @@ void native_session::implementation::shutdown() noexcept {
 
     drain_owned_domains();
 
+    effects_service.reset();
     audio.reset();
     body_render.reset();
     audio_routes.reset();

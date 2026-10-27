@@ -9,6 +9,7 @@
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/native/native_history.hpp"
 #include "gameinput/reading_parts.hpp"
+#include "metadata/policy.hpp"
 #include "metadata/provider.hpp"
 #include "runtime/session/native_session.hpp"
 #include "runtime/session/native_session_dependencies.hpp"
@@ -193,6 +194,8 @@ public:
         result.target = request.target;
         result.catalogue_generation = request.catalogue_generation;
         result.native = request.facts;
+        result.model = metadata_detail::classify_device_model(request.facts);
+        result.capabilities = metadata_detail::derive_hardware_capabilities(request.facts);
         result.container_id = request.facts.container_id;
         result.container_id_source = request.facts.container_id.has_value()
                                          ? container_id_provenance::gameinput_native
@@ -206,7 +209,11 @@ private:
 
 class session_fixture final {
 public:
-    explicit session_fixture(worker_launcher launcher = nullptr, void* launch_context = nullptr)
+    explicit session_fixture(worker_launcher launcher = nullptr,
+        void* launch_context = nullptr,
+        effects::identity_source* effects_identities = nullptr,
+        std::unique_ptr<audio_detail::native_port_factory> audio_factory = {},
+        std::unique_ptr<metadata_provider> metadata = {})
         : destruction_counts(std::make_shared<dependency_destruction_counts>()),
           initialize_calls(std::make_shared<std::atomic<std::size_t>>(0U)) {
         auto port = std::make_unique<counted_native_port>(initialize_calls, destruction_counts);
@@ -224,13 +231,17 @@ public:
         rumble_controls = native->fake->rumble_script();
 
         native_session_dependencies options{};
-        options.audio_factory = test::audio::make_unavailable_native_port_factory();
+        options.audio_factory = audio_factory != nullptr
+                                    ? std::move(audio_factory)
+                                    : test::audio::make_unavailable_native_port_factory();
         options.audio_launcher = audio_detail::make_std_audio_worker_launcher();
         options.identity = test_runtime_id();
         options.identity.bytes[1U] = std::byte{0xA7U};
         options.runtime_library = L"C:\\fixture\\GameInputRedist.dll";
         options.native = std::move(port);
-        options.metadata = std::make_unique<counted_metadata_provider>(destruction_counts);
+        options.metadata = metadata != nullptr
+                               ? std::move(metadata)
+                               : std::make_unique<counted_metadata_provider>(destruction_counts);
         const auto process =
             focus::process_instance{.pid = 731U, .creation_time_100ns = 4'567'890U};
         options.focus_source = std::make_unique<test::focus::controlled_source>(process,
@@ -241,6 +252,7 @@ public:
             &destruction_counts->focus);
         options.launch_worker = launcher;
         options.launch_context = launch_context;
+        options.effects_identities = effects_identities;
         try {
             session = native_session::prepare(std::move(options));
         } catch (...) {

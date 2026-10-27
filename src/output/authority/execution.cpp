@@ -247,6 +247,25 @@ execution_result<void> authority_execution_access::check_target(authority& owner
     return {};
 }
 
+execution_result<logical_snapshot> authority_execution_access::observe(authority& owner,
+    const execution_owner expected_owner,
+    const connection_target target) {
+    std::scoped_lock lock{owner.implementation_->gate};
+    auto& state = *owner.implementation_;
+    if (!expected_owner.valid() || !state.attached_execution.has_value() ||
+        *state.attached_execution != expected_owner) {
+        return std::unexpected{execution_error::stale_backend};
+    }
+    if (!target.valid() || target.runtime != state.runtime) {
+        return std::unexpected{execution_error::invalid_argument};
+    }
+    const auto current = state.qualify_snapshot_locked(target);
+    if (!current.has_value()) {
+        return std::unexpected{map_snapshot_error(current.error())};
+    }
+    return *current;
+}
+
 execution_result<bool> authority_execution_access::qualifies(authority& owner,
     const execution_owner expected_owner,
     const represented_projection& expected) {

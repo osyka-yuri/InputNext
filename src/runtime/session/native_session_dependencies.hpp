@@ -11,6 +11,10 @@
 #include <memory>
 #include <thread>
 
+namespace inputnext::effects {
+class identity_source;
+} // namespace inputnext::effects
+
 namespace inputnext::runtime_detail {
 
 using worker_entry = void (*)(void*) noexcept;
@@ -29,6 +33,8 @@ struct native_session_dependencies final {
     profiles::profile profile_settings;
     worker_launcher launch_worker{};
     void* launch_context{};
+    // A borrowed allocation source must outlive the prepared session.
+    effects::identity_source* effects_identities{};
 };
 
 } // namespace inputnext::runtime_detail

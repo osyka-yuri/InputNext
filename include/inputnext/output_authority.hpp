@@ -7,6 +7,7 @@
 #include <inputnext/output_body.hpp>
 #include <inputnext/output_body_pcm.hpp>
 #include <inputnext/output_body_playback.hpp>
+#include <inputnext/output_submission.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -115,6 +116,9 @@ public:
     [[nodiscard]] result<public_context> open(connection_target target);
     [[nodiscard]] result<mutation_receipt> submit(public_context context,
         const submit_request& request);
+    [[nodiscard]] result<mutation_receipt> submit(public_context context,
+        const submit_request& request,
+        const finite_submission_window& window);
     [[nodiscard]] result<mutation_receipt> clear(public_context context,
         const clear_request& request);
     [[nodiscard]] result<body_receipt> submit_body(public_context context,
@@ -122,6 +126,10 @@ public:
     [[nodiscard]] result<body_playback_receipt> submit_body(public_context context,
         const body_request& request,
         const body_playback_update& playback);
+    [[nodiscard]] result<body_playback_receipt> submit_body(public_context context,
+        const body_request& request,
+        const body_playback_update& playback,
+        const finite_submission_window& window);
     [[nodiscard]] body_pcm_preparer pcm_preparer() const noexcept;
     // Moves completed and retired sample owners out of the authority gate. Destruction occurs
     // after the gate is released, so callers may use this as ordinary control progress.
@@ -132,6 +140,7 @@ public:
     // epoch is historical; inspection does not requalify focus or connection liveness and does
     // not authorize execution or a later operation.
     [[nodiscard]] result<context_info> inspect(public_context context);
+    [[nodiscard]] result<audio_route_observation> inspect_audio(audio_instance instance) const;
     [[nodiscard]] result<close_receipt> close(public_context context,
         std::uint64_t close_request_id);
     // Acknowledges an exact retained public receipt. Trusted internal receipts are acknowledged
@@ -170,6 +179,10 @@ private:
         const internal_context_options& options);
     [[nodiscard]] result<void> acknowledge_internal(const close_receipt& receipt,
         const internal_context_options& options);
+    [[nodiscard]] result<body_playback_receipt> submit_body_impl(public_context context,
+        const body_request& request,
+        const body_playback_update& playback,
+        const finite_submission_window* window);
 };
 
 } // namespace inputnext::output

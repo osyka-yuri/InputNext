@@ -1,5 +1,6 @@
 #include "manager.hpp"
 
+#include "backend_selection.hpp"
 #include "gameinput/runtime/output_access.hpp"
 #include "state.hpp"
 #include <inputnext/gameinput_runtime.hpp>
@@ -227,6 +228,56 @@ std::optional<output::backend_progress> gameinput_output_connections::query_back
     } catch (...) {
         return std::nullopt;
     }
+}
+
+output::execution_result<std::optional<managed_backend_observation>>
+gameinput_output_connections::observe_backend(const connection_target target) const {
+    output::backend_handle handle{};
+    output_backend_kind kind = output_backend_kind::none;
+    {
+        std::scoped_lock lock{implementation_->gate};
+        const auto current =
+            std::ranges::find_if(implementation_->backends, [target](const auto& record) {
+                return record.state == implementation::backend_state::current &&
+                       record.target == target && record.handle.has_value();
+            });
+        if (current == implementation_->backends.end()) {
+            return std::optional<managed_backend_observation>{};
+        }
+        if (!current->handle.has_value()) {
+            return std::optional<managed_backend_observation>{};
+        }
+        handle = current->handle.value();
+        if (!handle.valid() || handle.target != target ||
+            current->kind == output_backend_kind::none) {
+            return std::unexpected{output::execution_error::stale_backend};
+        }
+        kind = current->kind;
+    }
+
+    const auto observed = implementation_->executor.observe(handle);
+    {
+        std::scoped_lock lock{implementation_->gate};
+        const auto current =
+            std::ranges::find_if(implementation_->backends, [target](const auto& record) {
+                return record.state == implementation::backend_state::current &&
+                       record.target == target;
+            });
+        if (current == implementation_->backends.end() || !current->handle.has_value() ||
+            current->handle.value() != handle || current->kind != kind) {
+            return std::unexpected{output::execution_error::busy};
+        }
+    }
+    if (!observed.has_value()) {
+        if (observed.error() == output::execution_error::stale_backend) {
+            return std::unexpected{output::execution_error::busy};
+        }
+        return std::unexpected{observed.error()};
+    }
+    return std::optional<managed_backend_observation>{managed_backend_observation{
+        .kind = kind,
+        .execution = *observed,
+    }};
 }
 
 void gameinput_output_connections::shutdown() noexcept {

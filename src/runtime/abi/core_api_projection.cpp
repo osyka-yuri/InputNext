@@ -119,6 +119,50 @@ input_next_status to_c_status(const inputnext::core::status value) noexcept {
     return INPUT_NEXT_STATUS_UNAVAILABLE;
 }
 
+bool parse_selector(const input_next_device_selector_v1& value,
+    inputnext::core::selector& out) noexcept {
+    out = {};
+    if (value.struct_size != sizeof(value) || value.reserved != 0U || value.reserved2 != 0U ||
+        value.identity_flags != 0U || value.target.struct_size != sizeof(value.target) ||
+        value.target.reserved != 0U) {
+        return false;
+    }
+
+    switch (value.kind) {
+    case INPUT_NEXT_CORE_SELECTOR_XINPUT_SLOT:
+        if (value.xinput_slot >= 4U || !target_is_zero(value.target) ||
+            !is_zero_bytes(value.hardware_fingerprint, sizeof(value.hardware_fingerprint))) {
+            return false;
+        }
+        out.kind = inputnext::core::selector_kind::xinput_slot;
+        out.slot = value.xinput_slot;
+        return true;
+
+    case INPUT_NEXT_CORE_SELECTOR_EXACT_TARGET:
+        if (value.xinput_slot != 0U ||
+            !is_zero_bytes(value.hardware_fingerprint, sizeof(value.hardware_fingerprint)) ||
+            !parse_target(value.target, out.target)) {
+            return false;
+        }
+        out.kind = inputnext::core::selector_kind::exact_target;
+        return true;
+
+    case INPUT_NEXT_CORE_SELECTOR_HARDWARE_FINGERPRINT:
+        if (value.xinput_slot != 0U || !target_is_zero(value.target) ||
+            is_zero_bytes(value.hardware_fingerprint, sizeof(value.hardware_fingerprint))) {
+            return false;
+        }
+        out.kind = inputnext::core::selector_kind::hardware_fingerprint;
+        std::copy_n(value.hardware_fingerprint,
+            out.hardware_fingerprint.size(),
+            out.hardware_fingerprint.begin());
+        return true;
+
+    default:
+        return false;
+    }
+}
+
 bool parse_target(const input_next_device_target_v1& value,
     inputnext::connection_target& out) noexcept {
     out = {};

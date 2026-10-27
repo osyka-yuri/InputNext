@@ -4,6 +4,7 @@ add_executable(inputnext_gameinput_output_tests
     usb_qualification_freshness_tests.cpp
     bluetooth_connections_tests.cpp
     native_progress_tests.cpp
+    backend_observation_tests.cpp
     rumble_evidence_tests.cpp
     "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/rumble_evidence.cpp"
     "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/rumble_sequence.cpp"

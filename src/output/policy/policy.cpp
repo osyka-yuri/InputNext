@@ -1,6 +1,7 @@
 #include "policy.hpp"
 
 #include <inputnext/output.hpp>
+#include <inputnext/output_submission.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -233,3 +234,21 @@ result<winner_indices> select_winners(const std::span<const candidate_view> cand
 }
 
 } // namespace inputnext::output::policy_detail
+
+namespace inputnext::output {
+
+result<finite_submission_window> make_finite_submission_window(
+    const std::chrono::steady_clock::time_point entered_at,
+    const std::chrono::milliseconds ttl) noexcept {
+    const auto deadline =
+        policy_detail::make_deadline(entered_at, ttl, ttl_permission::finite_only);
+    if (!deadline.has_value()) {
+        return std::unexpected{deadline.error()};
+    }
+    if (!deadline->has_value()) {
+        return std::unexpected{error::deadline_overflow};
+    }
+    return finite_submission_window{entered_at, ttl, **deadline};
+}
+
+} // namespace inputnext::output

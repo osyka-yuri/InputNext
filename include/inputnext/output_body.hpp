@@ -76,6 +76,15 @@ enum class body_route_support : std::uint8_t {
     hd,
 };
 
+struct audio_route_observation final {
+    audio_instance instance{};
+    body_route_support support{body_route_support::classic_only};
+    bool ready{};
+
+    friend constexpr bool operator==(const audio_route_observation&,
+        const audio_route_observation&) noexcept = default;
+};
+
 enum class body_fallback_reason : std::uint8_t {
     none,
     not_ready,

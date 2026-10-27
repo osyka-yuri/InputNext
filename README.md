@@ -16,6 +16,9 @@ The C++ [output authority](docs/output.md) owns effect contexts, arbitration, ex
 
 The [Core C SDK](docs/core-sdk.md) provides device discovery, exact targets, latest input and independent history readers for x86 and x64 callers.
 
+The [Effects C SDK](docs/effects-sdk.md) provides independent effect contexts, timed feedback,
+owned body PCM and explicit close/acknowledgement for both architectures.
+
 See [development setup](docs/development.md) for toolchain requirements and verification commands.
 
 Licensed under the [MIT License](LICENSE). Third-party dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).

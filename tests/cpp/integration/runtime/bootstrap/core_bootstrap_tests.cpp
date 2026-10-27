@@ -86,7 +86,7 @@ TEST_CASE("runtime.core.bootstrap_control_calls_share_the_xinput_session",
         const auto info = runtime_info(*core);
         CHECK(info.max_devices == 16U);
         CHECK(info.max_readers == 28U);
-        CHECK(info.max_effect_contexts == 0U);
+        CHECK(info.max_effect_contexts == 32U);
         CHECK(info.qpc_frequency != 0U);
         CHECK((info.runtime_id[0U] != 0U || info.runtime_id[1U] != 0U));
     }

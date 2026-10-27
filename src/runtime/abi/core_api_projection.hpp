@@ -12,6 +12,8 @@
 namespace inputnext::runtime_detail::core_projection {
 
 [[nodiscard]] input_next_status to_c_status(inputnext::core::status value) noexcept;
+[[nodiscard]] bool parse_selector(const input_next_device_selector_v1& value,
+    inputnext::core::selector& out) noexcept;
 [[nodiscard]] bool parse_target(const input_next_device_target_v1& value,
     inputnext::connection_target& out) noexcept;
 [[nodiscard]] bool target_is_zero(const input_next_device_target_v1& value) noexcept;

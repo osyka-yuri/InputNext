@@ -2,10 +2,11 @@
 
 #include "core/core.hpp"
 #include "core_api_projection.hpp"
-#include "runtime/bootstrap/bootstrap_owner.hpp"
+#include "effects/effects.hpp"
 #include "runtime/bootstrap/query_front.hpp"
 #include "runtime/session/native_session.hpp"
 #include "runtime_api_internal.hpp"
+#include "session_access.hpp"
 #include <input_next_core.h>
 #include <inputnext/device_identity.hpp>
 #include <inputnext/gamepad_state.hpp>
@@ -24,33 +25,11 @@ namespace {
 using inputnext::connection_target;
 using inputnext::core::reader_focus;
 using inputnext::core::selector;
-using inputnext::core::selector_kind;
 using inputnext::core::status;
 
 static_assert(inputnext::core::device_capacity == 16U);
 static_assert(inputnext::core::reader_capacity == 28U);
 static_assert(inputnext::history_batch_capacity == 32U);
-
-struct active_session final {
-    native_session* session{};
-};
-
-[[nodiscard]] active_session prepare_session(const bool allow_initialization,
-    const bool allow_degraded) noexcept {
-    auto* const owner = runtime_bootstrap_owner();
-    if (owner == nullptr) {
-        return {};
-    }
-    if (allow_initialization) {
-        static_cast<void>(owner->bootstrap());
-    }
-
-    const auto state = owner->state();
-    if (state == bootstrap_state::ready || (allow_degraded && state == bootstrap_state::degraded)) {
-        return {.session = owner->session_if_published()};
-    }
-    return {};
-}
 
 template <typename Operation>
 [[nodiscard]] input_next_status guarded(Operation&& operation) noexcept {
@@ -83,53 +62,6 @@ void write_reader_handle(const inputnext::core::reader_handle& value,
     out.id = value.id;
 }
 
-[[nodiscard]] bool parse_selector(const input_next_device_selector_v1& value,
-    selector& out) noexcept {
-    out = {};
-    if (value.struct_size != sizeof(value) || value.reserved != 0U || value.reserved2 != 0U ||
-        value.identity_flags != 0U || value.target.struct_size != sizeof(value.target) ||
-        value.target.reserved != 0U) {
-        return false;
-    }
-
-    switch (value.kind) {
-    case INPUT_NEXT_CORE_SELECTOR_XINPUT_SLOT:
-        if (value.xinput_slot >= 4U || !core_projection::target_is_zero(value.target) ||
-            !core_projection::is_zero_bytes(value.hardware_fingerprint,
-                sizeof(value.hardware_fingerprint))) {
-            return false;
-        }
-        out.kind = selector_kind::xinput_slot;
-        out.slot = value.xinput_slot;
-        return true;
-
-    case INPUT_NEXT_CORE_SELECTOR_EXACT_TARGET:
-        if (value.xinput_slot != 0U ||
-            !core_projection::is_zero_bytes(value.hardware_fingerprint,
-                sizeof(value.hardware_fingerprint)) ||
-            !core_projection::parse_target(value.target, out.target)) {
-            return false;
-        }
-        out.kind = selector_kind::exact_target;
-        return true;
-
-    case INPUT_NEXT_CORE_SELECTOR_HARDWARE_FINGERPRINT:
-        if (value.xinput_slot != 0U || !core_projection::target_is_zero(value.target) ||
-            core_projection::is_zero_bytes(value.hardware_fingerprint,
-                sizeof(value.hardware_fingerprint))) {
-            return false;
-        }
-        out.kind = selector_kind::hardware_fingerprint;
-        std::copy_n(value.hardware_fingerprint,
-            out.hardware_fingerprint.size(),
-            out.hardware_fingerprint.begin());
-        return true;
-
-    default:
-        return false;
-    }
-}
-
 [[nodiscard]] input_next_status INPUT_NEXT_CORE_CALL get_runtime_info(
     input_next_runtime_info_v1* const out_info) noexcept {
     if (out_info == nullptr || out_info->struct_size != sizeof(*out_info) ||
@@ -141,11 +73,11 @@ void write_reader_handle(const inputnext::core::reader_handle& value,
     out_info->struct_size = descriptor_size;
 
     return guarded([out_info] {
-        const auto active = prepare_session(true, true);
-        if (active.session == nullptr) {
+        auto* const session = session_for(session_access::initialize_retained);
+        if (session == nullptr) {
             return INPUT_NEXT_STATUS_UNAVAILABLE;
         }
-        const auto info = active.session->core().info();
+        const auto info = session->core().info();
         if (!info.runtime.valid() || info.qpc_frequency == 0U) {
             return INPUT_NEXT_STATUS_UNAVAILABLE;
         }
@@ -154,7 +86,7 @@ void write_reader_handle(const inputnext::core::reader_handle& value,
         out_info->qpc_frequency = info.qpc_frequency;
         out_info->max_devices = static_cast<std::uint32_t>(inputnext::core::device_capacity);
         out_info->max_readers = static_cast<std::uint32_t>(inputnext::core::reader_capacity);
-        out_info->max_effect_contexts = 0U;
+        out_info->max_effect_contexts = static_cast<std::uint32_t>(effects::context_capacity);
         return INPUT_NEXT_STATUS_OK;
     });
 }
@@ -180,11 +112,11 @@ void write_reader_handle(const inputnext::core::reader_handle& value,
     *out_discovery_revision = 0U;
 
     return guarded([=] {
-        const auto active = prepare_session(true, false);
-        if (active.session == nullptr) {
+        auto* const session = session_for(session_access::initialize_ready);
+        if (session == nullptr) {
             return INPUT_NEXT_STATUS_UNAVAILABLE;
         }
-        auto result = active.session->core().enumerate();
+        auto result = session->core().enumerate();
         if (!result.has_value()) {
             return core_projection::to_c_status(result.error());
         }
@@ -222,18 +154,18 @@ void write_reader_handle(const inputnext::core::reader_handle& value,
     const input_next_device_selector_v1 selector_copy = *in_selector;
     const auto descriptor_size = out_target->struct_size;
     selector selection{};
-    if (!parse_selector(selector_copy, selection)) {
+    if (!core_projection::parse_selector(selector_copy, selection)) {
         return INPUT_NEXT_STATUS_INVALID_ARGUMENT;
     }
     *out_target = {};
     out_target->struct_size = descriptor_size;
 
     return guarded([&selection, out_target] {
-        const auto active = prepare_session(true, false);
-        if (active.session == nullptr) {
+        auto* const session = session_for(session_access::initialize_ready);
+        if (session == nullptr) {
             return INPUT_NEXT_STATUS_UNAVAILABLE;
         }
-        auto result = active.session->core().resolve(selection);
+        auto result = session->core().resolve(selection);
         if (!result.has_value()) {
             return core_projection::to_c_status(result.error());
         }
@@ -262,11 +194,11 @@ void write_reader_handle(const inputnext::core::reader_handle& value,
     out_snapshot->struct_size = descriptor_size;
 
     return guarded([target, out_snapshot] {
-        const auto active = prepare_session(false, false);
-        if (active.session == nullptr) {
+        auto* const session = session_for(session_access::ready);
+        if (session == nullptr) {
             return INPUT_NEXT_STATUS_UNAVAILABLE;
         }
-        auto result = active.session->core().read_latest(target);
+        auto result = session->core().read_latest(target);
         if (!result.has_value()) {
             if (result.error() == status::no_data) {
                 core_projection::write_empty_snapshot(target, *out_snapshot);
@@ -309,11 +241,11 @@ void write_reader_handle(const inputnext::core::reader_handle& value,
     out_reader->struct_size = descriptor_size;
 
     return guarded([target, focus, out_reader] {
-        const auto active = prepare_session(true, false);
-        if (active.session == nullptr) {
+        auto* const session = session_for(session_access::initialize_ready);
+        if (session == nullptr) {
             return INPUT_NEXT_STATUS_UNAVAILABLE;
         }
-        auto result = active.session->core().open_reader(target, focus);
+        auto result = session->core().open_reader(target, focus);
         if (!result.has_value()) {
             return core_projection::to_c_status(result.error());
         }
@@ -351,11 +283,11 @@ void write_reader_handle(const inputnext::core::reader_handle& value,
     out_result->struct_size = descriptor_size;
 
     return guarded([reader, out_snapshots, capacity, out_result] {
-        const auto active = prepare_session(false, false);
-        if (active.session == nullptr) {
+        auto* const session = session_for(session_access::ready);
+        if (session == nullptr) {
             return INPUT_NEXT_STATUS_UNAVAILABLE;
         }
-        const auto result = active.session->core().read_events(reader, capacity);
+        const auto result = session->core().read_events(reader, capacity);
         return core_projection::write_reader_batch(result, out_snapshots, capacity, *out_result);
     });
 }
@@ -371,11 +303,11 @@ void write_reader_handle(const inputnext::core::reader_handle& value,
     }
 
     return guarded([reader] {
-        const auto active = prepare_session(false, true);
-        if (active.session == nullptr) {
+        auto* const session = session_for(session_access::retained);
+        if (session == nullptr) {
             return INPUT_NEXT_STATUS_UNAVAILABLE;
         }
-        return core_projection::to_c_status(active.session->core().close_reader(reader));
+        return core_projection::to_c_status(session->core().close_reader(reader));
     });
 }
 

@@ -1,5 +1,6 @@
 #include "native_session_state.hpp"
 
+#include "effects/effects.hpp"
 #include "native_session.hpp"
 #include "native_session_dependencies.hpp"
 #include <inputnext/gameinput_runtime.hpp>
@@ -110,6 +111,7 @@ std::optional<gameinput_failure> native_session::implementation::run_maintenance
     }
 
     presentation_service->presentation().maintain_output();
+    static_cast<void>(effects_service->maintain());
     const auto synchronized = connections->synchronize(inventory);
     if (!synchronized.has_value()) {
         return synchronized.error();

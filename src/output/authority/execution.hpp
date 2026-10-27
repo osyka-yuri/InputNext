@@ -28,6 +28,8 @@ public:
         execution_owner expected_owner);
     [[nodiscard]] static execution_result<void>
     check_target(authority& owner, execution_owner expected_owner, connection_target target);
+    [[nodiscard]] static execution_result<logical_snapshot>
+    observe(authority& owner, execution_owner expected_owner, connection_target target);
     [[nodiscard]] static execution_result<bool> qualifies(authority& owner,
         execution_owner expected_owner,
         const represented_projection& expected);

@@ -1,12 +1,15 @@
 #include "runtime_api_test_composition.hpp"
 #include "audio/audio_service.hpp"
 
+#include "audio/controlled_native_port.hpp"
+#include "audio/native_types.hpp"
 #include "audio/unavailable_native_factory.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_history_test_support.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_metadata_test_support.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_test_support.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/reading_parts.hpp"
+#include "metadata/policy.hpp"
 #include "runtime/abi/runtime_api.hpp"
 #include "runtime/abi/runtime_api_internal.hpp"
 #include "runtime/bootstrap/bootstrap_owner.hpp"
@@ -91,8 +94,9 @@ bool bootstrap_owner_test_access::control_gate_available(bootstrap_owner& owner)
 }
 
 struct runtime_api_test_fixture::implementation final {
-    explicit implementation(const bool fail_start) noexcept
-        : fail_native_start{fail_start},
+    explicit implementation(const runtime_api_test_options options) noexcept
+        : fail_native_start{options.fail_native_start},
+          dualsense_hd_audio{options.dualsense_hd_audio},
           front{query_front_operations{.pin_module = &pin_module,
                     .create_owner = &create_owner,
                     .stable_api = &stable_api},
@@ -124,6 +128,10 @@ struct runtime_api_test_fixture::implementation final {
         native_view->device_facts = runtime_fixture::native_facts(u"adapter-endpoint");
         native_view->device_facts.vendor_id.value = 0x045EU;
         native_view->device_facts.product_id.value = 0x02FDU;
+        if (dualsense_hd_audio) {
+            native_view->device_facts.vendor_id.value = 0x054CU;
+            native_view->device_facts.product_id.value = 0x0CE6U;
+        }
         native_view->device_facts.gameinput_capabilities =
             metadata_field<native_gameinput_capabilities>{
                 .availability = metadata_availability::available,
@@ -162,8 +170,35 @@ struct runtime_api_test_fixture::implementation final {
                 .observation_qpc = history->seed.baseline.observation_qpc});
         native_view->configure_history(fixture_device, history);
 
+        auto metadata = std::make_unique<fake_metadata_provider>();
+        metadata->model = metadata_detail::classify_device_model(native_view->device_facts);
+        metadata->capabilities =
+            metadata_detail::derive_hardware_capabilities(native_view->device_facts);
+        if (dualsense_hd_audio) {
+            metadata->transport = {.availability = metadata_availability::available,
+                .value = {.value = physical_transport::usb,
+                    .provenance = transport_provenance::native_bus_type}};
+            auto factory = std::make_unique<test::audio::controlled_native_port_factory>();
+            auto state = factory->state_for(0U);
+            if (state == nullptr) {
+                throw std::runtime_error{"runtime API fixture could not allocate audio state"};
+            }
+            const auto endpoint =
+                audio_detail::fixed_haptic_endpoint_id::create(u"adapter-endpoint");
+            if (!endpoint.has_value()) {
+                throw std::runtime_error{"runtime API fixture audio endpoint is invalid"};
+            }
+            state->endpoint = audio_detail::native_endpoint_snapshot{
+                .id = *endpoint,
+                .state = audio_detail::native_endpoint_state::active,
+                .flow = audio_detail::native_endpoint_flow::render,
+                .container_id = native_view->device_facts.container_id.value,
+            };
+            audio_state.store(std::move(state), std::memory_order_release);
+            dependencies.audio_factory = std::move(factory);
+        }
         dependencies.native = std::move(native_owner);
-        dependencies.metadata = std::make_unique<fake_metadata_provider>();
+        dependencies.metadata = std::move(metadata);
         dependencies.focus_source = std::make_unique<session_focus_source>();
         auto session = native_session::prepare(std::move(dependencies));
         native.store(native_view, std::memory_order_release);
@@ -205,6 +240,8 @@ struct runtime_api_test_fixture::implementation final {
     }
 
     const bool fail_native_start;
+    const bool dualsense_hd_audio;
+    std::atomic<std::shared_ptr<test::audio::controlled_native_port_state>> audio_state;
     std::atomic<std::uint32_t> pin_calls;
     std::atomic<std::uint32_t> owner_creations;
     std::atomic<std::uint32_t> focus_observations;
@@ -229,7 +266,11 @@ struct runtime_api_test_fixture::implementation final {
 };
 
 runtime_api_test_fixture::runtime_api_test_fixture(const bool fail_native_start)
-    : implementation_{std::make_unique<implementation>(fail_native_start)} {
+    : runtime_api_test_fixture(runtime_api_test_options{.fail_native_start = fail_native_start}) {
+}
+
+runtime_api_test_fixture::runtime_api_test_fixture(const runtime_api_test_options options)
+    : implementation_{std::make_unique<implementation>(options)} {
     void* expected{};
     if (!active_composition.compare_exchange_strong(expected,
             implementation_.get(),
@@ -240,6 +281,9 @@ runtime_api_test_fixture::runtime_api_test_fixture(const bool fail_native_start)
 }
 
 runtime_api_test_fixture::~runtime_api_test_fixture() {
+    if (const auto audio = controlled_audio_state(); audio != nullptr) {
+        audio->release_block();
+    }
     void* expected = implementation_.get();
     if (!active_composition.compare_exchange_strong(expected,
             nullptr,
@@ -355,6 +399,11 @@ std::size_t runtime_api_test_fixture::rumble_writes() const noexcept {
 std::optional<output::rumble_value> runtime_api_test_fixture::last_rumble_value() const {
     const auto* const native = implementation_->native.load(std::memory_order_acquire);
     return native != nullptr ? native->rumble_script()->last_value() : std::nullopt;
+}
+
+std::shared_ptr<test::audio::controlled_native_port_state>
+runtime_api_test_fixture::controlled_audio_state() const noexcept {
+    return implementation_->audio_state.load(std::memory_order_acquire);
 }
 
 query_front& runtime_query_front() noexcept {

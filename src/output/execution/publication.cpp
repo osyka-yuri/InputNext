@@ -23,12 +23,16 @@ execution_result<void> execution_engine::publish(const backend_handle handle,
     if (snapshot.target != handle.target || snapshot.incarnation != state.execution.authority) {
         return std::unexpected{execution_error::invalid_argument};
     }
+    if (snapshot.logical_version < backend->observed_logical_version) {
+        return {};
+    }
 
     auto projected =
         project_representation(snapshot, backend->supported_channels, backend->route_support);
     if (!projected.has_value()) {
         return std::unexpected{projected.error()};
     }
+    backend->observed_logical_version = snapshot.logical_version;
     backend->unsupported_channels = snapshot.present_channels() & ~backend->supported_channels;
 
     if (backend->projection.has_value() && *backend->projection == *projected) {

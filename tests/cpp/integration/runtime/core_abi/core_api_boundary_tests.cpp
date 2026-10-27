@@ -55,6 +55,25 @@ using inputnext::test::required_value;
     return status;
 }
 
+[[nodiscard]] input_next_status read_events_when_ready(const input_next_core_api_v1& api,
+    const input_next_reader_v1& reader,
+    std::array<input_next_input_snapshot_v1, 32U>& snapshots,
+    input_next_reader_result_v1& result) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    auto status = api.read_events(&reader,
+        snapshots.data(),
+        static_cast<std::uint32_t>(snapshots.size()),
+        &result);
+    while (status == INPUT_NEXT_STATUS_BUSY && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        status = api.read_events(&reader,
+            snapshots.data(),
+            static_cast<std::uint32_t>(snapshots.size()),
+            &result);
+    }
+    return status;
+}
+
 } // namespace
 
 TEST_CASE("runtime.core.abi_rejects_malformed_inputs_before_bootstrap_or_output_changes",
@@ -245,10 +264,8 @@ TEST_CASE("runtime.core.abi_projects_targets_latest_and_reader_history",
     snapshots[0U].flags = 0xF0U;
     input_next_reader_result_v1 result{};
     result.struct_size = sizeof(result);
-    REQUIRE(api->read_events(&reader,
-                snapshots.data(),
-                static_cast<std::uint32_t>(snapshots.size()),
-                &result) == INPUT_NEXT_STATUS_OK);
+    const auto read_status = read_events_when_ready(*api, reader, snapshots, result);
+    REQUIRE(read_status == INPUT_NEXT_STATUS_OK);
     REQUIRE(result.count == 1U);
     CHECK((result.flags & INPUT_NEXT_CORE_READER_RESULT_BASELINE) != 0U);
     CHECK(result.reset_reason == INPUT_NEXT_CORE_READER_RESET_INITIAL_OPEN);
@@ -257,10 +274,7 @@ TEST_CASE("runtime.core.abi_projects_targets_latest_and_reader_history",
     CHECK((snapshots[0U].flags & INPUT_NEXT_CORE_SNAPSHOT_BASELINE) != 0U);
     CHECK(snapshots[0U].sequence != 0U);
 
-    const auto followup_status = api->read_events(&reader,
-        snapshots.data(),
-        static_cast<std::uint32_t>(snapshots.size()),
-        &result);
+    const auto followup_status = read_events_when_ready(*api, reader, snapshots, result);
     CHECK(
         (followup_status == INPUT_NEXT_STATUS_OK || followup_status == INPUT_NEXT_STATUS_NO_DATA));
 

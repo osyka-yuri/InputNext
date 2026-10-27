@@ -11,7 +11,9 @@
 #include <inputnext/output_body.hpp>
 #include <inputnext/output_body_pcm.hpp>
 #include <inputnext/output_body_playback.hpp>
+#include <inputnext/output_submission.hpp>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -39,12 +41,29 @@ namespace {
 result<body_playback_receipt> authority::submit_body(const public_context context,
     const body_request& request,
     const body_playback_update& playback) {
+    return submit_body_impl(context, request, playback, nullptr);
+}
+
+result<body_playback_receipt> authority::submit_body(const public_context context,
+    const body_request& request,
+    const body_playback_update& playback,
+    const finite_submission_window& window) {
+    return submit_body_impl(context, request, playback, &window);
+}
+
+result<body_playback_receipt> authority::submit_body_impl(const public_context context,
+    const body_request& request,
+    const body_playback_update& playback,
+    const finite_submission_window* const window) {
     const detail::body_pcm_collection_on_exit collect{*this};
     auto& state = *implementation_;
-    const auto entry_time = state.now();
     if (!state.valid_context_identity(context.identity, owner_class::public_game)) {
         return std::unexpected{error::stale_context};
     }
+    if (window != nullptr && request.ttl != window->ttl()) {
+        return std::unexpected{error::invalid_argument};
+    }
+    const auto entry_time = window == nullptr ? state.now() : window->entered_at();
     if (!valid_command(playback.command)) {
         return std::unexpected{error::invalid_argument};
     }
@@ -68,13 +87,19 @@ result<body_playback_receipt> authority::submit_body(const public_context contex
     if (playback.command == body_pcm_command::replace) {
         collect_body_pcm();
     }
-    const auto deadline =
-        policy_detail::make_deadline(entry_time, request.ttl, ttl_permission::finite_only);
-    if (!deadline.has_value()) {
-        return std::unexpected{deadline.error()};
-    }
-    if (!deadline->has_value()) {
-        return std::unexpected{error::deadline_overflow};
+    std::chrono::steady_clock::time_point expiry;
+    if (window != nullptr) {
+        expiry = window->expires_at();
+    } else {
+        const auto deadline =
+            policy_detail::make_deadline(entry_time, request.ttl, ttl_permission::finite_only);
+        if (!deadline.has_value()) {
+            return std::unexpected{deadline.error()};
+        }
+        if (!deadline->has_value()) {
+            return std::unexpected{error::deadline_overflow};
+        }
+        expiry = **deadline;
     }
 
     detail::body_playback_retirement_batch displaced;
@@ -93,7 +118,7 @@ result<body_playback_receipt> authority::submit_body(const public_context contex
     }
     return state.commit_body_playback_locked(entry,
         request,
-        {.entered_at = entry_time, .expires_at = **deadline},
+        {.entered_at = entry_time, .expires_at = expiry, .has_absolute_window = window != nullptr},
         playback.command,
         std::move(replacement),
         displaced);
@@ -108,6 +133,12 @@ result<body_playback_receipt> authority::implementation::commit_body_playback_lo
     auto plan = prepare_body_playback_commit_locked(entry, request, timing, command, replacement);
     if (!plan.has_value()) {
         return std::unexpected{plan.error()};
+    }
+
+    if (timing.has_absolute_window &&
+        policy_detail::is_expired(policy_detail::optional_deadline{timing.expires_at},
+            effective_time())) {
+        return std::unexpected{error::expired};
     }
 
     if (command == body_pcm_command::keep && entry.body.has_value() &&

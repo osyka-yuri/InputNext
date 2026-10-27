@@ -1,5 +1,6 @@
 #include "output/authority/state.hpp"
 
+#include <inputnext/error.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
 #include <inputnext/output_body.hpp>
@@ -24,6 +25,32 @@ result<body_receipt> authority::submit_body(const public_context context,
         return std::unexpected{submitted.error()};
     }
     return submitted->body;
+}
+
+result<audio_route_observation> authority::inspect_audio(const audio_instance instance) const {
+    const auto& state = *implementation_;
+    if (!instance.valid()) {
+        return std::unexpected{error::invalid_argument};
+    }
+    if (instance.authority != state.incarnation || instance.target.runtime != state.runtime) {
+        return std::unexpected{error::stale_audio};
+    }
+
+    std::scoped_lock lock{state.gate};
+    const auto* const route = state.find_audio(instance);
+    if (route == nullptr || !route->facts.has_value()) {
+        return std::unexpected{error::stale_audio};
+    }
+    auto live = state.capture(instance.target);
+    if (!live.has_value()) {
+        return std::unexpected{live.error() == inputnext::error::not_connected
+                                   ? error::not_connected
+                                   : error::resources};
+    }
+    live->release();
+    return audio_route_observation{.instance = instance,
+        .support = route->facts->support,
+        .ready = route->facts->ready};
 }
 
 result<void> authority::implementation::validate_body_lease_locked(const record& entry,

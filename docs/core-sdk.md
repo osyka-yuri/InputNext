@@ -10,7 +10,7 @@ Runtime information, enumeration, target resolution and reader opening can initi
 
 `read_latest`, `read_events` and `close_reader` use the already published session. They never initiate startup. Ready latest reads copy cached input without metadata queries or history traversal. History operations may wait for native history work; keep them off latency-sensitive threads.
 
-Runtime information reports limits of 16 live devices and 28 public readers. Four additional history readers are reserved for XInput. `max_effect_contexts` is zero until an Effects C API is available. A retained degraded session still exposes its identity and QPC frequency; live operations are unavailable.
+Runtime information reports limits of 16 live devices, 28 public readers and 32 public [Effects contexts](effects-sdk.md). Four additional history readers are reserved for XInput. A retained degraded session still exposes its identity and QPC frequency; live operations are unavailable.
 
 ## Targets and discovery
 

@@ -4,6 +4,7 @@
 #include <inputnext/output.hpp>
 #include <inputnext/output_body.hpp>
 #include <inputnext/output_execution.hpp>
+#include <inputnext/output_observation.hpp>
 
 #include <memory>
 
@@ -43,6 +44,7 @@ public:
     void request_drive() noexcept;
     [[nodiscard]] execution_result<retirement_receipt> retire(backend_handle backend);
     [[nodiscard]] execution_result<backend_progress> progress(backend_handle backend) const;
+    [[nodiscard]] execution_result<backend_observation> observe(backend_handle backend) const;
     [[nodiscard]] execution_result<bool> qualifies_route(
         const body_route_ack& acknowledgement) const;
     [[nodiscard]] execution_result<void> acknowledge_retirement(const retirement_receipt& receipt);

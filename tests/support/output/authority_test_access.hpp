@@ -91,8 +91,26 @@ public:
         return std::unique_lock{value.implementation_->gate};
     }
 
+    using clock_callback = policy_detail::deadline (*)(const void*) noexcept;
+
+    static void use_clock_callback(authority& value,
+        const clock_callback callback,
+        const void* context) noexcept {
+        value.implementation_->test_clock = callback;
+        value.implementation_->test_clock_context = context;
+    }
+
     static void use_clock(authority& value, const std::atomic<std::int64_t>& ticks) noexcept {
-        value.implementation_->test_clock_ticks = &ticks;
+        use_clock_callback(
+            value,
+            [](const void* context) noexcept {
+                using duration = policy_detail::clock::duration;
+                using rep = duration::rep;
+                const auto& source = *static_cast<const std::atomic<std::int64_t>*>(context);
+                return policy_detail::deadline{
+                    duration{static_cast<rep>(source.load(std::memory_order_acquire))}};
+            },
+            &ticks);
     }
 
     // Call only before preparing samples or submitting any body playback command; this replaces

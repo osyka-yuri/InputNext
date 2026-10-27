@@ -1,11 +1,13 @@
 #pragma once
 
+#include "backend_selection.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/output_execution.hpp>
 #include <inputnext/output_executor.hpp>
+#include <inputnext/output_observation.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +17,11 @@
 namespace inputnext::gameinput_detail {
 
 class runtime_output_access;
+
+struct managed_backend_observation final {
+    output_backend_kind kind{output_backend_kind::none};
+    output::backend_observation execution{};
+};
 
 enum class connection_control_phase : std::uint8_t {
     accepting,
@@ -83,6 +90,8 @@ public:
     // Queries the exact managed backend outside the control gate.
     [[nodiscard]] std::optional<output::backend_progress> query_backend_progress(
         connection_target target) const noexcept;
+    [[nodiscard]] output::execution_result<std::optional<managed_backend_observation>>
+    observe_backend(connection_target target) const;
     void shutdown() noexcept;
 
 private:

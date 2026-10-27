@@ -55,6 +55,7 @@ struct execution_engine::implementation final {
         channel_mask unsupported_channels{};
         std::unique_ptr<native_sink> sink;
         std::optional<represented_projection> projection;
+        std::uint64_t observed_logical_version{};
         publication_id publication{};
         std::uint64_t next_publication_id{1U};
         std::uint64_t next_attempt_id{1U};
@@ -98,6 +99,7 @@ struct execution_engine::implementation final {
     [[nodiscard]] backend_record* find_reserved(backend_id id, lane_token lane) noexcept;
     [[nodiscard]] backend_record* find_current(lane_token lane) noexcept;
     [[nodiscard]] const backend_record* find_current(lane_token lane) const noexcept;
+    [[nodiscard]] static backend_progress make_progress(const backend_record& backend) noexcept;
     [[nodiscard]] backend_record* find_retiring(lane_token lane) noexcept;
     [[nodiscard]] bool lane_has_records(lane_token lane) const noexcept;
     [[nodiscard]] bool lane_has_reservations(lane_token lane) const noexcept;

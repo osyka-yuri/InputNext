@@ -4,6 +4,7 @@
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
 #include <inputnext/output_body.hpp>
+#include <inputnext/output_submission.hpp>
 
 #include <bit>
 #include <cstddef>
@@ -11,6 +12,7 @@
 #include <expected>
 #include <limits>
 #include <mutex>
+#include <utility>
 
 namespace inputnext::output {
 namespace {
@@ -81,18 +83,16 @@ template <typename State, typename Record>
 }
 
 template <typename State>
-[[nodiscard]] result<mutation_receipt> submit_common(State& state,
-    context_identity identity,
+[[nodiscard]] auto prepare_submission_timing(State& state,
     const submit_request& request,
     owner_class kind,
-    const internal_context_options* options = nullptr) {
-    if (!state.valid_context_identity(identity, kind) ||
-        (kind == owner_class::trusted_internal &&
-            (options == nullptr || identity.internal_owner != options->owner))) {
-        return std::unexpected{error::stale_context};
+    const internal_context_options* options,
+    const finite_submission_window* window)
+    -> result<std::pair<policy_detail::deadline, policy_detail::optional_deadline>> {
+    if (window != nullptr && request.ttl != window->ttl()) {
+        return std::unexpected{error::invalid_argument};
     }
-
-    const auto entry_time = state.now();
+    const auto entry_time = window == nullptr ? state.now() : window->entered_at();
     const bool trusted = kind == owner_class::trusted_internal;
     const auto permission = trusted ? options->ttl : ttl_permission::finite_only;
     const auto prevalidated =
@@ -102,10 +102,39 @@ template <typename State>
         return std::unexpected{prevalidated.error()};
     }
 
-    auto deadline = policy_detail::make_deadline(entry_time, request.ttl, permission);
-    if (!deadline.has_value()) {
-        return std::unexpected{deadline.error()};
+    policy_detail::optional_deadline deadline_value{};
+    if (window != nullptr) {
+        deadline_value = window->expires_at();
+    } else {
+        const auto deadline = policy_detail::make_deadline(entry_time, request.ttl, permission);
+        if (!deadline.has_value()) {
+            return std::unexpected{deadline.error()};
+        }
+        deadline_value = *deadline;
     }
+
+    return std::pair{entry_time, deadline_value};
+}
+
+template <typename State>
+[[nodiscard]] result<mutation_receipt> submit_common(State& state,
+    context_identity identity,
+    const submit_request& request,
+    owner_class kind,
+    const internal_context_options* options = nullptr,
+    const finite_submission_window* window = nullptr) {
+    if (!state.valid_context_identity(identity, kind) ||
+        (kind == owner_class::trusted_internal &&
+            (options == nullptr || identity.internal_owner != options->owner))) {
+        return std::unexpected{error::stale_context};
+    }
+    const auto timing = prepare_submission_timing(state, request, kind, options, window);
+    if (!timing.has_value()) {
+        return std::unexpected{timing.error()};
+    }
+    const auto entry_time = timing->first;
+    const auto deadline_value = timing->second;
+    const bool trusted = kind == owner_class::trusted_internal;
 
     std::scoped_lock lock{state.gate};
 
@@ -126,7 +155,7 @@ template <typename State>
         if (!qualified.has_value()) {
             return std::unexpected{qualified.error()};
         }
-        return state.commit_submit_locked(*entry, request, *deadline, entry_time);
+        return state.commit_submit_locked(*entry, request, deadline_value, entry_time, window);
     }
 
     const auto evaluation_time = state.effective_time(entry_time);
@@ -140,7 +169,7 @@ template <typename State>
     if (!qualified.has_value()) {
         return std::unexpected{qualified.error()};
     }
-    return state.commit_submit_locked(entry, request, *deadline, entry_time);
+    return state.commit_submit_locked(entry, request, deadline_value, entry_time, window);
 }
 
 template <typename State, typename Record>
@@ -242,7 +271,8 @@ template <typename State>
 result<mutation_receipt> authority::implementation::commit_submit_locked(record& entry,
     const submit_request& request,
     policy_detail::optional_deadline deadline,
-    policy_detail::deadline entry_time) noexcept {
+    policy_detail::deadline entry_time,
+    const finite_submission_window* window) noexcept {
     const auto evaluation_time = effective_time(entry_time);
     static_cast<void>(expire_target(entry.identity.target, evaluation_time));
     if (policy_detail::is_expired(deadline, evaluation_time)) {
@@ -276,6 +306,12 @@ result<mutation_receipt> authority::implementation::commit_submit_locked(record&
         return std::unexpected{error::logical_version_exhausted};
     }
 
+    if (window != nullptr &&
+        policy_detail::is_expired(policy_detail::optional_deadline{window->expires_at()},
+            effective_time())) {
+        return std::unexpected{error::expired};
+    }
+
     const auto commit_order = logical_version + 1U;
     assign_selected_values(entry.accepted_values, request.values, request.selected_channels);
     for (std::size_t index = 0U; index < channel_count; ++index) {
@@ -300,6 +336,17 @@ result<mutation_receipt> authority::implementation::commit_submit_locked(record&
 
 result<mutation_receipt> authority::submit(public_context context, const submit_request& request) {
     return submit_common(*implementation_, context.identity, request, owner_class::public_game);
+}
+
+result<mutation_receipt> authority::submit(public_context context,
+    const submit_request& request,
+    const finite_submission_window& window) {
+    return submit_common(*implementation_,
+        context.identity,
+        request,
+        owner_class::public_game,
+        nullptr,
+        &window);
 }
 
 result<mutation_receipt> authority::clear(public_context context, const clear_request& request) {
