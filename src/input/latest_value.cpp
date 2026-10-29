@@ -4,6 +4,7 @@
 #include <inputnext/gamepad_state.hpp>
 #include <inputnext/input_sample.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <expected>
 #include <limits>
@@ -11,13 +12,16 @@
 
 namespace inputnext {
 
+static_assert(std::atomic<bool>::is_always_lock_free,
+    "Sample closure observation requires lock-free atomics");
+
 latest_value::latest_value(std::uint64_t initial_revision) noexcept : revision_(initial_revision) {
 }
 
 result<std::uint64_t> latest_value::publish(const input_update& update) {
     std::scoped_lock lock{mutex_};
 
-    if (closed_) {
+    if (closed_.load(std::memory_order_seq_cst)) {
         return std::unexpected{error::not_connected};
     }
     if (update.observation_qpc == 0U || !is_valid_gamepad_state(update.state)) {
@@ -44,7 +48,7 @@ result<std::uint64_t> latest_value::publish(const input_update& update) {
 result<published_sample> latest_value::read() const {
     std::scoped_lock lock{mutex_};
 
-    if (closed_) {
+    if (closed_.load(std::memory_order_seq_cst)) {
         return std::unexpected{error::not_connected};
     }
     if (!has_sample_) {
@@ -53,9 +57,13 @@ result<published_sample> latest_value::read() const {
     return sample_;
 }
 
+bool latest_value::is_closed() const noexcept {
+    return closed_.load(std::memory_order_seq_cst);
+}
+
 void latest_value::close() {
     std::scoped_lock lock{mutex_};
-    closed_ = true;
+    closed_.store(true, std::memory_order_seq_cst);
 }
 
 } // namespace inputnext

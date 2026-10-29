@@ -38,9 +38,8 @@ TEST_CASE("prepared GetState binding retains its identity through retirement and
                 first_assignment.user_index,
                 false,
                 prepared) == ERROR_SUCCESS);
-    REQUIRE(prepared.sample_pin.has_value());
-    const auto initial_target =
-        prepared.sample_pin.transform([](const read_pin& pin) { return pin.target(); });
+    REQUIRE(prepared.connection_pin.validate_live().has_value());
+    const auto initial_target = prepared.connection_pin.target();
     CHECK(initial_target == first.connection.target);
 
     REQUIRE(service.unassign(first_assignment).has_value());
@@ -51,10 +50,9 @@ TEST_CASE("prepared GetState binding retains its identity through retirement and
     CHECK(second_assignment.id != first_assignment.id);
     CHECK(second_assignment.target == second.connection.target);
     CHECK(prepared.occupant == first_assignment);
-    const auto retained_target =
-        prepared.sample_pin.transform([](const read_pin& pin) { return pin.target(); });
+    const auto retained_target = prepared.connection_pin.target();
     CHECK(retained_target == first.connection.target);
-    CHECK(!prepared.reader.validate_capture().has_value());
+    CHECK(!prepared.connection_pin.validate_live().has_value());
 
     XINPUT_STATE state{.dwPacketNumber = 0xC0FFEEU, .Gamepad = {}};
     state.Gamepad.wButtons = 0xA55AU;
@@ -79,9 +77,8 @@ TEST_CASE("GetState preparation follows assignment and control transitions",
                 prepared) == ERROR_SUCCESS);
     CHECK(prepared.occupant == first_assignment);
     CHECK(prepared.eligible_at_capture);
-    REQUIRE(prepared.sample_pin.has_value());
-    const auto target =
-        prepared.sample_pin.transform([](const read_pin& pin) { return pin.target(); });
+    REQUIRE(prepared.connection_pin.validate_live().has_value());
+    const auto target = prepared.connection_pin.target();
     CHECK(target == first_assignment.target);
 
     service.enable(FALSE);
@@ -92,7 +89,7 @@ TEST_CASE("GetState preparation follows assignment and control transitions",
                 disabled) == ERROR_SUCCESS);
     CHECK(disabled.occupant == first_assignment);
     CHECK(!disabled.eligible_at_capture);
-    CHECK(!disabled.sample_pin.has_value());
+    CHECK(disabled.connection_pin.validate_live().has_value());
 
     REQUIRE(service.unassign(first_assignment).has_value());
     xinput::detail::service_test_access::prepared_read unassigned{};
@@ -133,7 +130,7 @@ TEST_CASE("prepared GetState retains initial inactivity and rechecks current Ena
                 false,
                 initially_inactive) == ERROR_SUCCESS);
     CHECK(!initially_inactive.eligible_at_capture);
-    CHECK(!initially_inactive.sample_pin.has_value());
+    CHECK(initially_inactive.connection_pin.validate_live().has_value());
     service.enable(TRUE);
     XINPUT_STATE state{};
     REQUIRE(xinput::detail::service_test_access::commit(service, initially_inactive, &state) ==

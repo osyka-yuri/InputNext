@@ -9,6 +9,7 @@ add_executable(inputnext_xinput_component_tests
     get_state_read_tests.cpp
     get_state_preparation_tests.cpp
     get_state_lifecycle_tests.cpp
+    get_state_pin_tests.cpp
     connection_status_tests.cpp
     output_tests.cpp
     output_transaction_tests.cpp

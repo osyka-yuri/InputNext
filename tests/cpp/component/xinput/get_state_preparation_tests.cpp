@@ -161,9 +161,8 @@ TEST_CASE("GetState preparation waits for the presentation guard and captures co
     REQUIRE(completed_future.get() == ERROR_SUCCESS);
     CHECK(prepared.occupant == *occupant);
     CHECK(prepared.eligible_at_capture);
-    REQUIRE(prepared.sample_pin.has_value());
-    const auto target =
-        prepared.sample_pin.transform([](const read_pin& pin) { return pin.target(); });
+    REQUIRE(prepared.connection_pin.validate_live().has_value());
+    const auto target = prepared.connection_pin.target();
     CHECK(target == connection.connection.target);
 }
 
@@ -219,9 +218,8 @@ TEST_CASE("GetState initial capture excludes concurrent assignment replacement",
     REQUIRE(replacement.has_value());
     CHECK(prepared.occupant == *occupant);
     CHECK(prepared.eligible_at_capture);
-    REQUIRE(prepared.sample_pin.has_value());
-    const auto original_target =
-        prepared.sample_pin.transform([](const read_pin& pin) { return pin.target(); });
+    REQUIRE(prepared.connection_pin.validate_live().has_value());
+    const auto original_target = prepared.connection_pin.target();
     CHECK(original_target == first.connection.target);
     CHECK(replacement->user_index == occupant->user_index);
     CHECK(replacement->id != occupant->id);
@@ -239,8 +237,7 @@ TEST_CASE("GetState initial capture excludes concurrent assignment replacement",
                 false,
                 current) == ERROR_SUCCESS);
     CHECK(current.occupant == *replacement);
-    REQUIRE(current.sample_pin.has_value());
-    const auto current_target =
-        current.sample_pin.transform([](const read_pin& pin) { return pin.target(); });
+    REQUIRE(current.connection_pin.validate_live().has_value());
+    const auto current_target = current.connection_pin.target();
     CHECK(current_target == second.connection.target);
 }

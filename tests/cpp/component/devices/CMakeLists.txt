@@ -3,6 +3,7 @@ add_executable(inputnext_device_component_tests
     device_registry_concurrency_tests.cpp
     device_registry_race_tests.cpp
     device_pin_release_protocol_tests.cpp
+    device_pin_validation_tests.cpp
 )
 target_include_directories(inputnext_device_component_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/src/devices"

@@ -74,6 +74,17 @@ connection_target read_pin::target() const noexcept {
     return target_;
 }
 
+result<void> read_pin::validate_live() const noexcept {
+    if (record_ == nullptr || !target_.valid()) {
+        return std::unexpected{error::not_connected};
+    }
+    // The held pin prevents latest from being reset or replaced.
+    if (!record_->latest.has_value() || record_->latest->is_closed()) {
+        return std::unexpected{error::not_connected};
+    }
+    return {};
+}
+
 void read_pin::release() noexcept {
     auto* const record = std::exchange(record_, nullptr);
     target_ = connection_target{};

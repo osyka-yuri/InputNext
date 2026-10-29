@@ -10,7 +10,8 @@ namespace inputnext {
 
 namespace detail {
 struct connection_record;
-}
+struct read_pin_test_access;
+} // namespace detail
 
 struct connection_snapshot final {
     connection_target target{};
@@ -35,10 +36,13 @@ public:
     read_pin& operator=(read_pin&& other) noexcept;
 
     [[nodiscard]] result<connection_snapshot> read() const;
+    // Observes connection closure without locking or extending liveness.
+    [[nodiscard]] result<void> validate_live() const noexcept;
     [[nodiscard]] connection_target target() const noexcept;
     void release() noexcept;
 
 private:
+    friend struct detail::read_pin_test_access;
     friend class read_binding;
     friend class device_registry;
 

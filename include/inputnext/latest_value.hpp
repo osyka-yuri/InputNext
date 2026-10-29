@@ -3,6 +3,7 @@
 #include "error.hpp"
 #include "input_sample.hpp"
 
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 
@@ -20,11 +21,12 @@ public:
 
     [[nodiscard]] result<std::uint64_t> publish(const input_update& update);
     [[nodiscard]] result<published_sample> read() const;
+    [[nodiscard]] bool is_closed() const noexcept;
     void close();
 
 private:
     mutable std::mutex mutex_;
-    bool closed_{};
+    std::atomic<bool> closed_{false};
     bool has_sample_{};
     std::uint64_t revision_{};
     published_sample sample_{};

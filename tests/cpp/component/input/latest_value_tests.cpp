@@ -277,8 +277,11 @@ TEST_CASE("input.latest.exhaustion_preserves_last_sample", "[component][input]")
 
 TEST_CASE("input.latest.closed_rejects_reads_and_publications", "[component][input]") {
     latest_value empty;
+    CHECK_FALSE(empty.is_closed());
     empty.close();
+    CHECK(empty.is_closed());
     empty.close();
+    CHECK(empty.is_closed());
 
     const auto empty_read = empty.read();
     const auto empty_publish = empty.publish(valid_update());
@@ -289,7 +292,9 @@ TEST_CASE("input.latest.closed_rejects_reads_and_publications", "[component][inp
 
     latest_value populated;
     REQUIRE(populated.publish(valid_update()).has_value());
+    CHECK_FALSE(populated.is_closed());
     populated.close();
+    CHECK(populated.is_closed());
 
     const auto closed_read = populated.read();
     const auto closed_publish = populated.publish(valid_update());

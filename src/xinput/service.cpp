@@ -6,6 +6,7 @@
 #include <inputnext/device_identity.hpp>
 #include <inputnext/error.hpp>
 #include <inputnext/focus.hpp>
+#include <inputnext/input_binding.hpp>
 #include <inputnext/xinput_events.hpp>
 #include <inputnext/xinput_types.hpp>
 
@@ -140,6 +141,7 @@ DWORD service::implementation::prepare_state_read(DWORD user_index,
     bool include_guide,
     prepared_state_read& prepared) {
     prepared.include_guide = include_guide;
+    read_binding reader{};
     {
         const auto guard = focus.lock_presentation();
         if (closed) {
@@ -150,7 +152,7 @@ DWORD service::implementation::prepare_state_read(DWORD user_index,
             return ERROR_DEVICE_NOT_CONNECTED;
         }
         prepared.occupant = *position.occupant;
-        prepared.reader = position.reader;
+        reader = position.reader;
         const auto captured_foreground = guard.capture_foreground();
         if (captured_foreground.has_value()) {
             prepared.focus_word = *captured_foreground;
@@ -158,19 +160,18 @@ DWORD service::implementation::prepare_state_read(DWORD user_index,
         prepared.eligible_at_capture = captured_foreground.has_value() && enabled;
     }
 
-    if (!prepared.eligible_at_capture) {
-        return ERROR_SUCCESS;
-    }
-
-    auto captured = prepared.reader.capture();
+    auto captured = reader.capture();
     if (!captured.has_value()) {
         return ERROR_DEVICE_NOT_CONNECTED;
     }
-    prepared.sample_pin.emplace(std::move(*captured));
-    if (prepared.sample_pin->target() != prepared.occupant.target) {
+    prepared.connection_pin = std::move(*captured);
+    if (prepared.connection_pin.target() != prepared.occupant.target) {
         return ERROR_DEVICE_NOT_CONNECTED;
     }
-    const auto sample = prepared.sample_pin->read();
+    if (!prepared.eligible_at_capture) {
+        return ERROR_SUCCESS;
+    }
+    const auto sample = prepared.connection_pin.read();
     if (!sample.has_value() || sample->target != prepared.occupant.target) {
         return ERROR_DEVICE_NOT_CONNECTED;
     }
@@ -181,7 +182,6 @@ DWORD service::implementation::prepare_state_read(DWORD user_index,
 
 DWORD service::implementation::commit_state_read(const prepared_state_read& prepared,
     XINPUT_STATE* output) {
-    std::optional<read_pin> final_pin;
     {
         const auto guard = focus.lock_presentation();
         if (closed || prepared.occupant.user_index >= positions.size()) {
@@ -192,20 +192,9 @@ DWORD service::implementation::commit_state_read(const prepared_state_read& prep
             return ERROR_DEVICE_NOT_CONNECTED;
         }
 
-        if (prepared.sample_pin.has_value()) {
-            if (prepared.sample_pin->target() != prepared.occupant.target ||
-                !prepared.reader.validate_capture().has_value()) {
-                return ERROR_DEVICE_NOT_CONNECTED;
-            }
-        } else {
-            auto final_capture = prepared.reader.capture();
-            if (!final_capture.has_value()) {
-                return ERROR_DEVICE_NOT_CONNECTED;
-            }
-            final_pin.emplace(std::move(*final_capture));
-            if (final_pin->target() != prepared.occupant.target) {
-                return ERROR_DEVICE_NOT_CONNECTED;
-            }
+        if (prepared.connection_pin.target() != prepared.occupant.target ||
+            !prepared.connection_pin.validate_live().has_value()) {
+            return ERROR_DEVICE_NOT_CONNECTED;
         }
 
         const bool active = prepared.eligible_at_capture && enabled &&

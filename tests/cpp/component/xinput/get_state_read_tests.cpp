@@ -144,7 +144,7 @@ TEST_CASE("GetState samples initial focus once when disabled and retains inactiv
     CHECK(prepared.focus_word.state == focus::evidence::foreground);
     CHECK(prepared.focus_word.revision == 1U);
     CHECK(!prepared.eligible_at_capture);
-    CHECK(!prepared.sample_pin.has_value());
+    CHECK(prepared.connection_pin.validate_live().has_value());
 
     XINPUT_STATE state{};
     REQUIRE(
@@ -197,7 +197,7 @@ TEST_CASE("GetState keeps the captured foreground lease across a same-revision r
                 occupant.user_index,
                 false,
                 captured) == ERROR_SUCCESS);
-    REQUIRE(captured.sample_pin.has_value());
+    REQUIRE(captured.connection_pin.validate_live().has_value());
 
     clock.advance(200ms);
     source->release_initial_observation();

@@ -113,13 +113,12 @@ struct service::implementation final {
 
     struct prepared_state_read final {
         assignment occupant;
-        read_binding reader;
         focus::snapshot focus_word{};
         bool eligible_at_capture{};
         bool include_guide{};
         XINPUT_GAMEPAD canonical_gamepad{};
         std::uint64_t sample_revision{};
-        std::optional<read_pin> sample_pin;
+        read_pin connection_pin;
     };
 
     struct prepared_rumble_request final {
