@@ -4,14 +4,14 @@ The x86 and x64 bundles provide `xinput1_3.dll`, `xinput1_4.dll` and `xinput9_1_
 
 ## Build
 
-From an x64 Developer PowerShell:
+Use the [production distribution](distribution.md) for deployment. To build only a development Release bundle, run from an x64 Developer PowerShell:
 
 ```powershell
 cmake --preset windows-x64-release
 cmake --build --preset windows-x64-release --target inputnext_xinput_bundle
 ```
 
-The files are written to `build/windows-x64-release/xinput/`. This directory contains the three XInput DLLs, `inputnext_runtime.dll`, `GameInputRedist.dll` and `GameInputRawInputProxy.exe`. Debug and sanitizer builds use separate build directories; use the ordinary Release bundle for a game.
+The files are written to `build/windows-x64-release/xinput/`. This directory contains the three XInput DLLs, `inputnext_runtime.dll`, `GameInputRedist.dll` and `GameInputRawInputProxy.exe`. Debug and sanitizer builds use separate directories.
 
 For a 32-bit game, run the equivalent commands from an x86 Developer PowerShell:
 

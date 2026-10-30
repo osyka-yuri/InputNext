@@ -21,4 +21,6 @@ owned body PCM and explicit close/acknowledgement for both architectures.
 
 See [development setup](docs/development.md) for toolchain requirements and verification commands.
 
+The [distribution guide](docs/distribution.md) describes production builds, x86/x64 packages and archive verification.
+
 Licensed under the [MIT License](LICENSE). Third-party dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).

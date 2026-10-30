@@ -1,0 +1,13 @@
+{
+  "name": "InputNext",
+  "version": "@PROJECT_VERSION@",
+  "architecture": "@inputnext_compiler_architecture@",
+  "compiler": "MSVC @CMAKE_CXX_COMPILER_VERSION@",
+  "configuration": "Release",
+  "optimization": "LTCG",
+  "pgo": "@INPUTNEXT_PGO_MODE@",
+  "gameinput": "@INPUTNEXT_GAMEINPUT_VERSION@",
+  "tomlplusplus": "@INPUTNEXT_TOML_VERSION@",
+  "source_revision": "unknown",
+  "source_modified": true
+}

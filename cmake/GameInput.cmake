@@ -1,6 +1,5 @@
 include(FetchContent)
 
-set(INPUTNEXT_GAMEINPUT_VERSION "4.0.300")
 FetchContent_Declare(microsoft_gameinput
     URL https://api.nuget.org/v3-flatcontainer/microsoft.gameinput/${INPUTNEXT_GAMEINPUT_VERSION}/microsoft.gameinput.${INPUTNEXT_GAMEINPUT_VERSION}.nupkg
     URL_HASH SHA256=ae7dc3a311466a72ddcfd6c5ccd5b1e917be890658236fa9791e937115ac2d79

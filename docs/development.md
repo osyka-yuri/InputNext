@@ -122,14 +122,14 @@ cmake --build build/windows-x64-no-tests
 
 `INPUTNEXT_BUILD_DIAGNOSTICS` controls the interactive diagnostic independently of tests and defaults to `OFF`. The x86 and x64 development presets enable it; Release and production presets disable it. It requires the GameInput runtime and is separate from the runtime DLLs and XInput bundle.
 
-For a production bundle without tests or interactive diagnostics:
+For production distribution archives without tests or interactive diagnostics:
 
 ```powershell
 cmake --preset windows-x64-production
 cmake --build --preset windows-x64-production
 ```
 
-Use `windows-x86-production` from an x86 Developer PowerShell for the corresponding 32-bit bundle.
+Use `windows-x86-production` from an x86 Developer PowerShell for the corresponding 32-bit archives. See [distribution](distribution.md) for contents and verification.
 
 `INPUTNEXT_BUILD_GAMEINPUT` defaults to `ON` for both architectures. Each build deploys the matching GameInput runtime and Raw Input proxy. Configure a portable-only build explicitly to omit the SDK and diagnostic:
 
@@ -146,7 +146,7 @@ Focus observation and XInput presentation also build for both architectures with
 
 ## XInput bundle
 
-See [XInput DLL bundle](xinput-dll.md) for Release build commands, deployment and manual checks. The bundle is omitted when GameInput is disabled.
+See [distribution](distribution.md) for optimized packages and archive verification, and [XInput DLL bundle](xinput-dll.md) for development Release bundles, deployment and manual checks. The bundle is omitted when GameInput is disabled.
 
 The [Core SDK](core-sdk.md) is exposed by the same runtime. `INPUTNEXT_BUILD_SDK_EXAMPLES=ON` builds its optional C/C++ example separately from the bundle. Pure C and C++ ABI contract checks are included in ordinary tests.
 

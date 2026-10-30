@@ -1,0 +1,19 @@
+file(READ [==[@PROJECT_BINARY_DIR@/distribution/build-info-base.json]==] info)
+find_package(Git QUIET)
+if(Git_FOUND)
+    execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
+        WORKING_DIRECTORY [==[@PROJECT_SOURCE_DIR@]==]
+        OUTPUT_VARIABLE revision OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE git_result)
+    if(git_result EQUAL 0)
+        string(JSON info SET "${info}" source_revision "\"${revision}\"")
+        execute_process(COMMAND "${GIT_EXECUTABLE}" status --porcelain --untracked-files=normal
+            WORKING_DIRECTORY [==[@PROJECT_SOURCE_DIR@]==]
+            OUTPUT_VARIABLE changes RESULT_VARIABLE git_result)
+        if(git_result EQUAL 0 AND changes STREQUAL "")
+            string(JSON info SET "${info}" source_modified false)
+        endif()
+    endif()
+endif()
+set(path "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/build-info.json")
+file(WRITE "${path}" "${info}\n")
+list(APPEND CMAKE_INSTALL_MANIFEST_FILES "${path}")
