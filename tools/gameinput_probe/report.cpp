@@ -1,4 +1,4 @@
-#include "report.hpp"
+#include "gameinput_probe/report.hpp"
 
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/error.hpp>

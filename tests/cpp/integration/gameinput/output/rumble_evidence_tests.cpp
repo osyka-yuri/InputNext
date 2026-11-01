@@ -1,7 +1,7 @@
 #include "connection_test_support.hpp"
 
-#include "rumble_evidence.hpp"
-#include "rumble_sequence.hpp"
+#include "gameinput_probe/output/rumble/evidence.hpp"
+#include "gameinput_probe/output/rumble/sequence.hpp"
 #include <inputnext/gameinput_xinput.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>

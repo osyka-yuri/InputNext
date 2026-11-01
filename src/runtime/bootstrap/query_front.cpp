@@ -1,6 +1,6 @@
 #include "query_front.hpp"
 
-#include "runtime/abi/runtime_api.hpp"
+#include "runtime/abi/xinput/api.hpp"
 
 #include <atomic>
 #include <cstdint>

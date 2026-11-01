@@ -1,4 +1,4 @@
-#include "dualsense_usb_report.hpp"
+#include "gameinput_probe/output/dualsense_usb/report.hpp"
 
 #include <inputnext/output_execution.hpp>
 

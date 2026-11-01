@@ -1,4 +1,4 @@
-#include "dualsense_usb_candidate_selector.hpp"
+#include "gameinput_probe/output/dualsense_usb_candidate_selector.hpp"
 
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_metadata.hpp>

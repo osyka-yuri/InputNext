@@ -1,4 +1,4 @@
-#include "native_prerequisites.hpp"
+#include "probe/native_prerequisites.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

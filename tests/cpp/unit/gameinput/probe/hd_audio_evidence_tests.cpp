@@ -1,6 +1,6 @@
 #include "audio/audio_service.hpp"
-#include "hd_audio_evidence.hpp"
-#include "hd_audio_sequence.hpp"
+#include "gameinput_probe/output/hd_audio/evidence.hpp"
+#include "gameinput_probe/output/hd_audio/sequence.hpp"
 #include "output/playback_test_support.hpp"
 
 #include <inputnext/output_body.hpp>

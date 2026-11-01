@@ -71,7 +71,7 @@ The Address profile requires the MSVC AddressSanitizer component. It disables in
 
 Undefined pins clang-cl 23.1.3 and verifies both compiler-rt library hashes. Its isolated overflow probe must produce the expected UBSan report and terminate with recovery disabled. An uninstrumented or recovering probe fails this check.
 
-The XInput export test checks the complete PE export tables. Default, Release and Address require only the established InputNext exports. Undefined additionally requires the exact compiler-rt name set in `tests/cpp/integration/xinput/dll/ubsan_runtime_exports.hpp`, independently of its ordinal assignment. Prefix masks and unknown symbols are rejected. Review this list and the runtime hashes in `cmake/Sanitizers.cmake` together when updating LLVM.
+The XInput export test checks the complete PE export tables. Default, Release and Address require only the established InputNext exports. Undefined additionally requires the exact compiler-rt name set in `tests/support/abi/ubsan_runtime_exports.hpp`, independently of its ordinal assignment. Prefix masks and unknown symbols are rejected. Review this list and the runtime hashes in `cmake/Sanitizers.cmake` together when updating LLVM.
 
 These profiles also have matching build and test presets, for example:
 
@@ -180,44 +180,19 @@ The formatting check compares normalized line endings. Both formatting and stati
 
 ## Test organization
 
-Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2 tags become CTest labels. Use a descriptive case name and classify tests by their actual dependency boundary:
+Catch2 is the C++ test framework. CTest discovers cases individually, and Catch2 tags become CTest labels. Place cases under `tests/cpp/<level>/<subsystem>` and classify them by their dependency boundary:
 
-- `tests/cpp/unit/input` checks gamepad value validation.
-- `tests/cpp/component/input` checks coherent publication through the production input library.
-- `tests/cpp/component/devices` checks connection ownership, retirement, and concurrency through the production device library. Stress cases have a separate executable and build option.
-- `tests/cpp/unit/output` checks effect values, deadlines, pure arbitration, body route policy, PCM mixing, foreground epoch matching, represented projections, retry timing, and controlled sink synchronization.
-- `tests/cpp/unit/audio` checks endpoint ID bounds, native resource conflicts and audio format policy.
-- `tests/cpp/integration/audio` checks stream setup, render admission, loss and retained ownership with controlled native ports, plus Windows COM affinity without starting hardware output.
-- `tests/cpp/component/output` checks logical contexts, body leases, scalar audio identities, PCM preparation and accounting, and playback permits. Separate engine and executor suites cover native admission, retry, replacement, serialized cleanup, and worker lifecycle.
-- `tests/cpp/integration/output` checks route and playback admission across authority and execution, plus input, focus and XInput progress while control gates, native delivery, PCM preparation or reclamation are blocked.
-- `tests/cpp/unit/profiles` checks TOML decoding, trigger rules and bounded stream reads.
-- `tests/cpp/component/profiles` checks persistent profile ownership, assignments, foreground changes and output priority.
-- `tests/cpp/integration/profiles` checks filesystem loading, path resolution, file sharing and size limits.
-- `tests/cpp/component/focus` checks observation, freshness, publication, and source lifetime with controlled providers. `tests/cpp/integration/focus` checks passive native process observation.
-- `tests/cpp/unit/xinput` checks translation, query projections, key mapping, and repeat tracking. `tests/cpp/component/xinput` checks assignments, packets, eligibility, rumble caching and restoration, prepared event retrieval, Guide waits, and query validation through production bindings and focus observation.
-- `tests/cpp/unit/history` and `tests/cpp/unit/gameinput/clock` check retention values and timestamp arithmetic without the SDK.
-- `tests/cpp/unit/gameinput/output` checks description and creation deadlines without the SDK or workers.
-- `tests/cpp/unit/gameinput/dualsense` checks USB report vectors, trigger layouts, quantization and payload capacities without the SDK.
-- `tests/cpp/component/history` checks reader admission, independent progress, recovery, and reclamation with controlled cursors.
-- `tests/cpp/component/gameinput/history` checks capture and native/Guide merging with a controlled native port. `tests/cpp/component/gameinput/native_history` checks the native cursor through a scripted API seam.
-- `tests/cpp/unit/metadata` checks text bounds, transport policy, and physical capability facts.
-- `tests/cpp/unit/gameinput/native` checks SDK value mapping and raw-output result classification without loading the native runtime.
-- `tests/cpp/unit/gameinput/probe` checks manual sequence progress, native evidence, formatting and text escaping without the SDK or hardware.
-- `tests/cpp/component/metadata` checks Windows metadata selection with a controlled OS port.
-- `tests/cpp/integration/gameinput/publication` checks partial reading merge through the production publisher and device registry.
-- `tests/cpp/integration/gameinput/runtime` checks lifecycle, history, query coordination, raw-report delivery and retained native ownership through production registry and publication components, using a controlled native port.
-- `tests/cpp/integration/gameinput/presentation` checks GameInput/XInput composition, events, waiter shutdown, and metadata and focus progress during blocked native work, using narrow native and metadata ports.
-- `tests/cpp/integration/gameinput/output` checks generic rumble and DualSense USB selection, backend admission and retirement, reconnect, capacity, and diagnostic evidence through production runtime, presentation, authority, and executor components with a controlled native port.
-- `tests/cpp/integration/gameinput/probe` checks child-process supervision, manual window controls, and app-local initialization and cleanup. It requires the diagnostic build option.
-- `tests/cpp/unit/runtime/abi` checks private ABI layout, complete tables and pure argument policy.
-- `tests/cpp/unit/core/abi` checks the public C/C++ header, layouts, calling convention and pure projection.
-- `tests/cpp/integration/core` checks discovery, exact targets, cached latest reads and reader ownership through the production runtime with controlled native ports. Reader delivery, focus, opening and closure have separate suites.
-- `tests/cpp/component/runtime/bootstrap` checks discovery and owner creation without native startup.
-- `tests/cpp/integration/runtime` checks the real ABI adapters and session composition with controlled native ports, including early Enable, concurrent publication, autonomous progress and retained shutdown owners.
-- `tests/cpp/integration/xinput/dll` checks actual PE exports against independent ABI manifests, facade dispatch, provider lifetime and normal executable imports. Its explicit native probe is separate from ordinary tests.
-- `tests/harness` checks the test runner and its failure cleanup.
+| Level | Scope |
+|---|---|
+| Unit | Values, validation, arithmetic, codecs and projections tested in isolation. |
+| Component | A production component exercised with controlled dependencies. |
+| Integration | Production components composed together, or filesystem, native API, DLL and process boundaries. |
 
-The native callback-drain case under `tests/cpp/integration/gameinput/native` requires a physical controller. Run it explicitly as described in [GameInput](gameinput.md). Its exception-handling regression runs an entered callback on a joinable thread in an isolated child process, without a controller. Native runtime, native history adapter, SDK mapping, process-probe and DLL integration tests build for both architectures. Hardware checks remain separate from automatic CTest runs.
+For example, `unit/xinput` checks translation and key mapping, `component/xinput` checks presentation through production bindings and focus observation, and `integration/xinput/dll` checks exports, dispatch, loading and module lifetime. `tests/harness` checks the runner and its failure cleanup.
+
+Controlled native ports let integration suites exercise recovery, ownership and blocked operations without controller hardware. GameInput, native history, SDK mapping, diagnostic supervision and DLL integration tests build for both architectures. Diagnostic supervision tests require `INPUTNEXT_BUILD_DIAGNOSTICS=ON`.
+
+The native callback-drain case under `tests/cpp/integration/gameinput/native` requires a physical controller and runs explicitly as described in [GameInput](gameinput.md). Its exception-handling regression uses an active callback and joinable thread in an isolated child process without a controller. Hardware checks remain separate from automatic CTest runs.
 
 Group cases by behavioral contract and share focused fixtures and synchronization helpers. Concurrency is a test property, not a separate integration level. Workers collect outcomes; assertions run after cleanup and join. Tests use explicit synchronization to reach the required interleaving, with bounded timeouts for failure isolation.
 

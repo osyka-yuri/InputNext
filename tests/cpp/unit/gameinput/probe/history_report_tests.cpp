@@ -1,7 +1,7 @@
-#include "history_evidence.hpp"
+#include "gameinput_probe/input/history/evidence.hpp"
 
-#include "history_report.hpp"
-#include "report.hpp"
+#include "gameinput_probe/input/history/report.hpp"
+#include "gameinput_probe/report.hpp"
 #include <inputnext/history.hpp>
 
 #include <catch2/catch_test_macros.hpp>

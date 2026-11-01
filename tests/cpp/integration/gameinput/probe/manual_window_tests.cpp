@@ -1,6 +1,6 @@
-#include "rumble_window.hpp"
+#include "gameinput_probe/manual/window.hpp"
 
-#include "manual_sequence.hpp"
+#include "gameinput_probe/manual/sequence.hpp"
 #include "values/required_value.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -9,7 +9,7 @@
 
 using inputnext::gameinput_detail::manual_sequence;
 using inputnext::gameinput_detail::manual_step_result;
-using inputnext::gameinput_detail::rumble_window;
+using inputnext::gameinput_detail::manual_window;
 using inputnext::test::required_value;
 
 TEST_CASE("gameinput.probe.manual_window_gates_and_preserves_accepted_step_results",
@@ -18,7 +18,7 @@ TEST_CASE("gameinput.probe.manual_window_gates_and_preserves_accepted_step_resul
     constexpr auto first_readiness = 11U;
     constexpr auto second_readiness = 12U;
     constexpr auto third_readiness = 13U;
-    rumble_window window{{.title = title}};
+    manual_window window{{.title = title}};
     const HWND native = FindWindowW(nullptr, title);
     REQUIRE(native != nullptr);
     const HWND passed = GetDlgItem(native, 103);

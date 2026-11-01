@@ -9,8 +9,8 @@
 #include <inputnext/gamepad_state.hpp>
 #include <inputnext/history.hpp>
 
+#include "gameinput_probe/input/history/evidence.hpp"
 #include <catch2/catch_test_macros.hpp>
-#include <history_evidence.hpp>
 
 #include <cstddef>
 #include <expected>

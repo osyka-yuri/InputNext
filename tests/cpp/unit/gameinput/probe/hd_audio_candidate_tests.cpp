@@ -1,6 +1,6 @@
-#include "hd_audio_candidate.hpp"
+#include "gameinput_probe/output/hd_audio/candidate.hpp"
 
-#include "dualsense_usb_candidate_selector.hpp"
+#include "gameinput_probe/output/dualsense_usb_candidate_selector.hpp"
 #include "output/playback_test_support.hpp"
 
 #include <inputnext/device_metadata.hpp>

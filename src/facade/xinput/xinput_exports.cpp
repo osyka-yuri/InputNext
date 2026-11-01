@@ -1,7 +1,7 @@
 #include "runtime_resolver.hpp"
 
-#include "runtime/abi/runtime_api.hpp"
-#include "runtime/abi/xinput_argument_policy.hpp"
+#include "runtime/abi/xinput/api.hpp"
+#include "runtime/abi/xinput/argument_policy.hpp"
 #include <inputnext/xinput_types.hpp>
 
 #include <Windows.h>

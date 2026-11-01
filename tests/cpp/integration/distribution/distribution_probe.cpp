@@ -1,5 +1,5 @@
+#include "abi/pe_exports.hpp"
 #include "abi_expected_exports.hpp"
-#include "pe_exports.hpp"
 
 #include <Windows.h>
 #include <cstdio>
@@ -12,8 +12,8 @@
 namespace {
 
 [[nodiscard]] bool check_exports(const std::filesystem::path& path,
-    const std::span<const inputnext::xinput_dll_tests::expected_export> exports) {
-    const auto error = inputnext::xinput_dll_tests::verify_pe_exports(path, exports);
+    const std::span<const inputnext::test::abi::expected_export> exports) {
+    const auto error = inputnext::test::abi::verify_pe_exports(path, exports);
     if (!error.empty()) {
         std::cerr << error << '\n';
         return false;
@@ -56,7 +56,7 @@ int wmain(const int argc, wchar_t** argv) try {
         std::cerr << "Usage: inputnext_distribution_probe <absolute-bin-directory>\n";
         return 2;
     }
-    using namespace inputnext::xinput_dll_tests;
+    using namespace inputnext::test::abi;
     const std::filesystem::path directory{argv[1]};
     if (!check_exports(directory / L"inputnext_runtime.dll", runtime_exports) ||
         !check_exports(directory / L"xinput1_3.dll", xinput13_exports) ||

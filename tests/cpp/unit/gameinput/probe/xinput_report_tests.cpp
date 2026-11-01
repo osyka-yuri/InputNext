@@ -1,4 +1,4 @@
-#include "xinput_report.hpp"
+#include "gameinput_probe/input/xinput/report.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

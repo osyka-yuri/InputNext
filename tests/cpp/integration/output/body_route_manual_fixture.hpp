@@ -1,10 +1,10 @@
 #pragma once
 
-#include "cpp/component/output/execution_engine_scope.hpp"
 #include "output/authority_fixture.hpp"
 #include "output/authority_test_access.hpp"
 #include "output/controlled_native_sink.hpp"
 #include "output/execution/engine.hpp"
+#include "output/execution_scope.hpp"
 
 #include <inputnext/native_output.hpp>
 #include <inputnext/output.hpp>

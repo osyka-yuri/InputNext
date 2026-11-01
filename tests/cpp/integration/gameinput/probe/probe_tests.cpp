@@ -1,4 +1,4 @@
-#include "supervisor.hpp"
+#include "gameinput_probe/process/supervisor.hpp"
 
 #include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>

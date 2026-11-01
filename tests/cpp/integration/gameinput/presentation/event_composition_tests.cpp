@@ -14,8 +14,8 @@
 #include <inputnext/xinput_events.hpp>
 #include <inputnext/xinput_types.hpp>
 
+#include "gameinput_probe/input/xinput/event_observer.hpp"
 #include <catch2/catch_test_macros.hpp>
-#include <xinput_event_observer.hpp>
 
 #include <algorithm>
 #include <array>

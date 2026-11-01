@@ -1,7 +1,7 @@
 #include "body_route_test_support.hpp"
-#include "cpp/component/output/execution_engine_scope.hpp"
 #include "output/authority_fixture.hpp"
 #include "output/controlled_native_sink.hpp"
+#include "output/execution_scope.hpp"
 #include "output/release_blocked_write.hpp"
 #include "values/required_value.hpp"
 #include <inputnext/native_output.hpp>

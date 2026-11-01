@@ -8,7 +8,7 @@ inputnext_configure_target(inputnext_core_header_cpp)
 
 add_executable(inputnext_core_projection_tests
     core_projection_tests.cpp
-    "${PROJECT_SOURCE_DIR}/src/runtime/abi/core_api_projection.cpp"
+    "${PROJECT_SOURCE_DIR}/src/runtime/abi/core/projection.cpp"
 )
 target_include_directories(inputnext_core_projection_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/include"

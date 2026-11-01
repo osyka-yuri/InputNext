@@ -1,8 +1,8 @@
-#include "dualsense_usb_evidence.hpp"
+#include "gameinput_probe/output/dualsense_usb/evidence.hpp"
 
-#include "dualsense_usb_sequence.hpp"
-#include "rumble_evidence.hpp"
-#include "rumble_sequence.hpp"
+#include "gameinput_probe/output/dualsense_usb/sequence.hpp"
+#include "gameinput_probe/output/rumble/evidence.hpp"
+#include "gameinput_probe/output/rumble/sequence.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>

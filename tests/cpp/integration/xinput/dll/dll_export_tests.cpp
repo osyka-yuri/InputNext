@@ -1,4 +1,4 @@
-#include "pe_exports.hpp"
+#include "abi/pe_exports.hpp"
 
 #include "abi_expected_exports.hpp"
 #include "filesystem/temporary_directory.hpp"
@@ -9,7 +9,7 @@
 #include <span>
 
 #if defined(INPUTNEXT_TEST_UBSAN_EXPORTS) && INPUTNEXT_TEST_UBSAN_EXPORTS
-#    include "ubsan_runtime_exports.hpp"
+#    include "abi/ubsan_runtime_exports.hpp"
 #endif
 
 #include <catch2/catch_test_macros.hpp>
@@ -30,7 +30,7 @@
 
 namespace {
 
-using namespace inputnext::xinput_dll_tests;
+using namespace inputnext::test::abi;
 
 [[nodiscard]] std::filesystem::path bundle_directory() {
     return std::filesystem::path{INPUTNEXT_XINPUT_BUNDLE_DIRECTORY};
@@ -70,17 +70,16 @@ TEST_CASE("xinput.dll.export_tables_exact", "[integration][xinput][dll][abi]") {
 
 #if defined(INPUTNEXT_TEST_UBSAN_EXPORTS) && INPUTNEXT_TEST_UBSAN_EXPORTS
     SECTION("runtime export names are independent of their ordinals") {
-        inputnext::xinput_dll_tests::pe_export_snapshot actual;
-        const auto error =
-            inputnext::xinput_dll_tests::read_pe_exports(bundle / L"xinput1_4.dll", actual);
+        inputnext::test::abi::pe_export_snapshot actual;
+        const auto error = inputnext::test::abi::read_pe_exports(bundle / L"xinput1_4.dll", actual);
         INFO(error);
         REQUIRE(error.empty());
 
         auto* const first =
-            find_export_named(actual, inputnext::xinput_dll_tests::ubsan_runtime_export_names[0U]);
+            find_export_named(actual, inputnext::test::abi::ubsan_runtime_export_names[0U]);
         REQUIRE(first != nullptr);
-        inputnext::xinput_dll_tests::pe_export_entry* second{};
-        for (const auto name : inputnext::xinput_dll_tests::ubsan_runtime_export_names) {
+        inputnext::test::abi::pe_export_entry* second{};
+        for (const auto name : inputnext::test::abi::ubsan_runtime_export_names) {
             auto* const candidate = find_export_named(actual, name);
             if (candidate != nullptr && candidate != first) {
                 second = candidate;
@@ -91,64 +90,61 @@ TEST_CASE("xinput.dll.export_tables_exact", "[integration][xinput][dll][abi]") {
         REQUIRE(first != second);
         std::swap(first->ordinal, second->ordinal);
 
-        CHECK(inputnext::xinput_dll_tests::verify_public_exports(actual, xinput14_exports).empty());
-        CHECK(inputnext::xinput_dll_tests::verify_runtime_exports(actual,
+        CHECK(inputnext::test::abi::verify_public_exports(actual, xinput14_exports).empty());
+        CHECK(inputnext::test::abi::verify_runtime_exports(actual,
             xinput14_exports,
-            inputnext::xinput_dll_tests::ubsan_runtime_export_names)
+            inputnext::test::abi::ubsan_runtime_export_names)
                 .empty());
     }
 
     SECTION("runtime exports may precede the public ordinal range") {
-        inputnext::xinput_dll_tests::pe_export_snapshot actual;
-        const auto error =
-            inputnext::xinput_dll_tests::read_pe_exports(bundle / L"xinput1_4.dll", actual);
+        inputnext::test::abi::pe_export_snapshot actual;
+        const auto error = inputnext::test::abi::read_pe_exports(bundle / L"xinput1_4.dll", actual);
         INFO(error);
         REQUIRE(error.empty());
 
         auto* const runtime_entry =
-            find_export_named(actual, inputnext::xinput_dll_tests::ubsan_runtime_export_names[0U]);
+            find_export_named(actual, inputnext::test::abi::ubsan_runtime_export_names[0U]);
         REQUIRE(runtime_entry != nullptr);
         REQUIRE(actual.ordinal_base > 1U);
         runtime_entry->ordinal = 1U;
         actual.ordinal_base = 1U;
         ++actual.function_slot_count;
 
-        CHECK(inputnext::xinput_dll_tests::verify_public_exports(actual, xinput14_exports).empty());
-        CHECK(inputnext::xinput_dll_tests::verify_runtime_exports(actual,
+        CHECK(inputnext::test::abi::verify_public_exports(actual, xinput14_exports).empty());
+        CHECK(inputnext::test::abi::verify_runtime_exports(actual,
             xinput14_exports,
-            inputnext::xinput_dll_tests::ubsan_runtime_export_names)
+            inputnext::test::abi::ubsan_runtime_export_names)
                 .empty());
     }
 
     SECTION("unknown same-prefix runtime exports are rejected") {
-        inputnext::xinput_dll_tests::pe_export_snapshot actual;
-        const auto error =
-            inputnext::xinput_dll_tests::read_pe_exports(bundle / L"xinput1_4.dll", actual);
+        inputnext::test::abi::pe_export_snapshot actual;
+        const auto error = inputnext::test::abi::read_pe_exports(bundle / L"xinput1_4.dll", actual);
         INFO(error);
         REQUIRE(error.empty());
 
         auto* const injected =
-            find_export_named(actual, inputnext::xinput_dll_tests::ubsan_runtime_export_names[0U]);
+            find_export_named(actual, inputnext::test::abi::ubsan_runtime_export_names[0U]);
         REQUIRE(injected != nullptr);
         REQUIRE(injected->names.size() == 1U);
         injected->names.emplace_back("__ubsan_unrecognized_export");
 
-        CHECK(inputnext::xinput_dll_tests::verify_public_exports(actual, xinput14_exports).empty());
-        CHECK_FALSE(inputnext::xinput_dll_tests::verify_runtime_exports(actual,
+        CHECK(inputnext::test::abi::verify_public_exports(actual, xinput14_exports).empty());
+        CHECK_FALSE(inputnext::test::abi::verify_runtime_exports(actual,
             xinput14_exports,
-            inputnext::xinput_dll_tests::ubsan_runtime_export_names)
+            inputnext::test::abi::ubsan_runtime_export_names)
                 .empty());
     }
 
     SECTION("unnamed active runtime entries are rejected") {
-        inputnext::xinput_dll_tests::pe_export_snapshot actual;
-        const auto error =
-            inputnext::xinput_dll_tests::read_pe_exports(bundle / L"xinput1_4.dll", actual);
+        inputnext::test::abi::pe_export_snapshot actual;
+        const auto error = inputnext::test::abi::read_pe_exports(bundle / L"xinput1_4.dll", actual);
         INFO(error);
         REQUIRE(error.empty());
 
         auto* const runtime_entry =
-            find_export_named(actual, inputnext::xinput_dll_tests::ubsan_runtime_export_names[0U]);
+            find_export_named(actual, inputnext::test::abi::ubsan_runtime_export_names[0U]);
         REQUIRE(runtime_entry != nullptr);
         const std::uint64_t next_ordinal =
             static_cast<std::uint64_t>(actual.ordinal_base) + actual.function_slot_count;
@@ -158,10 +154,10 @@ TEST_CASE("xinput.dll.export_tables_exact", "[integration][xinput][dll][abi]") {
             .names = {}});
         ++actual.function_slot_count;
 
-        CHECK(inputnext::xinput_dll_tests::verify_public_exports(actual, xinput14_exports).empty());
-        CHECK_FALSE(inputnext::xinput_dll_tests::verify_runtime_exports(actual,
+        CHECK(inputnext::test::abi::verify_public_exports(actual, xinput14_exports).empty());
+        CHECK_FALSE(inputnext::test::abi::verify_runtime_exports(actual,
             xinput14_exports,
-            inputnext::xinput_dll_tests::ubsan_runtime_export_names)
+            inputnext::test::abi::ubsan_runtime_export_names)
                 .empty());
     }
 #endif

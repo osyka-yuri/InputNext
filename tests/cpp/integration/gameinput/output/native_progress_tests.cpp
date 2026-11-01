@@ -2,7 +2,7 @@
 
 #include "cpp/integration/gameinput/runtime/runtime_metadata_test_support.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_test_support.hpp"
-#include "dualsense_usb_evidence.hpp"
+#include "gameinput_probe/output/dualsense_usb/evidence.hpp"
 #include <inputnext/output.hpp>
 #include <inputnext/output_execution.hpp>
 

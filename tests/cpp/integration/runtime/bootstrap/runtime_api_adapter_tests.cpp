@@ -1,5 +1,5 @@
-#include "runtime/abi/runtime_api.hpp"
 #include "runtime/abi/runtime_api_internal.hpp"
+#include "runtime/abi/xinput/api.hpp"
 #include "runtime/bootstrap/bootstrap_owner.hpp"
 #include "runtime_api_test_composition.hpp"
 #include "support/xinput/service_test_access.hpp"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "supervisor.hpp"
+#include "gameinput_probe/process/supervisor.hpp"
 
 #include <chrono>
 #include <filesystem>

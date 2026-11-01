@@ -1,6 +1,6 @@
-#include "runtime/abi/runtime_api.hpp"
+#include "runtime/abi/xinput/api.hpp"
 
-#include "runtime/abi/xinput_argument_policy.hpp"
+#include "runtime/abi/xinput/argument_policy.hpp"
 #include <inputnext/xinput_types.hpp>
 
 #include <catch2/catch_test_macros.hpp>

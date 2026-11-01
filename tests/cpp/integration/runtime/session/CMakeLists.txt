@@ -12,7 +12,7 @@ target_include_directories(inputnext_runtime_session_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
     "${PROJECT_SOURCE_DIR}/tests"
     "${PROJECT_SOURCE_DIR}/tests/support"
-    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe"
+    "${PROJECT_SOURCE_DIR}/tools"
 )
 inputnext_configure_target(inputnext_runtime_session_tests)
 

@@ -1,4 +1,4 @@
-#include "manual_sequence.hpp"
+#include "gameinput_probe/manual/sequence.hpp"
 #include "values/required_value.hpp"
 
 #include <catch2/catch_test_macros.hpp>

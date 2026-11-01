@@ -1,4 +1,4 @@
-include("${CMAKE_CURRENT_LIST_DIR}/abi_test_oracle.cmake")
+include("${ABI_MANIFEST_HELPER}")
 
 set(_valid_manifest [=[{"library":"sample.dll","version":"1","exports":[{"ordinal":1,"name":"SampleGetState","noname":false}]}]=])
 inputnext_validate_abi_manifest("${_valid_manifest}" "sample.dll" _valid_error _valid_count)

@@ -34,18 +34,18 @@ target_include_directories(inputnext_runtime_query_front
 inputnext_configure_target(inputnext_runtime_query_front)
 
 add_library(inputnext_runtime_core OBJECT
-    abi/runtime_api.cpp
-    abi/core_api.cpp
-    abi/core_api_projection.cpp
+    abi/xinput/api.cpp
+    abi/core/api.cpp
+    abi/core/projection.cpp
     abi/session_access.cpp
-    abi/effects_api.cpp
-    abi/effects_api_context.cpp
-    abi/effects_api_mutation.cpp
-    abi/effects_api_progress.cpp
-    abi/effects_projection.cpp
-    abi/effects_projection_body.cpp
-    abi/effects_projection_discrete.cpp
-    abi/effects_projection_progress.cpp
+    abi/effects/api.cpp
+    abi/effects/api_context.cpp
+    abi/effects/api_mutation.cpp
+    abi/effects/api_progress.cpp
+    abi/effects/projection.cpp
+    abi/effects/projection_body.cpp
+    abi/effects/projection_discrete.cpp
+    abi/effects/projection_progress.cpp
     bootstrap/bootstrap_owner.cpp
 )
 target_include_directories(inputnext_runtime_core

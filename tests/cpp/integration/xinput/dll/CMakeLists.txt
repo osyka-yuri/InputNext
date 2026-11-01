@@ -23,13 +23,13 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${PROJECT_SOURCE_DIR}/abi/xinput9_1_0.json"
     "${PROJECT_SOURCE_DIR}/abi/inputnext_runtime.json"
 )
-include("${CMAKE_CURRENT_SOURCE_DIR}/abi_test_oracle.cmake")
+include("${PROJECT_SOURCE_DIR}/tests/support/abi/manifest.cmake")
 inputnext_generate_abi_expected_header(
     "${abi_expected_directory}/abi_expected_exports.hpp")
 
 add_library(inputnext_xinput_external_callback_fixture SHARED
-    external_callback_fixture.cpp
-    external_callback_fixture.def
+    fixtures/external_callback_fixture.cpp
+    fixtures/external_callback_fixture.def
 )
 target_include_directories(inputnext_xinput_external_callback_fixture PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
@@ -46,12 +46,12 @@ set_target_properties(inputnext_xinput_external_callback_fixture PROPERTIES
 inputnext_configure_target(inputnext_xinput_external_callback_fixture)
 
 inputnext_add_runtime_fixture(inputnext_xinput_table_fixture
-    table_runtime_fixture.cpp table_runtime_fixture.def table)
+    fixtures/table_runtime_fixture.cpp fixtures/table_runtime_fixture.def table)
 target_link_libraries(inputnext_xinput_table_fixture PRIVATE
     inputnext_xinput_external_callback_fixture)
 function(inputnext_add_malformed_runtime_fixture target directory mode)
     inputnext_add_runtime_fixture(${target}
-        table_runtime_fixture.cpp table_runtime_fixture.def ${directory})
+        fixtures/table_runtime_fixture.cpp fixtures/table_runtime_fixture.def ${directory})
     target_compile_definitions(${target} PRIVATE
         INPUTNEXT_XINPUT_FIXTURE_DEFAULT_QUERY_MODE=${mode})
     target_link_libraries(${target} PRIVATE inputnext_xinput_external_callback_fixture)
@@ -62,25 +62,25 @@ inputnext_add_malformed_runtime_fixture(inputnext_xinput_missing_callback_fixtur
     missing-callback 3)
 inputnext_add_malformed_runtime_fixture(inputnext_xinput_null_table_fixture null-table 4)
 inputnext_add_runtime_fixture(inputnext_xinput_missing_query_fixture
-    table_runtime_fixture.cpp missing_query_runtime_fixture.def missing-query)
+    fixtures/table_runtime_fixture.cpp fixtures/missing_query_runtime_fixture.def missing-query)
 target_link_libraries(inputnext_xinput_missing_query_fixture PRIVATE
     inputnext_xinput_external_callback_fixture)
 inputnext_add_runtime_fixture(inputnext_xinput_ar1_fixture
-    ar1_runtime_fixture.cpp ar1_runtime_fixture.def rejected-pin)
+    fixtures/ar1_runtime_fixture.cpp fixtures/ar1_runtime_fixture.def rejected-pin)
 target_link_libraries(inputnext_xinput_ar1_fixture PRIVATE inputnext_runtime_query_front)
 
 add_executable(inputnext_xinput_dll_probe
-    dll_probe_argument_checks.cpp
-    dll_probe_companion.cpp
-    dll_probe_companion_boundaries.cpp
-    dll_probe_imports.cpp
-    dll_probe_child.cpp
-    dll_probe_core.cpp
-    dll_probe_forwarding.cpp
-    dll_probe_production.cpp
-    dll_probe_provider_addresses.cpp
-    dll_probe_resolver.cpp
-    dll_probe_support.cpp
+    probe/argument_checks.cpp
+    probe/companion.cpp
+    probe/companion_boundaries.cpp
+    probe/main.cpp
+    probe/core.cpp
+    probe/forwarding.cpp
+    probe/imports.cpp
+    probe/production.cpp
+    probe/provider_addresses.cpp
+    probe/resolver.cpp
+    probe/support.cpp
 )
 target_include_directories(inputnext_xinput_dll_probe PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
@@ -90,7 +90,7 @@ target_include_directories(inputnext_xinput_dll_probe PRIVATE
 inputnext_configure_target(inputnext_xinput_dll_probe)
 target_link_libraries(inputnext_xinput_dll_probe PRIVATE inputnext_core_sdk dbghelp)
 
-add_executable(inputnext_xinput_import_probe xinput_import_probe.cpp)
+add_executable(inputnext_xinput_import_probe probe/import_probe.cpp)
 target_link_libraries(inputnext_xinput_import_probe PRIVATE xinput)
 add_dependencies(inputnext_xinput_import_probe inputnext_xinput14)
 target_include_directories(inputnext_xinput_import_probe PRIVATE
@@ -102,10 +102,11 @@ set_target_properties(inputnext_xinput_import_probe PROPERTIES
     PDB_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/import-probe"
 )
 inputnext_configure_target(inputnext_xinput_import_probe)
+
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-    set(import13_definition "${CMAKE_CURRENT_SOURCE_DIR}/xinput13_import_x86.def")
+    set(import13_definition "${CMAKE_CURRENT_SOURCE_DIR}/probe/import13_x86.def")
 else()
-    set(import13_definition "${CMAKE_CURRENT_SOURCE_DIR}/xinput13_import.def")
+    set(import13_definition "${CMAKE_CURRENT_SOURCE_DIR}/probe/import13.def")
 endif()
 # The fixture imports the public GetState ordinal with the caller's native calling convention.
 set(import13_library "${abi_expected_directory}/xinput13-import.lib")
@@ -116,7 +117,7 @@ add_custom_command(OUTPUT "${import13_library}"
     DEPENDS "${import13_definition}"
     VERBATIM
 )
-add_executable(inputnext_xinput13_import_probe xinput_import_probe.cpp "${import13_library}")
+add_executable(inputnext_xinput13_import_probe probe/import_probe.cpp "${import13_library}")
 target_link_libraries(inputnext_xinput13_import_probe PRIVATE "${import13_library}")
 target_compile_definitions(inputnext_xinput13_import_probe PRIVATE INPUTNEXT_XINPUT_IMPORT13=1)
 target_include_directories(inputnext_xinput13_import_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -165,8 +166,8 @@ add_executable(inputnext_xinput_dll_tests
     dll_tests.cpp
     dll_test_support.cpp
     native_prerequisite_tests.cpp
-    pe_exports.cpp
-    pe_export_policy.cpp
+    "${PROJECT_SOURCE_DIR}/tests/support/abi/pe_exports.cpp"
+    "${PROJECT_SOURCE_DIR}/tests/support/abi/pe_export_policy.cpp"
 )
 target_link_libraries(inputnext_xinput_dll_tests PRIVATE
     inputnext_gameinput_probe_support Catch2::Catch2WithMain
@@ -175,7 +176,7 @@ target_include_directories(inputnext_xinput_dll_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
     "${PROJECT_SOURCE_DIR}/include"
     "${PROJECT_SOURCE_DIR}/tests/support"
-    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe"
+    "${PROJECT_SOURCE_DIR}/tools"
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${abi_expected_directory}"
 )
@@ -207,6 +208,7 @@ add_dependencies(inputnext_xinput_dll_tests
 
 add_test(NAME xinput.dll.abi_manifest_malformed_cases
     COMMAND "${CMAKE_COMMAND}"
+        "-DABI_MANIFEST_HELPER=${PROJECT_SOURCE_DIR}/tests/support/abi/manifest.cmake"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/verify_malformed_abi_manifests.cmake")
 set_tests_properties(xinput.dll.abi_manifest_malformed_cases PROPERTIES
     LABELS "integration;xinput;dll;abi"

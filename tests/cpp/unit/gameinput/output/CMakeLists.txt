@@ -26,7 +26,7 @@ target_link_libraries(inputnext_gameinput_output_qualification_unit_tests PRIVAT
 target_include_directories(inputnext_gameinput_output_qualification_unit_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/include"
     "${PROJECT_SOURCE_DIR}/src"
-    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe"
+    "${PROJECT_SOURCE_DIR}/tools"
 )
 inputnext_configure_target(inputnext_gameinput_output_qualification_unit_tests)
 

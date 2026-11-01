@@ -3,7 +3,7 @@
 #include <core/core.hpp>
 #include <input_next_core.h>
 #include <inputnext/gamepad_state.hpp>
-#include <runtime/abi/runtime_api.hpp>
+#include <runtime/abi/xinput/api.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <values/required_value.hpp>

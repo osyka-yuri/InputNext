@@ -10,11 +10,11 @@ inputnext_configure_target(inputnext_effects_header_cpp)
 
 add_executable(inputnext_effects_projection_tests
     effects_projection_tests.cpp
-    "${PROJECT_SOURCE_DIR}/src/runtime/abi/core_api_projection.cpp"
-    "${PROJECT_SOURCE_DIR}/src/runtime/abi/effects_projection.cpp"
-    "${PROJECT_SOURCE_DIR}/src/runtime/abi/effects_projection_body.cpp"
-    "${PROJECT_SOURCE_DIR}/src/runtime/abi/effects_projection_discrete.cpp"
-    "${PROJECT_SOURCE_DIR}/src/runtime/abi/effects_projection_progress.cpp"
+    "${PROJECT_SOURCE_DIR}/src/runtime/abi/core/projection.cpp"
+    "${PROJECT_SOURCE_DIR}/src/runtime/abi/effects/projection.cpp"
+    "${PROJECT_SOURCE_DIR}/src/runtime/abi/effects/projection_body.cpp"
+    "${PROJECT_SOURCE_DIR}/src/runtime/abi/effects/projection_discrete.cpp"
+    "${PROJECT_SOURCE_DIR}/src/runtime/abi/effects/projection_progress.cpp"
 )
 target_include_directories(inputnext_effects_projection_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/include"

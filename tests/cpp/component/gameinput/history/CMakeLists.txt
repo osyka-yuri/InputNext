@@ -7,7 +7,7 @@ add_executable(inputnext_gameinput_history_tests
 target_include_directories(inputnext_gameinput_history_tests
     PRIVATE "${PROJECT_SOURCE_DIR}/src"
         "${PROJECT_SOURCE_DIR}/tests"
-        "${PROJECT_SOURCE_DIR}/tools/gameinput_probe"
+        "${PROJECT_SOURCE_DIR}/tools"
 )
 target_link_libraries(inputnext_gameinput_history_tests
     PRIVATE inputnext_gameinput_history inputnext_history Catch2::Catch2WithMain

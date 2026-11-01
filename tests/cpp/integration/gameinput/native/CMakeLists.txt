@@ -6,7 +6,7 @@ inputnext_deploy_gameinput(inputnext_gameinput_native_worker)
 
 add_executable(inputnext_gameinput_native_tests callback_drain_tests.cpp)
 target_include_directories(inputnext_gameinput_native_tests PRIVATE
-    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe"
+    "${PROJECT_SOURCE_DIR}/tools"
 )
 target_link_libraries(inputnext_gameinput_native_tests PRIVATE
     inputnext_gameinput_probe_support Catch2::Catch2WithMain

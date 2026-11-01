@@ -1,4 +1,4 @@
-#include "xinput_event_report.hpp"
+#include "gameinput_probe/input/xinput/event_report.hpp"
 
 #include <inputnext/xinput.hpp>
 #include <inputnext/xinput_events.hpp>

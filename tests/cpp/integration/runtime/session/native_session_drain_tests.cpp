@@ -1,7 +1,7 @@
 #include "native_session_test_support.hpp"
 
+#include "gameinput_probe/process/supervisor.hpp"
 #include "runtime/session/native_session.hpp"
-#include "supervisor.hpp"
 
 #include <Windows.h>
 #include <catch2/catch_test_macros.hpp>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "runtime/abi/runtime_api.hpp"
+#include "runtime/abi/xinput/api.hpp"
 
 namespace inputnext::xinput_facade_detail {
 

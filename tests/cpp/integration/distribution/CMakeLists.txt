@@ -2,17 +2,18 @@ if(NOT INPUTNEXT_PRODUCTION OR INPUTNEXT_PGO_MODE STREQUAL "Instrument")
     return()
 endif()
 
-set(dll_tests "${PROJECT_SOURCE_DIR}/tests/cpp/integration/xinput/dll")
+set(abi_support "${PROJECT_SOURCE_DIR}/tests/support/abi")
 set(generated "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${generated}")
-include("${dll_tests}/abi_test_oracle.cmake")
+include("${abi_support}/manifest.cmake")
 inputnext_generate_abi_expected_header("${generated}/abi_expected_exports.hpp")
 add_executable(inputnext_distribution_probe
     distribution_probe.cpp
-    "${dll_tests}/pe_exports.cpp"
-    "${dll_tests}/pe_export_policy.cpp"
+    "${abi_support}/pe_exports.cpp"
+    "${abi_support}/pe_export_policy.cpp"
 )
-target_include_directories(inputnext_distribution_probe PRIVATE "${dll_tests}" "${generated}")
+target_include_directories(inputnext_distribution_probe PRIVATE
+    "${PROJECT_SOURCE_DIR}/tests/support" "${generated}")
 
 inputnext_configure_target(inputnext_distribution_probe)
 add_custom_target(inputnext_distribution_checks DEPENDS

@@ -1,6 +1,6 @@
 #include "dll_test_support.hpp"
 
-#include "supervisor.hpp"
+#include "gameinput_probe/process/supervisor.hpp"
 
 #include <algorithm>
 #include <atomic>

@@ -40,7 +40,6 @@
 #ifndef INPUTNEXT_XINPUT_IMPORT_PROBE_PATH
 #    error INPUTNEXT_XINPUT_IMPORT_PROBE_PATH must identify the normally imported probe executable.
 #endif
-
 #ifndef INPUTNEXT_XINPUT13_IMPORT_PROBE_PATH
 #    error INPUTNEXT_XINPUT13_IMPORT_PROBE_PATH must identify the XInput 1.3 import probe executable.
 #endif

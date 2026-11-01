@@ -1,7 +1,7 @@
-#include "rumble_sequence.hpp"
+#include "gameinput_probe/output/rumble/sequence.hpp"
 
-#include "rumble_evidence.hpp"
-#include "rumble_report.hpp"
+#include "gameinput_probe/output/rumble/evidence.hpp"
+#include "gameinput_probe/output/rumble/report.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_execution.hpp>

@@ -4,15 +4,15 @@
 
 #include "cpp/integration/gameinput/runtime/runtime_metadata_test_support.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_test_support.hpp"
-#include "executable_path.hpp"
 #include "filesystem/temporary_directory.hpp"
 #include "gameinput/native/native_gameinput.hpp"
+#include "gameinput_probe/process/executable_path.hpp"
+#include "gameinput_probe/process/supervisor.hpp"
 #include "profiles/model.hpp"
 #include "profiles/parser.hpp"
 #include "runtime/session/native_paths.hpp"
 #include "runtime/session/native_session.hpp"
 #include "runtime/session/native_session_dependencies.hpp"
-#include "supervisor.hpp"
 #include "support/xinput/test_ports.hpp"
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/gamepad_state.hpp>

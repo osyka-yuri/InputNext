@@ -1,10 +1,11 @@
-#include "dualsense_usb_sequence.hpp"
-#include "dualsense_usb_worker.hpp"
-#include "hd_audio_worker.hpp"
-#include "rumble_worker.hpp"
-#include "worker.hpp"
+#include "gameinput_probe/input/worker.hpp"
+#include "gameinput_probe/options.hpp"
+#include "gameinput_probe/output/dualsense_usb/sequence.hpp"
+#include "gameinput_probe/output/dualsense_usb/worker.hpp"
+#include "gameinput_probe/output/hd_audio/worker.hpp"
+#include "gameinput_probe/output/rumble/worker.hpp"
 
-#include "supervisor.hpp"
+#include "gameinput_probe/process/supervisor.hpp"
 
 #include <cstdint>
 #include <cstdio>

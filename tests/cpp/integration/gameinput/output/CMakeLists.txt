@@ -6,12 +6,9 @@ add_executable(inputnext_gameinput_output_tests
     native_progress_tests.cpp
     backend_observation_tests.cpp
     rumble_evidence_tests.cpp
-    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/rumble_evidence.cpp"
-    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/rumble_sequence.cpp"
-    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/dualsense_usb_evidence.cpp"
-)
-set_property(SOURCE rumble_evidence_tests.cpp native_progress_tests.cpp APPEND PROPERTY INCLUDE_DIRECTORIES
-    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe"
+    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/output/rumble/evidence.cpp"
+    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/output/rumble/sequence.cpp"
+    "${PROJECT_SOURCE_DIR}/tools/gameinput_probe/output/dualsense_usb/evidence.cpp"
 )
 target_link_libraries(inputnext_gameinput_output_tests PRIVATE
     inputnext_gameinput_xinput inputnext_gameinput_output Catch2::Catch2WithMain
@@ -20,6 +17,7 @@ target_include_directories(inputnext_gameinput_output_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
     "${PROJECT_SOURCE_DIR}/tests"
     "${PROJECT_SOURCE_DIR}/tests/support"
+    "${PROJECT_SOURCE_DIR}/tools"
 )
 inputnext_configure_target(inputnext_gameinput_output_tests)
 
