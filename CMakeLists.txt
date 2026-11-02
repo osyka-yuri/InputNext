@@ -55,7 +55,7 @@ inputnext_validate_sanitizer_configuration()
 inputnext_prepare_production_configuration()
 
 set(inputnext_gameinput_architecture "${inputnext_compiler_architecture}")
-set(INPUTNEXT_GAMEINPUT_VERSION "4.0.300")
+set(INPUTNEXT_GAMEINPUT_VERSION "4.0.306")
 set(INPUTNEXT_TOML_VERSION "3.4.0")
 option(INPUTNEXT_BUILD_GAMEINPUT "Build the native GameInput runtime" ON)
 option(INPUTNEXT_BUILD_DIAGNOSTICS "Build the interactive GameInput diagnostic" OFF)

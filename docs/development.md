@@ -15,7 +15,7 @@ Project targets define `NOMINMAX`; dependency targets retain their own compile d
 
 MSVC also enables additional conversion, enum-switch and virtual-destructor warnings, `/sdl` security checks, and `/options:strict`. Compiler-specific options are excluded from clang-cl builds.
 
-Catch2 3.16.1 is downloaded and SHA-256 verified during the first test-enabled configure. It builds as C++23 to match the test executables and their standard-library support. Native GameInput builds also download and verify Microsoft GameInput 4.0.300. The profile parser uses toml++ 3.4.0, downloaded with an exact SHA-256 and compiled once with a private TOML 1.0 interface. Subsequent builds reuse dependencies in their build directory. Ordinary tests require no controller hardware. Dependencies are pinned; builds do not silently follow upstream releases.
+Catch2 3.16.1 is downloaded and SHA-256 verified during the first test-enabled configure. It builds as C++23 to match the test executables and their standard-library support. Native GameInput builds also download and verify Microsoft GameInput 4.0.306. The profile parser uses toml++ 3.4.0, downloaded with an exact SHA-256 and compiled once with a private TOML 1.0 interface. Subsequent builds reuse dependencies in their build directory. Ordinary tests require no controller hardware. Dependencies are pinned; builds do not silently follow upstream releases.
 
 The scripts declare PowerShell 7.6 through `#Requires` and run in the process used to invoke them. Use `pwsh -NoProfile -File ./tools/verify.ps1` from an appropriate Developer shell when selecting an installed PowerShell executable explicitly.
 

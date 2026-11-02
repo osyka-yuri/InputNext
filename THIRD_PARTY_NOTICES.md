@@ -21,8 +21,8 @@ The archive URL and SHA-256 are pinned in `cmake/Toml.cmake`.
 
 ## Microsoft GameInput
 
-- Version: 4.0.300
-- Source: https://www.nuget.org/packages/Microsoft.GameInput/4.0.300
+- Version: 4.0.306
+- Source: https://www.nuget.org/packages/Microsoft.GameInput/4.0.306
 - Use: native API headers and the architecture-matched app-local runtime and Raw Input proxy.
 
 The headers use the [MIT License](licenses/third-party/MIT-GameInput.txt). The runtime binaries retain the [Microsoft license terms](licenses/third-party/Microsoft-GameInput.txt) and [third-party notices](licenses/third-party/NOTICE-GameInput.txt) supplied with the package. The package URL and SHA-256 are pinned in `cmake/GameInput.cmake`.
