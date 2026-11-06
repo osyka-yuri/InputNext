@@ -5,7 +5,7 @@
 
 namespace inputnext::test::abi {
 
-// Exact compiler-rt exports for LLVM 23.1.3 on Windows x64.
+// Exact compiler-rt exports for LLVM 23.1.5 on Windows x64.
 // The runtime version and library hashes are pinned in cmake/Sanitizers.cmake.
 inline constexpr std::array<std::string_view, 108U> ubsan_runtime_export_names{{
     "?RegisterUndefinedBehaviorReport@__ubsan@@YAXPEAUUndefinedBehaviorReport@1@@Z",

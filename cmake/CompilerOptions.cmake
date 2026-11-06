@@ -5,8 +5,8 @@ if(INPUTNEXT_ENABLE_CLANG_TIDY)
         OUTPUT_VARIABLE inputnext_clang_tidy_version
         COMMAND_ERROR_IS_FATAL ANY
     )
-    if(NOT inputnext_clang_tidy_version MATCHES "LLVM version 23\\.1\\.3([^0-9.]|$)")
-        message(FATAL_ERROR "InputNext requires clang-tidy 23.1.3.")
+    if(NOT inputnext_clang_tidy_version MATCHES "LLVM version 23\\.1\\.5([^0-9.]|$)")
+        message(FATAL_ERROR "InputNext requires clang-tidy 23.1.5.")
     endif()
 endif()
 

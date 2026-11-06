@@ -1,0 +1,71 @@
+name: Prepare InputNext tools
+description: Build the pinned host CLI and install verified tools in job-local directories.
+inputs:
+  source:
+    description: Trusted checkout root.
+    default: .
+  profile:
+    description: Toolchain profile.
+    default: build
+  compiler:
+    description: Optional Windows compiler family.
+    default: ''
+  cache:
+    description: Cache archive bytes only; disable in release authority jobs.
+    default: 'true'
+outputs:
+  cli:
+    description: Absolute host CLI path.
+    value: ${{ steps.build.outputs.cli }}
+  toolset:
+    description: Absolute verified toolset report path.
+    value: ${{ steps.tools.outputs.toolset }}
+  compiler:
+    description: Absolute compiler report path when requested.
+    value: ${{ steps.tools.outputs.compiler }}
+runs:
+  using: composite
+  steps:
+    - name: Restore tool archives
+      if: ${{ inputs.cache == 'true' }}
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/inputnext-tool-archives
+        key: tool-archives-${{ runner.os }}-${{ hashFiles(format('{0}/.github/ci/toolchain-lock.json', inputs.source)) }}
+    - name: Install pinned Rust
+      shell: bash
+      working-directory: ${{ inputs.source }}
+      run: rustup toolchain install 1.99.1 --profile minimal --component clippy --component rustfmt
+    - name: Build the host CLI from locked source
+      id: build
+      shell: bash
+      working-directory: ${{ inputs.source }}
+      run: |
+        set -euo pipefail
+        target="$RUNNER_TEMP/inputnext-ci-$GITHUB_JOB"
+        cargo build --release --locked --package inputnext-ci --target-dir "$target"
+        suffix=''
+        if [[ "$RUNNER_OS" == 'Windows' ]]; then suffix='.exe'; fi
+        echo "cli=$target/release/inputnext-ci$suffix" >> "$GITHUB_OUTPUT"
+    - name: Install verified tools
+      id: tools
+      shell: bash
+      working-directory: ${{ inputs.source }}
+      env:
+        CI_CLI: ${{ steps.build.outputs.cli }}
+        TOOL_PROFILE: ${{ inputs.profile }}
+        COMPILER_FAMILY: ${{ inputs.compiler }}
+      run: |
+        set -euo pipefail
+        root="$RUNNER_TEMP/inputnext-tools-$GITHUB_JOB"
+        mkdir -p "$root"
+        "$CI_CLI" toolchain install --lock .github/ci/toolchain-lock.json \
+          --cache "$RUNNER_TEMP/inputnext-tool-archives" --destination "$root/installed" \
+          --profile "$TOOL_PROFILE" --report "$root/toolset.json"
+        echo "toolset=$root/toolset.json" >> "$GITHUB_OUTPUT"
+        if [[ -n "$COMPILER_FAMILY" ]]; then
+          "$CI_CLI" toolchain compiler --lock .github/ci/toolchain-lock.json \
+            --toolset "$root/toolset.json" --cache "$RUNNER_TEMP/inputnext-tool-archives" \
+            --destination "$root/compiler" --family "$COMPILER_FAMILY" --report "$root/compiler.json"
+          echo "compiler=$root/compiler.json" >> "$GITHUB_OUTPUT"
+        fi

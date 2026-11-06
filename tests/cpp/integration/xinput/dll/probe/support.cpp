@@ -135,7 +135,9 @@ call_get_state(const HMODULE facade, const DWORD user_index, XINPUT_STATE* const
         } while (Module32NextW(snapshot, &entry) != FALSE);
     }
     const DWORD enumeration_error = GetLastError();
-    require(CloseHandle(snapshot) != FALSE, "could not release the module snapshot");
+    if (CloseHandle(snapshot) == FALSE) {
+        throw std::runtime_error("could not release the module snapshot");
+    }
     require(enumeration_error == ERROR_NO_MORE_FILES,
         "module enumeration failed: " + std::to_string(enumeration_error));
     return count;

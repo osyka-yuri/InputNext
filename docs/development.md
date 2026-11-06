@@ -5,11 +5,13 @@
 - Windows with Visual Studio C++ Build Tools and a Windows SDK.
 - CMake 4.4.4 or newer and Ninja on `PATH`.
 - PowerShell 7.6 or newer for the scripts.
-- clang-format and clang-tidy 23.1.3 on `PATH` for quality checks.
-- clang-cl 23.1.3 on `PATH` for the Undefined native profile.
+- clang-format and clang-tidy 23.1.5 on `PATH` for quality checks.
+- clang-cl 23.1.5 on `PATH` for the Undefined native profile.
 - PSScriptAnalyzer 1.25.0 or newer for PowerShell analysis and formatting.
 
-Use a Visual Studio Developer PowerShell configured for x64 or x86. Configure defaults to `cl` when no compiler is supplied, using the compiler and SDK from that environment. It preserves the resolved compiler on subsequent configurations and rejects a target that does not match the preset. C++23, standard C++ exception handling (`/EHsc`), the static MSVC runtime, strict conformance, and warnings as errors apply to project targets. Dependency sources do not inherit project warning options.
+CI tooling additionally use the Rust version pinned in `rust-toolchain.toml`. Rust is not required to build the native runtime directly. See [continuous integration](ci.md) for automated checks.
+
+Use a Visual Studio Developer PowerShell configured for x64 or x86. CMake defaults to `cl` when no compiler is supplied, using the compiler and SDK from that environment. It preserves the resolved compiler on subsequent configurations and rejects a target that does not match the preset. Project targets use C++23, standard C++ exception handling (`/EHsc`), the static MSVC runtime, strict conformance and warnings as errors. Dependency sources do not inherit project warning options.
 
 Project targets define `NOMINMAX`; dependency targets retain their own compile definitions. Core SDK C consumers build as C17 with the matching C compiler; C++ consumers retain C++23.
 
@@ -69,7 +71,7 @@ Profiles use separate build directories with `-analyze`, `-asan`, or `-ubsan` su
 
 The Address profile requires the MSVC AddressSanitizer component. It disables incompatible runtime checks and incremental linking. Undefined uses the static release CRT and checks C++ sanitizer runtime linkage during configuration. Pure C targets use the C sanitizer runtime; C++ links also require vptr support. These profiles instrument project targets and Catch2; prebuilt SDK binaries are unchanged.
 
-Undefined pins clang-cl 23.1.3 and verifies both compiler-rt library hashes. Its isolated overflow probe must produce the expected UBSan report and terminate with recovery disabled. An uninstrumented or recovering probe fails this check.
+Undefined pins clang-cl 23.1.5 and verifies both compiler-rt library hashes. Its isolated overflow probe must produce the expected UBSan report and terminate with recovery disabled. An uninstrumented or recovering probe fails this check.
 
 The XInput export test checks the complete PE export tables. Default, Release and Address require only the established InputNext exports. Undefined additionally requires the exact compiler-rt name set in `tests/support/abi/ubsan_runtime_exports.hpp`, independently of its ordinal assignment. Prefix masks and unknown symbols are rejected. Review this list and the runtime hashes in `cmake/Sanitizers.cmake` together when updating LLVM.
 
@@ -154,7 +156,7 @@ The [Core SDK](core-sdk.md) is exposed by the same runtime. `INPUTNEXT_BUILD_SDK
 
 The C++ style starts from LLVM with four-space indentation, a 100-column limit, left-aligned pointers and references, and LF line endings. Wrapped parameter and argument lists use one item per line. Includes are sorted within existing blocks; comment text is preserved.
 
-Use the repository's `.clang-format` with clang-format 23.1.3. Check C/C++ source without changing it:
+Use the repository's `.clang-format` with clang-format 23.1.5. Check C/C++ source without changing it:
 
 ```powershell
 clang-format --dry-run --Werror tests/harness/runner_checks.cpp

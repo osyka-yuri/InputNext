@@ -8,7 +8,7 @@ function(inputnext_verify_ubsan_runtime_file directory name expected_sha256)
     file(SHA256 "${runtime_file}" actual_sha256)
     if(NOT actual_sha256 STREQUAL expected_sha256)
         message(FATAL_ERROR
-            "The Undefined profile requires the pinned LLVM 23.1.3 runtime '${name}'. "
+            "The Undefined profile requires the pinned LLVM 23.1.5 runtime '${name}'. "
             "Review the runtime pin and exact DLL export manifest before changing toolchains."
         )
     endif()
@@ -65,8 +65,8 @@ function(inputnext_validate_sanitizer_configuration)
     if(NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
         message(FATAL_ERROR "The Undefined profile requires an x64 clang-cl target.")
     endif()
-    if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "23.1.3")
-        message(FATAL_ERROR "The Undefined profile requires clang-cl 23.1.3 and its pinned runtime.")
+    if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "23.1.5")
+        message(FATAL_ERROR "The Undefined profile requires clang-cl 23.1.5 and its pinned runtime.")
     endif()
 
     set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded PARENT_SCOPE)
@@ -87,11 +87,11 @@ function(inputnext_validate_sanitizer_configuration)
 
     inputnext_verify_ubsan_runtime_file("${runtime_directory}"
         clang_rt.ubsan_standalone-x86_64.lib
-        e0c724adce2d3b5647dd502d1e848484f7b862ba46b377bcb0a46828ac34f7f9
+        c2386e2003cff6d9438c4ddca0ffee000b31a73f72ecb7c416f993ca0590ea6d
     )
     inputnext_verify_ubsan_runtime_file("${runtime_directory}"
         clang_rt.ubsan_standalone_cxx-x86_64.lib
-        66156cb2b370fe6a4155bd3315c6787829609b5e4b3849eb908e0f37735a5692
+        b29d800b59547b30ad4a6dfa3116470e353b6b9e7414db9566d6e070790dd255
     )
 
     include(CheckCXXSourceCompiles)

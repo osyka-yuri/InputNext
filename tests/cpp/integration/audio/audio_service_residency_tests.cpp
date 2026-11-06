@@ -122,10 +122,20 @@ TEST_CASE("audio.resource.retains_container_reservation_until_native_owner_is_jo
         gameinput_test_support::available_container().value);
     const auto inventory = fixture.graph.backing.runtime->connections();
     REQUIRE(inventory.size == 1U);
+    fixture.graph.backing.native->emit(
+        gameinput_test_support::handle(fixture.graph.backing.device_memory[1U]),
+        gameinput_detail::native_device_event::haptic_info_updated);
     REQUIRE(fixture.synchronize_inventory(inventory));
     REQUIRE(fixture.wait_for_backend(second_target));
 
-    REQUIRE(alias_state->wait_until_blocked(native_operation::finish_worker_sta));
+    const bool alias_cleanup_blocked = wait_until(
+        [&fixture, &alias_state] {
+            fixture.graph.backing.maintain();
+            return alias_state->wait_until_blocked(native_operation::finish_worker_sta, 0ms);
+        },
+        5s);
+    INFO(fixture.readiness_diagnostic(second_target));
+    REQUIRE(alias_cleanup_blocked);
     CHECK(alias_state->count_calls(native_operation::get_device) == 0U);
     release_alias_cleanup.release();
     REQUIRE(wait_for_worker_join_attempt(worker_state, 1U));

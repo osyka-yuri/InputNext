@@ -1,0 +1,244 @@
+{
+  "schemaVersion": 1,
+  "tools": {
+    "cmake": {
+      "version": "4.4.5",
+      "platforms": {
+        "windows-x64": {
+          "url": "https://github.com/Kitware/CMake/releases/download/v4.4.5/cmake-4.4.5-windows-x86_64.zip",
+          "sha256": "326c826486d46a23cf9d5a1c9ee3a567d427bdd02c4a34071937a2a675cff004",
+          "archive": "zip",
+          "executable": "cmake-4.4.5-windows-x86_64/bin/cmake.exe",
+          "probeArguments": [
+            "--version"
+          ],
+          "versionRegex": "(?m)^cmake version (?<version>4\\.4\\.5)$"
+        }
+      }
+    },
+    "ninja": {
+      "version": "1.13.2",
+      "platforms": {
+        "windows-x64": {
+          "url": "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip",
+          "sha256": "07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65",
+          "archive": "zip",
+          "executable": "ninja.exe",
+          "probeArguments": [
+            "--version"
+          ],
+          "versionRegex": "(?m)^(?<version>1\\.13\\.2)$"
+        }
+      }
+    },
+    "powershell": {
+      "version": "7.6.9",
+      "platforms": {
+        "windows-x64": {
+          "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.9/PowerShell-7.6.9-win-x64.zip",
+          "sha256": "ce7484804c0f0ad4dda10c958e71acdaf7eebfb22505c1b480f89e0e9f1da94d",
+          "archive": "zip",
+          "executable": "pwsh.exe",
+          "probeArguments": [
+            "-Version"
+          ],
+          "versionRegex": "(?m)^PowerShell (?<version>7\\.6\\.9)$"
+        },
+        "linux-x64": {
+          "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.9/powershell-7.6.9-linux-x64.tar.gz",
+          "sha256": "1da6d6d6035d651f20e70ddee7c4c15ac6ab8b9fb40ee92240d91263f28a884b",
+          "archive": "tar.gz",
+          "executable": "pwsh",
+          "probeArguments": [
+            "-Version"
+          ],
+          "versionRegex": "(?m)^PowerShell (?<version>7\\.6\\.9)$"
+        }
+      }
+    },
+    "llvm": {
+      "version": "23.1.5",
+      "platforms": {
+        "windows-x64": {
+          "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.5/clang%2Bllvm-23.1.5-x86_64-pc-windows-msvc.tar.xz",
+          "sha256": "62fdada7f6fa2b73856486dfbbdba3d2c1882991621615bcb55c60207611c6d4",
+          "archive": "tar.xz",
+          "executable": "clang+llvm-23.1.5-x86_64-pc-windows-msvc/bin/clang-tidy.exe",
+          "probeArguments": [
+            "--version"
+          ],
+          "versionRegex": "(?<version>23\\.1\\.5)"
+        }
+      }
+    },
+    "gh": {
+      "version": "2.103.3",
+      "platforms": {
+        "windows-x64": {
+          "url": "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_windows_amd64.zip",
+          "sha256": "98d0cfa794721665d7973dd728c78aff7bd836d58f10f6d7a03568eccb0a22e0",
+          "archive": "zip",
+          "executable": "bin/gh.exe",
+          "probeArguments": [
+            "--version"
+          ],
+          "versionRegex": "(?m)^gh version (?<version>2\\.103\\.3)(?:\\s|$)"
+        },
+        "linux-x64": {
+          "url": "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz",
+          "sha256": "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d",
+          "archive": "tar.gz",
+          "executable": "gh_2.103.3_linux_amd64/bin/gh",
+          "probeArguments": [
+            "--version"
+          ],
+          "versionRegex": "(?m)^gh version (?<version>2\\.103\\.3)(?:\\s|$)"
+        }
+      }
+    },
+    "actionlint": {
+      "version": "1.7.12",
+      "platforms": {
+        "windows-x64": {
+          "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_windows_amd64.zip",
+          "sha256": "6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9",
+          "archive": "zip",
+          "executable": "actionlint.exe",
+          "probeArguments": [
+            "-version"
+          ],
+          "versionRegex": "(?m)^(?<version>1\\.7\\.12)$"
+        },
+        "linux-x64": {
+          "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz",
+          "sha256": "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+          "archive": "tar.gz",
+          "executable": "actionlint",
+          "probeArguments": [
+            "-version"
+          ],
+          "versionRegex": "(?m)^(?<version>1\\.7\\.12)$"
+        }
+      }
+    },
+    "git-cliff": {
+      "version": "2.14.2",
+      "platforms": {
+        "windows-x64": {
+          "url": "https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.14.2-x86_64-pc-windows-msvc.zip",
+          "sha256": "6ece2112b3f4af462190ecbea4aeb1315fff6af415629b597f84319073c31131",
+          "archive": "zip",
+          "executable": "git-cliff-2.14.2/git-cliff.exe",
+          "probeArguments": [
+            "--version"
+          ],
+          "versionRegex": "(?m)^git-cliff (?<version>2\\.14\\.2)$"
+        },
+        "linux-x64": {
+          "url": "https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.14.2-x86_64-unknown-linux-gnu.tar.gz",
+          "sha256": "24f397c733add5390fdceee3a2088588ab0d5f944ce00d34cb7029b888cf2db4",
+          "archive": "tar.gz",
+          "executable": "git-cliff-2.14.2/git-cliff",
+          "probeArguments": [
+            "--version"
+          ],
+          "versionRegex": "(?m)^git-cliff (?<version>2\\.14\\.2)$"
+        }
+      }
+    },
+    "psscriptanalyzer": {
+      "version": "1.25.0",
+      "platforms": {
+        "windows-x64": {
+          "archive": "zip",
+          "url": "https://www.powershellgallery.com/api/v2/package/PSScriptAnalyzer/1.25.0",
+          "versionRegex": "1\\.25\\.0",
+          "probeArguments": [],
+          "executable": "PSScriptAnalyzer.psd1",
+          "sha256": "14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60"
+        }
+      },
+      "kind": "module"
+    },
+    "shellcheck": {
+      "version": "0.11.0",
+      "platforms": {
+        "windows-x64": {
+          "url": "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip",
+          "sha256": "8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e",
+          "archive": "zip",
+          "executable": "shellcheck.exe",
+          "probeArguments": [
+            "--version"
+          ],
+          "versionRegex": "(?m)^version: (?<version>0\\.11\\.0)$"
+        },
+        "linux-x64": {
+          "url": "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz",
+          "sha256": "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198",
+          "archive": "tar.xz",
+          "executable": "shellcheck-v0.11.0/shellcheck",
+          "probeArguments": [
+            "--version"
+          ],
+          "versionRegex": "(?m)^version: (?<version>0\\.11\\.0)$"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "gameInput": {
+      "sha256": "b7facb296fd0eaed20b3d60dca5345a5fcfa674398b34d6f0dbc2793d502e3c1",
+      "expectedPaths": [
+        "native/include/GameInput.h",
+        "native/bin/x64/GameInputRedist.dll",
+        "native/bin/x86/GameInputRedist.dll"
+      ],
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.gameinput/4.0.306/microsoft.gameinput.4.0.306.nupkg",
+      "extractRoot": ".",
+      "version": "4.0.306",
+      "archive": "zip"
+    },
+    "tomlplusplus": {
+      "sha256": "8517f65938a4faae9ccf8ebb36631a38c1cadfb5efa85d9a72e15b9e97d25155",
+      "expectedPaths": [
+        "include/toml++/toml.hpp"
+      ],
+      "url": "https://codeload.github.com/marzer/tomlplusplus/tar.gz/refs/tags/v3.4.0",
+      "extractRoot": "tomlplusplus-3.4.0",
+      "version": "3.4.0",
+      "archive": "tar.gz"
+    },
+    "codeqlBundle": {
+      "version": "2.27.4",
+      "url": "https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.27.4/codeql-bundle-win64.tar.gz",
+      "sha256": "d67fead75936c55a241d26c25342747b07f94664b104f719dfe291b665508c4d",
+      "archive": "tar.gz",
+      "extractRoot": ".",
+      "expectedPaths": []
+    }
+  },
+  "compilers": {
+    "production": {
+      "toolsetVersion": "14.51.36231",
+      "vcvarsVersion": "14.51.36231",
+      "clFileVersionRegex": "^19\\.51\\.36260\\.0$",
+      "bootstrapper": {
+        "url": "https://download.visualstudio.microsoft.com/download/pr/e5f740e0-92f9-49d7-ab3b-5d17b84108fd/283d526008bf3ac56ec2c6aeb3102b8ca68b9af75643c8f5d0ee58060a1886bb/vs_BuildTools.exe",
+        "sha256": "283d526008bf3ac56ec2c6aeb3102b8ca68b9af75643c8f5d0ee58060a1886bb",
+        "channelUri": "https://aka.ms/vs/18/stable/148791044_219602179/channel",
+        "installChannelUri": "https://aka.ms/vs/18/stable/148791044_219602179/channel"
+      },
+      "components": [
+        "Microsoft.VisualStudio.Component.VC.14.51.x86.x64"
+      ]
+    },
+    "codeql": {
+      "toolsetVersion": "14.44.35207",
+      "vcvarsVersion": "14.44",
+      "clFileVersionRegex": "^19\\.44\\.\\d+\\.\\d+$",
+      "bootstrapper": null,
+      "components": []
+    }
+  }
+}

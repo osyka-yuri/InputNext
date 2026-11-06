@@ -1,0 +1,151 @@
+name: CodeQL
+on:
+  workflow_call:
+    inputs:
+      deep:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  actions:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/bootstrap
+        id: setup
+        with:
+          profile: codeql
+      - name: Locate the verified CodeQL archive
+        id: bundle
+        shell: pwsh
+        env:
+          TOOLSET: ${{ steps.setup.outputs.toolset }}
+        run: |
+          $tools = Get-Content -LiteralPath $env:TOOLSET -Raw | ConvertFrom-Json
+          "path=$($tools.environment.INPUTNEXT_CODEQL_BUNDLE)" >> $env:GITHUB_OUTPUT
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: actions
+          tools: ${{ steps.bundle.outputs.path }}
+          queries: security-extended
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          output: ${{ runner.temp }}/codeql-actions
+          upload: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'never' || 'always' }}
+          upload-database: false
+          category: actions-workflows
+      - name: Evaluate complete SARIF results
+        shell: pwsh
+        env:
+          CI_CLI: ${{ steps.setup.outputs.cli }}
+          RESULTS: ${{ runner.temp }}/codeql-actions
+        run: '& $env:CI_CLI codeql --results $env:RESULTS'
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codeql-actions-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/codeql-actions/
+          if-no-files-found: ignore
+          retention-days: 30
+  cpp:
+    if: ${{ inputs.deep }}
+    runs-on: windows-2022
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x64, x86]
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/bootstrap
+        id: setup
+        with:
+          profile: codeql
+          compiler: codeql
+      - name: Build Catch2 before tracing
+        shell: pwsh
+        env:
+          CI_CLI: ${{ steps.setup.outputs.cli }}
+          TOOLSET: ${{ steps.setup.outputs.toolset }}
+          COMPILER: ${{ steps.setup.outputs.compiler }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: >-
+          $tools = Get-Content -LiteralPath $env:TOOLSET -Raw | ConvertFrom-Json;
+          & $tools.tools.powershell.path -NoProfile -File ./tools/ci/Invoke-Native.ps1
+          -Cli $env:CI_CLI -Toolset $env:TOOLSET -Compiler $env:COMPILER
+          -Check codeql-dependencies -Architecture $env:ARCHITECTURE;
+          exit $LASTEXITCODE
+      - name: Locate the verified CodeQL archive
+        id: bundle
+        shell: pwsh
+        env:
+          TOOLSET: ${{ steps.setup.outputs.toolset }}
+        run: |
+          $tools = Get-Content -LiteralPath $env:TOOLSET -Raw | ConvertFrom-Json
+          "path=$($tools.environment.INPUTNEXT_CODEQL_BUNDLE)" >> $env:GITHUB_OUTPUT
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: cpp
+          build-mode: manual
+          tools: ${{ steps.bundle.outputs.path }}
+          queries: security-extended
+      - name: Capture actual native C++ compilation
+        shell: pwsh
+        env:
+          CI_CLI: ${{ steps.setup.outputs.cli }}
+          TOOLSET: ${{ steps.setup.outputs.toolset }}
+          COMPILER: ${{ steps.setup.outputs.compiler }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: >-
+          $tools = Get-Content -LiteralPath $env:TOOLSET -Raw | ConvertFrom-Json;
+          & $tools.tools.powershell.path -NoProfile -File ./tools/ci/Invoke-Native.ps1
+          -Cli $env:CI_CLI -Toolset $env:TOOLSET -Compiler $env:COMPILER
+          -Check codeql -Architecture $env:ARCHITECTURE;
+          exit $LASTEXITCODE
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          output: ${{ runner.temp }}/codeql-cpp-${{ matrix.architecture }}
+          upload: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'never' || 'always' }}
+          upload-database: false
+          category: native-cpp-${{ matrix.architecture }}
+      - name: Evaluate complete SARIF results
+        shell: pwsh
+        env:
+          CI_CLI: ${{ steps.setup.outputs.cli }}
+          RESULTS: ${{ runner.temp }}/codeql-cpp-${{ matrix.architecture }}
+        run: '& $env:CI_CLI codeql --results $env:RESULTS'
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codeql-cpp-${{ matrix.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/codeql-cpp-${{ matrix.architecture }}/
+          if-no-files-found: ignore
+          retention-days: 30
+  complete:
+    if: always()
+    needs: [actions, cpp]
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require applicable analysis
+        env:
+          ACTIONS_RESULT: ${{ needs.actions.result }}
+          CPP_RESULT: ${{ needs.cpp.result }}
+          DEEP: ${{ inputs.deep }}
+        run: |
+          set -euo pipefail
+          [[ "$ACTIONS_RESULT" == success ]]
+          expected=skipped
+          if [[ "$DEEP" == true ]]; then expected=success; fi
+          [[ "$CPP_RESULT" == "$expected" ]]

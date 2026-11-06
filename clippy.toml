@@ -1,0 +1,2 @@
+# Windows bindings use syn 2; clap and serde use syn 3.
+allowed-duplicate-crates = ["syn"]

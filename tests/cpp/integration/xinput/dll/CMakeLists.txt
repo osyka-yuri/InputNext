@@ -88,6 +88,8 @@ target_include_directories(inputnext_xinput_dll_probe PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 inputnext_configure_target(inputnext_xinput_dll_probe)
+target_compile_definitions(inputnext_xinput_dll_probe PRIVATE
+    INPUTNEXT_TEST_ASAN_IMPORTS=$<STREQUAL:${INPUTNEXT_NATIVE_PROFILE},Address>)
 target_link_libraries(inputnext_xinput_dll_probe PRIVATE inputnext_core_sdk dbghelp)
 
 add_executable(inputnext_xinput_import_probe probe/import_probe.cpp)
@@ -216,6 +218,15 @@ set_tests_properties(xinput.dll.abi_manifest_malformed_cases PROPERTIES
 )
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/results")
+add_test(NAME xinput.dll.import_library_incremental
+    COMMAND "${CMAKE_COMMAND}"
+        "-DBUILD_DIRECTORY=${PROJECT_BINARY_DIR}"
+        "-DBUILD_CONFIGURATION=$<CONFIG>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/verify_import_library_incremental.cmake")
+set_tests_properties(xinput.dll.import_library_incremental PROPERTIES
+    LABELS "integration;xinput;dll;build"
+    RUN_SERIAL TRUE
+    TIMEOUT 150)
 catch_discover_tests(inputnext_xinput_dll_tests
     ADD_TAGS_AS_LABELS
     PROPERTIES TIMEOUT 75

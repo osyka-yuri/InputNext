@@ -1,0 +1,158 @@
+name: Quality
+on:
+  workflow_call:
+    inputs:
+      deep:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  tooling:
+    name: CI tools (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025-vs2026, ubuntu-26.04]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/bootstrap
+        id: setup
+        with:
+          profile: lint
+      - name: Check Rust formatting, lints and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo test --locked --workspace
+      - name: Check workflow syntax and permissions
+        shell: bash
+        env:
+          CI_CLI: ${{ steps.setup.outputs.cli }}
+          TOOLSET: ${{ steps.setup.outputs.toolset }}
+        run: '"$CI_CLI" workflows --root "$GITHUB_WORKSPACE" --toolset "$TOOLSET"'
+  native:
+    name: ${{ matrix.check }} (${{ matrix.architecture }})
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {check: tests, architecture: x64, profile: build}
+          - {check: tests, architecture: x86, profile: build}
+          - {check: quality, architecture: x64, profile: quality}
+          - {check: package, architecture: x64, profile: release}
+          - {check: package, architecture: x86, profile: release}
+          - {check: analyze, architecture: x64, profile: build}
+          - {check: asan, architecture: x64, profile: build}
+          - {check: asan, architecture: x86, profile: build}
+          - {check: ubsan, architecture: x64, profile: quality}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/bootstrap
+        id: setup
+        with:
+          profile: ${{ matrix.profile }}
+          compiler: production
+      - name: Run native checks
+        shell: pwsh
+        env:
+          CI_CLI: ${{ steps.setup.outputs.cli }}
+          TOOLSET: ${{ steps.setup.outputs.toolset }}
+          COMPILER: ${{ steps.setup.outputs.compiler }}
+          CHECK: ${{ matrix.check }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: >-
+          $tools = Get-Content -LiteralPath $env:TOOLSET -Raw | ConvertFrom-Json;
+          & $tools.tools.powershell.path -NoProfile -File ./tools/ci/Invoke-Native.ps1
+          -Cli $env:CI_CLI -Toolset $env:TOOLSET -Compiler $env:COMPILER
+          -Check $env:CHECK -Architecture $env:ARCHITECTURE;
+          exit $LASTEXITCODE
+      - name: Save diagnostics and packages
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-${{ matrix.check }}-${{ matrix.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/ci/
+            build/windows-*/verification/
+            build/windows-*/packages/
+            build/windows-*/tests/**/results/
+            build/windows-*/Testing/Temporary/
+            build/windows-*/package-verification/**/*.log
+          if-no-files-found: ignore
+          retention-days: 14
+  stress:
+    if: ${{ inputs.deep }}
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x64, x86]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/bootstrap
+        id: setup
+        with:
+          compiler: production
+      - name: Run controlled stress tests
+        shell: pwsh
+        env:
+          CI_CLI: ${{ steps.setup.outputs.cli }}
+          TOOLSET: ${{ steps.setup.outputs.toolset }}
+          COMPILER: ${{ steps.setup.outputs.compiler }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: >-
+          $tools = Get-Content -LiteralPath $env:TOOLSET -Raw | ConvertFrom-Json;
+          & $tools.tools.powershell.path -NoProfile -File ./tools/ci/Invoke-Native.ps1
+          -Cli $env:CI_CLI -Toolset $env:TOOLSET -Compiler $env:COMPILER
+          -Check stress -Architecture $env:ARCHITECTURE;
+          exit $LASTEXITCODE
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stress-${{ matrix.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/ci/
+            build/windows-*/verification/
+            build/windows-*/tests/**/results/
+            build/windows-*/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14
+  codeql:
+    uses: ./.github/workflows/codeql.yml
+    with:
+      deep: ${{ inputs.deep }}
+    permissions:
+      contents: read
+      security-events: write
+  complete:
+    if: always()
+    needs: [tooling, native, stress, codeql]
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require all applicable gates
+        env:
+          TOOLING: ${{ needs.tooling.result }}
+          NATIVE: ${{ needs.native.result }}
+          STRESS: ${{ needs.stress.result }}
+          CODEQL: ${{ needs.codeql.result }}
+          DEEP: ${{ inputs.deep }}
+        run: |
+          set -euo pipefail
+          [[ "$TOOLING" == success && "$NATIVE" == success && "$CODEQL" == success ]]
+          expected=skipped
+          if [[ "$DEEP" == true ]]; then expected=success; fi
+          [[ "$STRESS" == "$expected" ]]

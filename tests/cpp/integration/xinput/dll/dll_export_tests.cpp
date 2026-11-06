@@ -2,6 +2,7 @@
 
 #include "abi_expected_exports.hpp"
 #include "filesystem/temporary_directory.hpp"
+#include "probe/import_policy.hpp"
 
 #include <catch2/catch_message.hpp>
 
@@ -10,6 +11,11 @@
 
 #if defined(INPUTNEXT_TEST_UBSAN_EXPORTS) && INPUTNEXT_TEST_UBSAN_EXPORTS
 #    include "abi/ubsan_runtime_exports.hpp"
+
+#    include <algorithm>
+#    include <cstdint>
+#    include <limits>
+#    include <utility>
 #endif
 
 #include <catch2/catch_test_macros.hpp>
@@ -20,6 +26,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <Windows.h>
@@ -60,6 +67,28 @@ void check_exports(const std::filesystem::path& image,
 }
 
 } // namespace
+
+TEST_CASE("xinput.dll.runtime_import_policy", "[integration][xinput][dll][abi]") {
+    using namespace inputnext::xinput_dll_probe;
+    for (const bool address_profile : {false, true}) {
+        CHECK(runtime_dll_import_allowed("KERNEL32.dll", address_profile));
+        CHECK(runtime_symbol_import_allowed("XInputGetState", address_profile));
+        CHECK(!(runtime_dll_import_allowed("clang_rt.UBSAN_standalone.dll", address_profile)));
+        CHECK(!(runtime_symbol_import_allowed("__ubsan_handle_add_overflow", address_profile)));
+        CHECK(!(runtime_symbol_import_allowed(
+            "?RegisterUndefinedBehaviorReport@__ubsan@@YAXPEAUUndefinedBehaviorReport@1@@Z",
+            address_profile)));
+        CHECK(!(runtime_dll_import_allowed("clang_rt.unknown.dll", address_profile)));
+    }
+    CHECK(!(runtime_dll_import_allowed("CLANG_RT.ASAN_DYNAMIC-x86_64.dll", false)));
+    CHECK(!(runtime_symbol_import_allowed("__asan_init", false)));
+    CHECK(!(runtime_symbol_import_allowed("__sanitizer_cov_trace_pc_guard", false)));
+    CHECK(runtime_dll_import_allowed("clang_rt.asan_dynamic-x86_64.dll", true));
+    CHECK(runtime_dll_import_allowed("CLANG_RT.ASAN_DYNAMIC-i386.dll", true));
+    CHECK(!(runtime_dll_import_allowed("clang_rt.tsan_asan.dll", true)));
+    CHECK(runtime_symbol_import_allowed("__asan_init", true));
+    CHECK(runtime_symbol_import_allowed("__sanitizer_cov_trace_pc_guard", true));
+}
 
 TEST_CASE("xinput.dll.export_tables_exact", "[integration][xinput][dll][abi]") {
     const auto bundle = bundle_directory();
