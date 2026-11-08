@@ -15,7 +15,7 @@ use serde_yaml_ng::Value;
 use crate::process::{CommandSpec, Runner, run_checked};
 use crate::tooling::load_toolset;
 
-const WORKFLOWS: [&str; 3] = ["ci.yml", "quality.yml", "codeql.yml"];
+const WORKFLOWS: [&str; 4] = ["ci.yml", "quality.yml", "codeql.yml", "tool-updates.yml"];
 
 // actionlint 1.7.12 predates GitHub's defining-workflow job context.
 const JOB_CONTEXT_DIAGNOSTIC: &str = r#"^property "(workflow_sha|workflow_repository)" is not defined in object type \{check_run_id:"#;

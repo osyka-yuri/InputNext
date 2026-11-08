@@ -12,7 +12,7 @@ The C++ job builds Catch2 before initializing CodeQL. It then traces the project
 
 CodeQL analysis must succeed before the local SARIF check runs. The check rejects malformed reports, failed invocations and findings with `security-severity >= 7.0`. Findings without that score are reported as unclassified and do not block, including those with SARIF `level: error`. Other findings remain in the SARIF artifacts. Fork pull requests never upload to code scanning. Other events use `always`.
 
-Rust is pinned by `rust-toolchain.toml`; dependencies use `Cargo.lock`. Downloaded tools are pinned in `.github/ci/toolchain-lock.json`. Cached archive bytes are hashed on every use, extracted into fresh directories and probed before use.
+Rust is pinned by `rust-toolchain.toml`; dependencies use `Cargo.lock`. Downloaded tools are pinned in `.github/ci/toolchain-lock.json`. Cached archive bytes are hashed on every use, extracted into fresh directories and probed before use. Tool updates produce a report for review; they do not install candidates, edit pins or open pull requests. CodeQL bundle discovery follows release pagination; a failed page or enumeration limit prevents a partial update report. Dependabot proposes separate action and Cargo dependency updates.
 
 Run the tooling checks locally:
 

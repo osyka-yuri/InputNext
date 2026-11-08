@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use inputnext_ci::{codeql, native, process, tooling, workflows};
+use inputnext_ci::{codeql, native, process, tooling, updates, workflows};
 
 #[derive(Debug, Parser)]
 #[command(version, about = "InputNext verification tools")]
@@ -16,6 +16,7 @@ enum Command {
     Toolchain(tooling::ToolchainCommand),
     Native(native::NativeArgs),
     Codeql(codeql::CodeqlArgs),
+    Updates(updates::UpdatesArgs),
     Workflows(workflows::WorkflowArgs),
 }
 
@@ -26,6 +27,7 @@ fn main() -> ExitCode {
         Command::Toolchain(command) => command.run(&mut runner),
         Command::Native(command) => command.run(&mut runner),
         Command::Codeql(command) => command.run(&mut runner),
+        Command::Updates(command) => command.run(&mut runner),
         Command::Workflows(command) => command.run(&mut runner),
     };
     match result {
