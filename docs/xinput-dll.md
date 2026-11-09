@@ -2,6 +2,10 @@
 
 The x86 and x64 bundles provide `xinput1_3.dll`, `xinput1_4.dll` and `xinput9_1_0.dll` through one app-local `inputnext_runtime.dll`. Each uses the [XInput presentation](xinput.md) for GameInput state, events and rumble. Select the architecture of the game executable. Keep all InputNext DLLs in a process from the same bundle.
 
+## Installation
+
+For game installation and removal, see [Install in a game](installation.md). Hosts that load DLLs from another directory must follow the [loader rules](#lifetime-and-compatibility).
+
 ## Build
 
 Use the [production distribution](distribution.md) for deployment. To build only a development Release bundle, run from an x64 Developer PowerShell:
@@ -25,8 +29,6 @@ The x86 files are written to `build/windows-x86-release/xinput/`. The architectu
 See [development setup](development.md) for the toolchain and automated verification commands.
 
 ## Manual game check
-
-Close the game before changing its DLLs. Preserve any existing XInput or InputNext files so that the original setup can be restored. Copy the XInput flavor imported by the game, `inputnext_runtime.dll`, `GameInputRedist.dll` and `GameInputRawInputProxy.exe` beside the game's executable. For `xinput1_3.dll` or `xinput9_1_0.dll`, also copy `xinput1_4.dll` from the same bundle. Do not rename DLLs to select a different flavor. Selecting a different working directory does not change the runtime location.
 
 Launch the game through its usual launcher. Check sticks, triggers and buttons, then rumble, focus loss and return, and controller reconnect. Confirm physical vibration separately from successful API calls. After closing the game, restore the original files if this was a temporary test. Automated loading and ABI tests do not establish game compatibility, physical output or latency.
 

@@ -13,7 +13,7 @@ Use `windows-x86-production` from an x86 Developer shell for 32-bit games. Each 
 - `InputNext-<version>-windows-<architecture>-symbols.zip`: matching PDBs for the four InputNext DLLs.
 - `InputNext-<version>-windows-<architecture>-SHA256SUMS.txt`: SHA-256 of both archives.
 
-The runtime archive keeps the six deployment binaries in `bin/`. Follow [XInput deployment](xinput-dll.md#manual-game-check) to select the game's flavor and its companion files. Preserve existing files before replacing them. The sample `examples/inputnext.toml` is optional; copying it beside the executable enables its trigger effects. Tests, diagnostics, private C++ headers and build tools are excluded.
+The runtime archive keeps the six deployment binaries in `bin/`. Follow the [game installation guide](installation.md) to place them beside the game executable. The sample `examples/inputnext.toml` is optional; copying it beside the executable enables its trigger effects. Tests, diagnostics, private C++ headers and build tools are excluded.
 
 Every archive includes build metadata and a manifest of file hashes. Hashes detect changed or missing contents; they do not authenticate the publisher. Metadata records the compiler, architecture and dependency versions. Git fields describe the source tree at packaging time, not binary provenance. Build before packaging and keep sources unchanged during both operations. Runtime and symbol archives must come from the same build.
 
