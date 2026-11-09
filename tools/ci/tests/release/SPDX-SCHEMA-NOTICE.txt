@@ -1,0 +1,9 @@
+SPDX 2.2.2 JSON Schema
+
+Source: https://raw.githubusercontent.com/spdx/spdx-spec/v2.2.2/schemas/spdx-schema.json
+Attribution: SPDX Workgroup, SPDX Specification version 2.2.2.
+License: Creative Commons Attribution 3.0 Unported (CC BY 3.0),
+https://creativecommons.org/licenses/by/3.0/
+
+The schema file is vendored unchanged from the source URL above. This notice
+retains the source attribution and license URI required for redistribution.

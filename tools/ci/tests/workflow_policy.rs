@@ -24,6 +24,14 @@ fn fixture() -> Result<TempDir> {
             fs::copy(entry.path(), destination.join(entry.file_name()))?;
         }
     }
+    let action = temporary.path().join(".github/actions/source");
+    fs::create_dir_all(&action)?;
+    for name in ["action.yml", "qualify.sh"] {
+        fs::copy(
+            repository()?.join(".github/actions/source").join(name),
+            action.join(name),
+        )?;
+    }
     Ok(temporary)
 }
 
@@ -83,7 +91,7 @@ fn stress_failures_preserve_native_verification_logs() -> Result<()> {
 #[test]
 fn missing_workflow_is_an_error() -> Result<()> {
     let fixture = fixture()?;
-    fs::remove_file(fixture.path().join(".github/workflows/ci.yml"))?;
+    fs::remove_file(fixture.path().join(".github/workflows/release.yml"))?;
     assert!(check_repository(fixture.path()).is_err());
     Ok(())
 }
@@ -117,6 +125,61 @@ fn ordinary_jobs_cannot_gain_release_authority() -> Result<()> {
     let fixture = fixture()?;
     mutate(fixture.path(), "quality.yml", |document| {
         document["permissions"]["id-token"] = Value::from("write");
+    })?;
+    assert!(check_repository(fixture.path()).is_err());
+    Ok(())
+}
+
+#[test]
+fn artifact_names_cannot_replace_immutable_ids() -> Result<()> {
+    let fixture = fixture()?;
+    mutate(fixture.path(), "release.yml", |document| {
+        if let Some(steps) = document["jobs"]["verify"]["steps"].as_sequence_mut() {
+            for step in steps {
+                if step["uses"]
+                    .as_str()
+                    .is_some_and(|name| name.starts_with("actions/download-artifact@"))
+                {
+                    step["with"]["artifact-ids"] = Value::Null;
+                    step["with"]["name"] = Value::from("release-public");
+                }
+            }
+        }
+    })?;
+    assert!(check_repository(fixture.path()).is_err());
+    Ok(())
+}
+
+#[test]
+fn release_helpers_need_qualified_source_and_fresh_builds() -> Result<()> {
+    for change in ["source", "cache", "order"] {
+        let fixture = fixture()?;
+        mutate(fixture.path(), "release-build.yml", |document| {
+            if let Some(steps) = document["jobs"]["sign"]["steps"].as_sequence_mut() {
+                for step in steps {
+                    if change == "order" && step["id"].as_str() == Some("source") {
+                        step["id"] = Value::from("unqualified");
+                    }
+                    if step["uses"].as_str() == Some("./trusted/.github/actions/bootstrap") {
+                        if change == "source" {
+                            step["with"]["source"] = Value::from("downloaded-artifact");
+                        } else if change == "cache" {
+                            step["with"]["cache"] = Value::from("true");
+                        }
+                    }
+                }
+            }
+        })?;
+        assert!(check_repository(fixture.path()).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn privileged_event_shortcuts_are_rejected() -> Result<()> {
+    let fixture = fixture()?;
+    mutate(fixture.path(), "release.yml", |document| {
+        document["on"]["pull_request_target"] = Value::Null;
     })?;
     assert!(check_repository(fixture.path()).is_err());
     Ok(())

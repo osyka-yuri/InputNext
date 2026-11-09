@@ -1,0 +1,22 @@
+name: Qualify workflow source
+description: Establish the immutable workflow checkout before executing its helper code.
+inputs:
+  source:
+    description: Checkout root.
+    default: trusted
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      working-directory: ${{ inputs.source }}
+      env:
+        SOURCE_SHA: ${{ github.sha }}
+        SOURCE_REF: ${{ github.ref }}
+        SOURCE_TAG: ${{ github.ref_name }}
+        SOURCE_REPOSITORY: ${{ github.repository }}
+        CALLER_SHA: ${{ github.workflow_sha }}
+        WORKFLOW_SHA: ${{ job.workflow_sha }}
+        WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+        EVENT: ${{ github.event_name }}
+        REF_TYPE: ${{ github.ref_type }}
+      run: bash "$GITHUB_ACTION_PATH/qualify.sh"

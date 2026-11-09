@@ -9,7 +9,7 @@
 - clang-cl 23.1.5 on `PATH` for the Undefined native profile.
 - PSScriptAnalyzer 1.25.0 or newer for PowerShell analysis and formatting.
 
-CI tooling additionally use the Rust version pinned in `rust-toolchain.toml`. Rust is not required to build the native runtime directly. See [continuous integration](ci.md) for automated checks.
+CI and release tooling additionally use the Rust version pinned in `rust-toolchain.toml`. Rust is not required to build the native runtime directly. See [continuous integration](ci.md) for automated checks and the release process.
 
 Use a Visual Studio Developer PowerShell configured for x64 or x86. CMake defaults to `cl` when no compiler is supplied, using the compiler and SDK from that environment. It preserves the resolved compiler on subsequent configurations and rejects a target that does not match the preset. Project targets use C++23, standard C++ exception handling (`/EHsc`), the static MSVC runtime, strict conformance and warnings as errors. Dependency sources do not inherit project warning options.
 

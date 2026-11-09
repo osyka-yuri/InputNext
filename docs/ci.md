@@ -1,10 +1,10 @@
 # Continuous integration
 
-GitHub Actions runs the same native presets and verification scripts used locally. Workflows define events, permissions, job dependencies and artifacts. The Rust CLI in `tools/ci` verifies tools, plans commands and checks SARIF. PowerShell imports the Windows compiler environment. Build tools are excluded from runtime packages.
+GitHub Actions runs the same native presets and verification scripts used locally. Workflows define events, permissions, job dependencies and artifacts. The Rust CLI in `tools/ci` verifies tools, plans commands, checks SARIF and validates releases. PowerShell imports the Windows compiler environment. Build tools are excluded from runtime packages.
 
 ## Checks
 
-Pull requests and pushes to `main` run Rust formatting, strict Clippy and tests on Windows and Linux, workflow validation, native x64/x86 tests and production-package checks, x64 clang-tidy and MSVC analysis, ASan on both architectures, and x64 UBSan. Feature branches use pull-request checks to avoid duplicate push runs. Weekly runs also enable controlled stress tests and C++ CodeQL capture. CodeQL workflow analysis runs on ordinary checks. Hardware effects and game acceptance remain manual.
+Pull requests and pushes to `main` run Rust formatting, strict Clippy and tests on Windows and Linux, workflow validation, native x64/x86 tests and production-package checks, x64 clang-tidy and MSVC analysis, ASan on both architectures, and x64 UBSan. Feature branches use pull-request checks to avoid duplicate push runs. Weekly and release runs also enable controlled stress tests and C++ CodeQL capture. CodeQL workflow analysis runs on ordinary checks. Hardware effects and game acceptance remain manual.
 
 The lint toolset pins ShellCheck for both hosts. Actionlint checks Bash embedded in workflows; the same command checks Bash in composite actions and `.sh` files under `.github` and `tools`. Failed external commands retain bounded stdout and stderr tails without logging their arguments or environment.
 
@@ -23,5 +23,15 @@ cargo test --locked --workspace
 ```
 
 Use `cargo run --locked -p inputnext-ci -- --help` for commands. `native --plan` prints the selected commands without building. Native runs require a verified toolset and the architecture-matched Visual Studio environment; `tools/ci/Invoke-Native.ps1` imports the compiler report and invokes that command. Existing `tools/verify.ps1` remains available from a Developer PowerShell.
+
+## Releases
+
+Only a stable `vX.Y.Z` tag reachable from `main` can enter release jobs. Its version must match the root CMake project and exactly one nonempty `CHANGELOG.md` section. Write and review that section before tagging; a release without notes is rejected. Manual workflow dispatch is read-only.
+
+The build job uses read-only repository permissions and verifies runtime and symbol packages for both architectures. Release preparation produces two runtime SPDX documents, a combined checksum file, and private source/run metadata. A separate signer validates these artifacts and creates provenance and SBOM attestations. Verification checks signatures, source/workflow/run identity, exact subjects, archive contents and SPDX agreement. The draft writer repeats validation before uploading.
+
+Signer, verifier and writer compile the helper from qualified immutable workflow source in fresh job-local directories. They do not execute builder artifacts or packaged examples. Handoffs use immutable artifact IDs; private notes and metadata remain separate from the ten public assets.
+
+The writer creates a draft and uploads missing approved assets. It never publishes, clobbers assets, or changes an already published release. A complete identical retry performs no writes; changed tags, conflicting drafts and mismatched assets fail. `release draft --dry-run` validates inputs and reports the proposed writes.
 
 Workflow syntax checks allow GitHub's documented `job.workflow_sha` and `job.workflow_repository` fields and the hosted `ubuntu-26.04` label, which actionlint 1.7.12 does not yet recognize. Other diagnostics remain errors. Review these exceptions when updating actionlint.

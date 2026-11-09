@@ -1,10 +1,10 @@
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use inputnext_ci::{codeql, native, process, tooling, updates, workflows};
+use inputnext_ci::{codeql, native, process, release, tooling, updates, workflows};
 
 #[derive(Debug, Parser)]
-#[command(version, about = "InputNext verification tools")]
+#[command(version, about = "InputNext verification and release tools")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -18,6 +18,8 @@ enum Command {
     Codeql(codeql::CodeqlArgs),
     Updates(updates::UpdatesArgs),
     Workflows(workflows::WorkflowArgs),
+    #[command(subcommand)]
+    Release(release::ReleaseCommand),
 }
 
 fn main() -> ExitCode {
@@ -29,6 +31,7 @@ fn main() -> ExitCode {
         Command::Codeql(command) => command.run(&mut runner),
         Command::Updates(command) => command.run(&mut runner),
         Command::Workflows(command) => command.run(&mut runner),
+        Command::Release(command) => command.run(&mut runner),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

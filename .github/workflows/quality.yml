@@ -31,7 +31,7 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy --locked --workspace --all-targets -- -D warnings
           cargo test --locked --workspace
-      - name: Check workflow syntax and permissions
+      - name: Check workflow syntax and release wiring
         shell: bash
         env:
           CI_CLI: ${{ steps.setup.outputs.cli }}

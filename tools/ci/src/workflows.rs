@@ -1,4 +1,4 @@
-//! Repository-specific workflow syntax and permission checks.
+//! Repository-specific workflow syntax and authority checks.
 
 mod shell;
 
@@ -15,12 +15,19 @@ use serde_yaml_ng::Value;
 use crate::process::{CommandSpec, Runner, run_checked};
 use crate::tooling::load_toolset;
 
-const WORKFLOWS: [&str; 4] = ["ci.yml", "quality.yml", "codeql.yml", "tool-updates.yml"];
+const WORKFLOWS: [&str; 6] = [
+    "ci.yml",
+    "quality.yml",
+    "codeql.yml",
+    "release-build.yml",
+    "release.yml",
+    "tool-updates.yml",
+];
 
 // actionlint 1.7.12 predates GitHub's defining-workflow job context.
 const JOB_CONTEXT_DIAGNOSTIC: &str = r#"^property "(workflow_sha|workflow_repository)" is not defined in object type \{check_run_id:"#;
 
-/// Validate workflow syntax and permissions.
+/// Validate workflow syntax and the repository's release authority boundaries.
 #[derive(Debug, Args)]
 pub struct WorkflowArgs {
     #[arg(long)]
@@ -57,15 +64,15 @@ impl WorkflowArgs {
             },
         )?;
         shell::check(&root, tools.executable("shellcheck")?, runner)?;
-        println!("Workflow and Bash checks passed.");
+        println!("Workflow, Bash and release authority checks passed.");
         Ok(())
     }
 }
 
-/// Check the maintained workflows without running external tools.
+/// Check the six maintained workflows without running external tools.
 ///
 /// # Errors
-/// Returns an error for missing files, invalid YAML or unsafe workflow wiring.
+/// Returns an error for missing files, invalid YAML or unsafe release wiring.
 pub fn check_repository(root: &Path) -> Result<()> {
     for name in WORKFLOWS {
         let path = root.join(".github/workflows").join(name);
@@ -73,6 +80,39 @@ pub fn check_repository(root: &Path) -> Result<()> {
         let workflow: Value = serde_yaml_ng::from_str(&text).context("parse workflow YAML")?;
         check_workflow(name, &workflow)?;
     }
+    check_bootstrap(root)?;
+    Ok(())
+}
+
+fn check_bootstrap(root: &Path) -> Result<()> {
+    let source: Value = serde_yaml_ng::from_str(&fs::read_to_string(
+        root.join(".github/actions/source/action.yml"),
+    )?)?;
+    let guard = &source["runs"]["steps"][0];
+    for (key, context) in [
+        ("SOURCE_SHA", "${{ github.sha }}"),
+        ("SOURCE_REF", "${{ github.ref }}"),
+        ("SOURCE_TAG", "${{ github.ref_name }}"),
+        ("SOURCE_REPOSITORY", "${{ github.repository }}"),
+        ("CALLER_SHA", "${{ github.workflow_sha }}"),
+        ("WORKFLOW_SHA", "${{ job.workflow_sha }}"),
+        ("WORKFLOW_REPOSITORY", "${{ job.workflow_repository }}"),
+        ("EVENT", "${{ github.event_name }}"),
+        ("REF_TYPE", "${{ github.ref_type }}"),
+    ] {
+        ensure!(
+            guard["env"][key].as_str() == Some(context),
+            "bootstrap must obtain {key} from workflow context"
+        );
+    }
+    ensure!(
+        guard["run"].as_str() == Some("bash \"$GITHUB_ACTION_PATH/qualify.sh\""),
+        "source guard must run the reviewed script"
+    );
+    ensure!(
+        root.join(".github/actions/source/qualify.sh").is_file(),
+        "source guard is missing"
+    );
     Ok(())
 }
 
@@ -100,6 +140,28 @@ fn check_workflow(name: &str, workflow: &Value) -> Result<()> {
         let job_name = job_name
             .as_str()
             .context("job identifier must be a string")?;
+        let signing = name == "release-build.yml" && job_name == "sign";
+        let writing = name == "release.yml" && job_name == "draft";
+        let forwarding = name == "release.yml" && job_name == "build-and-attest";
+        if forwarding {
+            ensure!(
+                job["uses"].as_str() == Some("./.github/workflows/release-build.yml"),
+                "release authority may only be forwarded to the local builder workflow"
+            );
+        }
+        if signing || forwarding {
+            ensure!(
+                job["permissions"]["id-token"].as_str() == Some("write")
+                    && job["permissions"]["attestations"].as_str() == Some("write"),
+                "signing requires its explicit narrow permissions"
+            );
+        }
+        if writing {
+            ensure!(
+                job["permissions"]["contents"].as_str() == Some("write"),
+                "draft writer needs explicit contents permission"
+            );
+        }
         if let Some(permissions) = job["permissions"].as_mapping() {
             for (permission, level) in permissions {
                 let permission = permission.as_str().context("permission must be a string")?;
@@ -108,19 +170,32 @@ fn check_workflow(name: &str, workflow: &Value) -> Result<()> {
                     .context("permission level must be a string")?;
                 if level == "write" {
                     ensure!(
-                        permission == "security-events"
-                            && matches!(name, "codeql.yml" | "quality.yml" | "ci.yml"),
+                        match permission {
+                            "contents" => writing,
+                            "id-token" | "attestations" => signing || forwarding,
+                            "security-events" =>
+                                name == "codeql.yml"
+                                    || name == "quality.yml"
+                                    || name == "ci.yml"
+                                    || name == "release.yml",
+                            _ => false,
+                        },
                         "{name}/{job_name}: unexpected write permission {permission}"
                     );
                 }
             }
         }
-        check_steps(name, job_name, job)?;
+        check_steps(
+            name,
+            job_name,
+            job,
+            signing || writing || (name == "release.yml" && job_name == "verify"),
+        )?;
     }
     Ok(())
 }
 
-fn check_steps(name: &str, job_name: &str, job: &Value) -> Result<()> {
+fn check_steps(name: &str, job_name: &str, job: &Value, privileged: bool) -> Result<()> {
     let Some(steps) = job["steps"].as_sequence() else {
         ensure!(
             job["uses"].as_str().is_some(),
@@ -128,7 +203,12 @@ fn check_steps(name: &str, job_name: &str, job: &Value) -> Result<()> {
         );
         return Ok(());
     };
+    let mut source_checked = false;
+    let mut trusted_bootstrap = false;
     for step in steps {
+        if step["id"].as_str() == Some("source") {
+            source_checked = step["uses"].as_str() == Some("./trusted/.github/actions/source");
+        }
         let Some(action) = step["uses"].as_str() else {
             continue;
         };
@@ -162,6 +242,32 @@ fn check_steps(name: &str, job_name: &str, job: &Value) -> Result<()> {
                 "{name}/{job_name}: artifact download must use immutable IDs and reject digest drift"
             );
         }
+        if privileged {
+            ensure!(
+                !action.starts_with("actions/cache"),
+                "privileged jobs must not restore executable caches"
+            );
+            if action.ends_with("/.github/actions/bootstrap") {
+                ensure!(
+                    source_checked
+                        && action == "./trusted/.github/actions/bootstrap"
+                        && step["with"]["source"].as_str() == Some("trusted")
+                        && step["with"]["cache"].as_str() == Some("false"),
+                    "release helper must be compiled from qualified workflow source without executable caches"
+                );
+                trusted_bootstrap = true;
+            }
+        }
+    }
+    if privileged {
+        ensure!(
+            source_checked && trusted_bootstrap,
+            "{name}/{job_name}: missing qualified source bootstrap"
+        );
+        ensure!(
+            job["if"].as_str().is_some(),
+            "privileged job requires an explicit admission condition"
+        );
     }
     Ok(())
 }
