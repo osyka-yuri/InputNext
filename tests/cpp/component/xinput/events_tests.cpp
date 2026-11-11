@@ -136,6 +136,194 @@ TEST_CASE("GetKeystroke preserves standard argument, rotation, and output behavi
     CHECK(output.Flags == XINPUT_KEYSTROKE_KEYUP);
 }
 
+TEST_CASE("history gap returns a cancellation for a delivered key whose queued up was lost",
+    "[component][xinput][events][recovery]") {
+    manual_focus_fixture focus_state;
+    registry_fixture devices;
+    metadata_source metadata;
+    controlled_event_source events;
+    xinput::service service{focus_state.observer(), metadata, events, qpc_frequency};
+    const auto connection = devices.add();
+    const auto occupant = assign(service, connection);
+    events.enqueue(occupant.user_index,
+        initial_batch(connection.connection.target, 131U, {}, 100U));
+    service.pump_events(occupant.user_index, focus_state.now());
+
+    events.enqueue(occupant.user_index,
+        history_events(connection.connection.target,
+            event_stream_id{131U},
+            2U,
+            {{with_buttons(static_cast<button_mask>(gamepad_button::south)), 200U}},
+            {},
+            200U));
+    service.pump_events(occupant.user_index, focus_state.now());
+    XINPUT_KEYSTROKE output{};
+    REQUIRE(service.get_keystroke(xinput::flavor::v1_4, occupant.user_index, 0U, &output) ==
+            ERROR_SUCCESS);
+    CHECK(output.VirtualKey == 0x5800U);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
+
+    events.enqueue(occupant.user_index,
+        history_events(connection.connection.target,
+            event_stream_id{131U},
+            3U,
+            {{{}, 300U}},
+            {},
+            300U));
+    service.pump_events(occupant.user_index, focus_state.now());
+
+    auto recovery = initial_batch(connection.connection.target, 132U, {}, 400U);
+    recovery.reset = history_reset::history_gap;
+    events.enqueue(occupant.user_index, recovery);
+    service.pump_events(occupant.user_index, focus_state.now());
+    output = {};
+    CHECK(service.get_keystroke(xinput::flavor::v1_4, occupant.user_index, 0U, &output) ==
+          ERROR_SUCCESS);
+    CHECK(output.VirtualKey == 0x5800U);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYUP);
+    CHECK(service.get_keystroke(xinput::flavor::v1_4, occupant.user_index, 0U, &output) ==
+          ERROR_EMPTY);
+}
+
+TEST_CASE("successive history gaps cancel and restore a key through the service",
+    "[component][xinput][events][recovery]") {
+    manual_focus_fixture focus_state;
+    registry_fixture devices;
+    metadata_source metadata;
+    controlled_event_source events;
+    xinput::service service{focus_state.observer(), metadata, events, qpc_frequency};
+    const auto connection = devices.add();
+    const auto occupant = assign(service, connection);
+    events.enqueue(occupant.user_index,
+        initial_batch(connection.connection.target, 135U, {}, 100U));
+    service.pump_events(occupant.user_index, focus_state.now());
+
+    events.enqueue(occupant.user_index,
+        history_events(connection.connection.target,
+            event_stream_id{135U},
+            2U,
+            {{with_buttons(static_cast<button_mask>(gamepad_button::south)), 200U}},
+            {},
+            200U));
+    service.pump_events(occupant.user_index, focus_state.now());
+    XINPUT_KEYSTROKE output{};
+    REQUIRE(service.get_keystroke(xinput::flavor::v1_4, occupant.user_index, 0U, &output) ==
+            ERROR_SUCCESS);
+    CHECK(output.VirtualKey == 0x5800U);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
+
+    auto released = initial_batch(connection.connection.target, 136U, {}, 300U);
+    released.reset = history_reset::history_gap;
+    events.enqueue(occupant.user_index, released);
+    service.pump_events(occupant.user_index, focus_state.now());
+
+    auto held = initial_batch(connection.connection.target,
+        137U,
+        with_buttons(static_cast<button_mask>(gamepad_button::south)),
+        400U);
+    held.reset = history_reset::history_gap;
+    events.enqueue(occupant.user_index, held);
+    service.pump_events(occupant.user_index, focus_state.now());
+
+    output = {};
+    REQUIRE(service.get_keystroke(xinput::flavor::v1_4, occupant.user_index, 0U, &output) ==
+            ERROR_SUCCESS);
+    CHECK(output.VirtualKey == 0x5800U);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYUP);
+    output = {};
+    REQUIRE(service.get_keystroke(xinput::flavor::v1_4, occupant.user_index, 0U, &output) ==
+            ERROR_SUCCESS);
+    CHECK(output.VirtualKey == 0x5800U);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
+    CHECK(service.get_keystroke(xinput::flavor::v1_4, occupant.user_index, 0U, &output) ==
+          ERROR_EMPTY);
+}
+
+TEST_CASE("reader and open failures preserve delivered keys until a valid recovery baseline",
+    "[component][xinput][events][recovery]") {
+    manual_focus_fixture focus_state;
+    registry_fixture devices;
+    metadata_source metadata;
+    controlled_event_source events;
+    xinput::service service{focus_state.observer(), metadata, events, qpc_frequency};
+    const auto connection = devices.add();
+    const auto occupant = assign(service, connection);
+    events.enqueue(occupant.user_index,
+        initial_batch(connection.connection.target, 133U, {}, 100U));
+    service.pump_events(occupant.user_index, focus_state.now());
+
+    events.enqueue(occupant.user_index,
+        history_events(connection.connection.target,
+            event_stream_id{133U},
+            2U,
+            {{with_buttons(static_cast<button_mask>(gamepad_button::south)), 200U}},
+            {},
+            200U));
+    service.pump_events(occupant.user_index, focus_state.now());
+    XINPUT_KEYSTROKE output{};
+    REQUIRE(service.get_keystroke(xinput::flavor::v1_4, occupant.user_index, 0U, &output) ==
+            ERROR_SUCCESS);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
+
+    events.enqueue(occupant.user_index,
+        history_events(connection.connection.target,
+            event_stream_id{133U},
+            3U,
+            {{{}, 300U}},
+            history_failure{.code = history_error::provider_failure}));
+    service.pump_events(occupant.user_index, focus_state.now());
+    CHECK_FALSE(events.is_open(occupant.user_index));
+
+    events.fail_next_open(history_failure{.code = history_error::provider_failure});
+    service.pump_events(occupant.user_index, focus_state.now());
+
+    service.pump_events(occupant.user_index, focus_state.now());
+    auto recovery = initial_batch(connection.connection.target, 134U, {}, 400U);
+    recovery.reset = history_reset::history_gap;
+    events.enqueue(occupant.user_index, recovery);
+    service.pump_events(occupant.user_index, focus_state.now());
+    output = {};
+    CHECK(service.get_keystroke(xinput::flavor::v1_4, occupant.user_index, 0U, &output) ==
+          ERROR_SUCCESS);
+    CHECK(output.VirtualKey == 0x5800U);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYUP);
+}
+
+TEST_CASE("full assignment teardown forgets delivered keys before the next baseline",
+    "[component][xinput][events][recovery][lifecycle]") {
+    manual_focus_fixture focus_state;
+    registry_fixture devices;
+    metadata_source metadata;
+    controlled_event_source events;
+    xinput::service service{focus_state.observer(), metadata, events, qpc_frequency};
+    const auto first = devices.add();
+    const auto second = devices.add();
+    const auto occupant = assign(service, first);
+    events.enqueue(occupant.user_index, initial_batch(first.connection.target, 141U, {}, 100U));
+    service.pump_events(occupant.user_index, focus_state.now());
+    events.enqueue(occupant.user_index,
+        history_events(first.connection.target,
+            event_stream_id{141U},
+            2U,
+            {{with_buttons(static_cast<button_mask>(gamepad_button::south)), 200U}},
+            {},
+            200U));
+    service.pump_events(occupant.user_index, focus_state.now());
+
+    XINPUT_KEYSTROKE output{};
+    REQUIRE(service.get_keystroke(xinput::flavor::v1_4, occupant.user_index, 0U, &output) ==
+            ERROR_SUCCESS);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
+    REQUIRE(service.unassign(occupant).has_value());
+
+    const auto replacement = assign(service, second);
+    events.enqueue(replacement.user_index, initial_batch(second.connection.target, 142U, {}, 300U));
+    service.pump_events(replacement.user_index, focus_state.now());
+    output = {};
+    CHECK(service.get_keystroke(xinput::flavor::v1_4, replacement.user_index, 0U, &output) ==
+          ERROR_EMPTY);
+}
+
 TEST_CASE("qualified batches cut positive failure prefixes and preserve zero-prefix busy progress",
     "[component][xinput][events][recovery]") {
     manual_focus_fixture focus_state;

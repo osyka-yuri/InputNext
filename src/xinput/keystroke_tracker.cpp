@@ -13,6 +13,8 @@
 namespace inputnext::xinput::detail {
 namespace {
 
+static_assert(keystroke_tracker::queue_capacity >= keystroke_key_count);
+
 struct tick_interval final {
     std::uint64_t floor{};
     std::uint64_t ceil{};
@@ -125,6 +127,9 @@ std::optional<keystroke_repeat_timing> keystroke_repeat_timing::from_qpc_frequen
 void keystroke_tracker::clear() noexcept {
     keys_ = {};
     held_keys_ = 0U;
+    delivered_keys_ = 0U;
+    pending_cancellations_ = 0U;
+    pending_reactivations_ = 0U;
     queue_ = {};
     queue_head_ = 0U;
     queue_size_ = 0U;
@@ -132,21 +137,46 @@ void keystroke_tracker::clear() noexcept {
 }
 
 keystroke_operation_result keystroke_tracker::silent_seed(keystroke_sample sample) noexcept {
+    if (sample.qpc == 0U || (last_qpc_ != 0U && sample.qpc < last_qpc_)) {
+        return keystroke_operation_result::invalid_time;
+    }
+    clear();
+    return rebase(sample);
+}
+
+keystroke_operation_result keystroke_tracker::rebase(keystroke_sample sample) noexcept {
     const auto mask = sample.mask;
     const auto qpc = sample.qpc;
-    if (qpc == 0U || (last_qpc_ != 0U && qpc < last_qpc_)) {
+    if (qpc == 0U) {
         return keystroke_operation_result::invalid_time;
     }
 
-    clear();
+    queue_ = {};
+    queue_head_ = 0U;
+    queue_size_ = 0U;
+    keys_ = {};
     held_keys_ = mask;
+    pending_cancellations_ |= delivered_keys_ & ~mask;
+    pending_reactivations_ = mask & (pending_reactivations_ | pending_cancellations_);
     for (std::size_t index = 0U; index < keys_.size(); ++index) {
         if ((mask & key_bit(index)) != 0U) {
             keys_[index] = {.repeat_origin_qpc = qpc, .initial_repeat_pending = true};
         }
+        if ((pending_reactivations_ & key_bit(index)) != 0U) {
+            enqueue(index, XINPUT_KEYSTROKE_KEYDOWN);
+        }
     }
     last_qpc_ = qpc;
     return keystroke_operation_result::applied;
+}
+
+void keystroke_tracker::invalidate_history() noexcept {
+    keys_ = {};
+    held_keys_ = 0U;
+    queue_ = {};
+    queue_head_ = 0U;
+    queue_size_ = 0U;
+    last_qpc_ = 0U;
 }
 
 keystroke_operation_result keystroke_tracker::checked_apply_transitions(
@@ -171,10 +201,10 @@ keystroke_operation_result keystroke_tracker::checked_apply_transitions(
 
         if ((mask & bit) != 0U) {
             keys_[index] = {.repeat_origin_qpc = qpc, .initial_repeat_pending = true};
-            enqueue(virtual_keys[index], XINPUT_KEYSTROKE_KEYDOWN);
+            enqueue(index, XINPUT_KEYSTROKE_KEYDOWN);
         } else {
             keys_[index] = {};
-            enqueue(virtual_keys[index], XINPUT_KEYSTROKE_KEYUP);
+            enqueue(index, XINPUT_KEYSTROKE_KEYUP);
         }
     }
 
@@ -225,8 +255,7 @@ keystroke_operation_result keystroke_tracker::checked_advance_repeats(std::uint6
         state.repeat_origin_qpc = qpc;
         state.initial_repeat_pending = false;
         if ((enqueue_mask & bit) != 0U) {
-            enqueue(virtual_keys[index],
-                static_cast<WORD>(XINPUT_KEYSTROKE_KEYDOWN | XINPUT_KEYSTROKE_REPEAT));
+            enqueue(index, static_cast<WORD>(XINPUT_KEYSTROKE_KEYDOWN | XINPUT_KEYSTROKE_REPEAT));
         }
     }
 
@@ -237,19 +266,36 @@ keystroke_operation_result keystroke_tracker::checked_advance_repeats(std::uint6
 
 bool keystroke_tracker::pop(std::uint32_t user_index, XINPUT_KEYSTROKE& output) noexcept {
     constexpr std::uint32_t user_count = 4U;
-    if (user_index >= user_count || queue_size_ == 0U) {
+    if (user_index >= user_count || (queue_size_ == 0U && pending_cancellations_ == 0U)) {
         return false;
     }
 
-    const auto& event = queue_[queue_head_];
     XINPUT_KEYSTROKE result{};
-    result.VirtualKey = event.virtual_key;
-    result.Flags = event.flags;
     result.UserIndex = static_cast<BYTE>(user_index);
 
+    if (pending_cancellations_ != 0U) {
+        const auto key_index = static_cast<std::size_t>(std::countr_zero(pending_cancellations_));
+        const auto bit = key_bit(key_index);
+        result.VirtualKey = virtual_keys[key_index];
+        result.Flags = XINPUT_KEYSTROKE_KEYUP;
+        pending_cancellations_ &= ~bit;
+        delivered_keys_ &= ~bit;
+    } else {
+        const auto& event = queue_[queue_head_];
+        const auto bit = key_bit(event.key_index);
+        result.VirtualKey = event.virtual_key;
+        result.Flags = event.flags;
+        if ((event.flags & XINPUT_KEYSTROKE_KEYDOWN) != 0U) {
+            delivered_keys_ |= bit;
+            pending_reactivations_ &= ~bit;
+        } else if ((event.flags & XINPUT_KEYSTROKE_KEYUP) != 0U) {
+            delivered_keys_ &= ~bit;
+        }
+        queue_head_ = (queue_head_ + 1U) % queue_capacity;
+        --queue_size_;
+    }
+
     output = result;
-    queue_head_ = (queue_head_ + 1U) % queue_capacity;
-    --queue_size_;
     return true;
 }
 
@@ -257,9 +303,11 @@ bool keystroke_tracker::accepts_qpc(std::uint64_t qpc) const noexcept {
     return qpc != 0U && last_qpc_ != 0U && qpc >= last_qpc_;
 }
 
-void keystroke_tracker::enqueue(WORD virtual_key, WORD flags) noexcept {
+void keystroke_tracker::enqueue(std::size_t key_index, WORD flags) noexcept {
     const auto tail = (queue_head_ + queue_size_) % queue_capacity;
-    queue_[tail] = {.virtual_key = virtual_key, .flags = flags};
+    queue_[tail] = {.virtual_key = virtual_keys[key_index],
+        .flags = flags,
+        .key_index = static_cast<std::uint8_t>(key_index)};
     ++queue_size_;
 }
 

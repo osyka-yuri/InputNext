@@ -184,7 +184,7 @@ bool service::implementation::stage_record(const history_record& record,
     return true;
 }
 
-void service::implementation::clear_history_state(event_position_state& events) noexcept {
+void service::implementation::clear_history_cursor_state(event_position_state& events) noexcept {
     events.domain.reset();
     events.last_sequence = 0U;
     events.last_consumer_qpc = 0U;
@@ -192,6 +192,11 @@ void service::implementation::clear_history_state(event_position_state& events) 
     events.accepted_checkpoint_qpc = 0U;
     events.guide_known = false;
     events.guide_pressed = false;
+    events.tracker.invalidate_history();
+}
+
+void service::implementation::clear_history_state(event_position_state& events) noexcept {
+    clear_history_cursor_state(events);
     events.tracker.clear();
 }
 
@@ -262,9 +267,9 @@ bool service::implementation::apply_reset_batch(event_position_state& events,
     if (!initial_for_this_consumer) {
         set_guide_terminal(events, guide_wait_state::history_reset);
     }
-    clear_history_state(events);
+    clear_history_cursor_state(events);
     const auto& baseline = staged.records[0U];
-    if (events.tracker.silent_seed(baseline.keys) != detail::keystroke_operation_result::applied) {
+    if (events.tracker.rebase(baseline.keys) != detail::keystroke_operation_result::applied) {
         return false;
     }
     events.domain = batch.domain;
@@ -391,7 +396,7 @@ bool service::implementation::apply_batch(event_position_state& events,
         return true;
     }
     set_guide_terminal(events, history_failure_state(*batch.failure));
-    clear_history_state(events);
+    clear_history_cursor_state(events);
     events.cleanup_pending = true;
     return true;
 }
@@ -604,7 +609,7 @@ void service::implementation::handle_event_open_failure(event_turn& turn,
         }
         if (current && !preserves_progress(failure.code)) {
             set_guide_terminal(position.events, history_failure_state(failure));
-            clear_history_state(position.events);
+            clear_history_cursor_state(position.events);
             notify = true;
         }
     }
@@ -713,7 +718,7 @@ bool service::implementation::apply_current_event_batch(event_position_state& ev
                              batch,
                              staged)) {
         set_guide_terminal(events, guide_wait_state::history_reset);
-        clear_history_state(events);
+        clear_history_cursor_state(events);
         events.cleanup_pending = true;
         notify = true;
         return true;

@@ -10,13 +10,15 @@
 
 A specific disconnected position returns `ERROR_DEVICE_NOT_CONNECTED`. A connected position with no deliverable event returns `ERROR_EMPTY`, including while disabled, background, recovering, or busy. Results use the guarded dequeue checks from that invocation. Only success writes the output. `XUSER_INDEX_ANY` rotates after the last successful position; empty calls preserve that order. If no key is available, it returns `ERROR_EMPTY` when at least one scanned position was connected, otherwise `ERROR_DEVICE_NOT_CONNECTED`.
 
-Buttons, triggers, and stick directions produce key-down and key-up events. Trigger activation is strictly above 30. Stick activation is outside the corresponding XInput deadzone, with eight directional sectors. Guide remains available in extended state and history but produces no keystroke.
+Keystrokes use the remapped state from history. Logical buttons except Guide, triggers and stick directions produce key-down and key-up events. Trigger activation is strictly above 30. Sticks use eight directional sectors outside the corresponding XInput deadzone. Guide has separate state and wait APIs.
 
-Initial, recovery, reassignment, focus-return, and re-enable baselines seed held input silently. A later key-up can therefore appear without a preceding key-down. Held keys repeat after 500 ms, then every 100 ms. Missed intervals coalesce into one repeat per key per pump.
+Initial, reassignment, focus-return and re-enable baselines seed held input silently. A later release can produce a key-up without a preceding key-down. Held keys repeat after 500 ms, then every 100 ms. Missed intervals coalesce into one repeat per key per pump.
+
+Within the same assignment, focus and Enable generation, recovery preserves keys that remain held. It queues a `KEYUP` for each released key whose press the game already received. These releases survive repeated resets and queue overflow and are delivered before ordinary events. If a later baseline shows the key held again, a `KEYDOWN` follows the release. Further resets preserve that pending press while the baseline remains held.
 
 Only consumed event timestamps and qualified history checkpoints advance repeats. Wall time and `get_state` calls do not advance them. A transition at a repeat deadline is processed before that deadline's repeat. Late, newly sequenced events retain their transitions and use at least the previously accepted consumer time.
 
-Each position holds at most 64 generated events. Transition and repeat groups fit completely or trigger recovery. History gaps, malformed batches, provider failures, and queue overflow clear pending events and require a new silent baseline. If a batch has a valid prefix followed by a failure, the pump processes that prefix, then clears pending events during recovery.
+Each position holds up to 64 ordinary events. Transition and repeat groups fit completely or trigger recovery. History gaps, malformed batches, provider failures and queue overflow clear that queue and require a recovery baseline. The pump processes any valid prefix before handling a failure in the same batch.
 
 ## Qualification and pumping
 

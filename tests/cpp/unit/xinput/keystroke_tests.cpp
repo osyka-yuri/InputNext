@@ -477,3 +477,187 @@ TEST_CASE("keystroke tracker rejects zero and regressing QPC without changing qu
     CHECK(output.VirtualKey == expected_virtual_keys[1U]);
     CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
 }
+
+TEST_CASE("history rebase cancels a delivered down when its queued up is discarded",
+    "[unit][xinput][keystroke][recovery]") {
+    keystroke_tracker tracker;
+    REQUIRE(tracker.silent_seed({.mask = 0U, .qpc = 1U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.checked_apply_transitions({.mask = key_at(10U), .qpc = 2U}) ==
+            keystroke_operation_result::applied);
+
+    XINPUT_KEYSTROKE output{};
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.VirtualKey == expected_virtual_keys[10U]);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
+
+    REQUIRE(tracker.checked_apply_transitions({.mask = 0U, .qpc = 3U}) ==
+            keystroke_operation_result::applied);
+    REQUIRE(tracker.rebase({.mask = 0U, .qpc = 4U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.VirtualKey == expected_virtual_keys[10U]);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYUP);
+    CHECK_FALSE(tracker.pop(0U, output));
+}
+
+TEST_CASE("history rebase discards an undelivered down without emitting a cancellation",
+    "[unit][xinput][keystroke][recovery]") {
+    keystroke_tracker tracker;
+    REQUIRE(tracker.silent_seed({.mask = 0U, .qpc = 10U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.checked_apply_transitions({.mask = key_at(0U), .qpc = 11U}) ==
+            keystroke_operation_result::applied);
+    REQUIRE(tracker.rebase({.mask = 0U, .qpc = 12U}) == keystroke_operation_result::applied);
+
+    XINPUT_KEYSTROKE output{};
+    CHECK_FALSE(tracker.pop(0U, output));
+}
+
+TEST_CASE("delivered repeat downs remain cancellable after a history gap",
+    "[unit][xinput][keystroke][recovery]") {
+    const auto timing = valid_repeat_timing(1000U);
+    keystroke_tracker tracker;
+    REQUIRE(tracker.silent_seed({.mask = 0U, .qpc = 100U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.checked_apply_transitions({.mask = key_at(0U), .qpc = 101U}) ==
+            keystroke_operation_result::applied);
+
+    XINPUT_KEYSTROKE output{};
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
+    key_mask repeated{};
+    REQUIRE(tracker.checked_advance_repeats(601U, true, timing, repeated) ==
+            keystroke_operation_result::applied);
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.Flags == (XINPUT_KEYSTROKE_KEYDOWN | XINPUT_KEYSTROKE_REPEAT));
+
+    REQUIRE(tracker.rebase({.mask = 0U, .qpc = 602U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.VirtualKey == expected_virtual_keys[0U]);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYUP);
+}
+
+TEST_CASE("repeated invalidations preserve pending cancellations until a successful pop",
+    "[unit][xinput][keystroke][recovery]") {
+    keystroke_tracker tracker;
+    REQUIRE(tracker.silent_seed({.mask = 0U, .qpc = 20U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.checked_apply_transitions({.mask = key_at(1U), .qpc = 21U}) ==
+            keystroke_operation_result::applied);
+    XINPUT_KEYSTROKE output{};
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
+
+    REQUIRE(tracker.rebase({.mask = 0U, .qpc = 22U}) == keystroke_operation_result::applied);
+    tracker.invalidate_history();
+    REQUIRE(tracker.rebase({.mask = 0U, .qpc = 23U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.rebase({.mask = 0U, .qpc = 24U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.VirtualKey == expected_virtual_keys[1U]);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYUP);
+    CHECK_FALSE(tracker.pop(0U, output));
+}
+
+TEST_CASE("held baselines restore a key after its cancellation survives repeated rebases",
+    "[unit][xinput][keystroke][recovery]") {
+    keystroke_tracker tracker;
+    REQUIRE(tracker.silent_seed({.mask = 0U, .qpc = 25U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.checked_apply_transitions({.mask = key_at(1U), .qpc = 26U}) ==
+            keystroke_operation_result::applied);
+
+    XINPUT_KEYSTROKE output{};
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.VirtualKey == expected_virtual_keys[1U]);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
+
+    REQUIRE(tracker.rebase({.mask = 0U, .qpc = 27U}) == keystroke_operation_result::applied);
+    REQUIRE(
+        tracker.rebase({.mask = key_at(1U), .qpc = 28U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.VirtualKey == expected_virtual_keys[1U]);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYUP);
+
+    REQUIRE(
+        tracker.rebase({.mask = key_at(1U), .qpc = 29U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.VirtualKey == expected_virtual_keys[1U]);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
+    CHECK_FALSE(tracker.pop(0U, output));
+}
+
+TEST_CASE("release after a cancellation discards an undelivered recovery down",
+    "[unit][xinput][keystroke][recovery]") {
+    keystroke_tracker tracker;
+    REQUIRE(tracker.silent_seed({.mask = 0U, .qpc = 30U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.checked_apply_transitions({.mask = key_at(2U), .qpc = 31U}) ==
+            keystroke_operation_result::applied);
+
+    XINPUT_KEYSTROKE output{};
+    REQUIRE(tracker.pop(0U, output));
+    REQUIRE(tracker.rebase({.mask = 0U, .qpc = 32U}) == keystroke_operation_result::applied);
+    REQUIRE(
+        tracker.rebase({.mask = key_at(2U), .qpc = 33U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYUP);
+
+    REQUIRE(tracker.rebase({.mask = 0U, .qpc = 34U}) == keystroke_operation_result::applied);
+    CHECK_FALSE(tracker.pop(0U, output));
+}
+
+TEST_CASE("pending cancellations survive a full ordinary queue and transition overflow",
+    "[unit][xinput][keystroke][recovery]") {
+    keystroke_tracker tracker;
+    REQUIRE(tracker.silent_seed({.mask = 0U, .qpc = 30U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.checked_apply_transitions({.mask = key_at(0U), .qpc = 31U}) ==
+            keystroke_operation_result::applied);
+    XINPUT_KEYSTROKE output{};
+    REQUIRE(tracker.pop(0U, output));
+    REQUIRE(tracker.rebase({.mask = 0U, .qpc = 32U}) == keystroke_operation_result::applied);
+    REQUIRE(
+        tracker.rebase({.mask = key_at(0U), .qpc = 33U}) == keystroke_operation_result::applied);
+
+    REQUIRE(tracker.checked_apply_transitions({.mask = all_keys, .qpc = 34U}) ==
+            keystroke_operation_result::applied);
+    REQUIRE(tracker.checked_apply_transitions({.mask = 0U, .qpc = 35U}) ==
+            keystroke_operation_result::applied);
+    CHECK(tracker.checked_apply_transitions({.mask = all_keys, .qpc = 36U}) ==
+          keystroke_operation_result::capacity_exceeded);
+
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.VirtualKey == expected_virtual_keys[0U]);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYUP);
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.VirtualKey == expected_virtual_keys[0U]);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
+}
+
+TEST_CASE("same held baseline preserves delivery state without inventing an edge",
+    "[unit][xinput][keystroke][recovery]") {
+    keystroke_tracker tracker;
+    REQUIRE(tracker.silent_seed({.mask = 0U, .qpc = 40U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.checked_apply_transitions({.mask = key_at(2U), .qpc = 41U}) ==
+            keystroke_operation_result::applied);
+    XINPUT_KEYSTROKE output{};
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYDOWN);
+
+    REQUIRE(
+        tracker.rebase({.mask = key_at(2U), .qpc = 42U}) == keystroke_operation_result::applied);
+    CHECK_FALSE(tracker.pop(0U, output));
+    REQUIRE(tracker.checked_apply_transitions({.mask = 0U, .qpc = 43U}) ==
+            keystroke_operation_result::applied);
+    REQUIRE(tracker.pop(0U, output));
+    CHECK(output.VirtualKey == expected_virtual_keys[2U]);
+    CHECK(output.Flags == XINPUT_KEYSTROKE_KEYUP);
+}
+
+TEST_CASE("full tracker teardown clears delivered key state and pending cancellations",
+    "[unit][xinput][keystroke][recovery]") {
+    keystroke_tracker tracker;
+    REQUIRE(tracker.silent_seed({.mask = 0U, .qpc = 50U}) == keystroke_operation_result::applied);
+    REQUIRE(tracker.checked_apply_transitions({.mask = key_at(3U), .qpc = 51U}) ==
+            keystroke_operation_result::applied);
+    XINPUT_KEYSTROKE output{};
+    REQUIRE(tracker.pop(0U, output));
+    REQUIRE(tracker.rebase({.mask = 0U, .qpc = 52U}) == keystroke_operation_result::applied);
+
+    tracker.clear();
+    REQUIRE(tracker.silent_seed({.mask = 0U, .qpc = 1U}) == keystroke_operation_result::applied);
+    CHECK_FALSE(tracker.pop(0U, output));
+}

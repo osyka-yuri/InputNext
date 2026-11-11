@@ -70,6 +70,12 @@ public:
 
     [[nodiscard]] keystroke_operation_result silent_seed(keystroke_sample sample) noexcept;
 
+    // Rebase one history stream without losing delivered-key recovery obligations.
+    [[nodiscard]] keystroke_operation_result rebase(keystroke_sample sample) noexcept;
+
+    // Discard history-derived state while retaining delivery and recovery obligations.
+    void invalidate_history() noexcept;
+
     [[nodiscard]] keystroke_operation_result checked_apply_transitions(
         keystroke_sample sample) noexcept;
 
@@ -89,13 +95,18 @@ private:
     struct queued_event final {
         WORD virtual_key{};
         WORD flags{};
+        std::uint8_t key_index{};
     };
 
     [[nodiscard]] bool accepts_qpc(std::uint64_t qpc) const noexcept;
-    void enqueue(WORD virtual_key, WORD flags) noexcept;
+    void enqueue(std::size_t key_index, WORD flags) noexcept;
 
     std::array<key_state, keystroke_key_count> keys_{};
     key_mask held_keys_{};
+    key_mask delivered_keys_{};
+    key_mask pending_cancellations_{};
+    // Held baselines that must be re-pressed after their cancellation is delivered.
+    key_mask pending_reactivations_{};
     std::array<queued_event, queue_capacity> queue_{};
     std::size_t queue_head_{};
     std::size_t queue_size_{};

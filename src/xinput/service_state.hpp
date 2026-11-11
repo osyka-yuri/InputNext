@@ -202,6 +202,7 @@ struct service::implementation final {
         std::uint64_t previous_sequence,
         staged_event_record& staged) noexcept;
     static void clear_history_state(event_position_state& events) noexcept;
+    static void clear_history_cursor_state(event_position_state& events) noexcept;
     static void set_guide_terminal(event_position_state& events, guide_wait_state state) noexcept;
     [[nodiscard]] static guide_wait_state history_failure_state(history_failure failure) noexcept;
     [[nodiscard]] static bool same_qualification(const event_position_state& events,
