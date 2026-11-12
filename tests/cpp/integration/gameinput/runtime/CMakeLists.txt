@@ -3,6 +3,7 @@ add_executable(inputnext_gameinput_runtime_tests
     runtime_output_tests.cpp
     runtime_raw_output_tests.cpp
     runtime_history_tests.cpp
+    runtime_input_profile_tests.cpp
 )
 target_link_libraries(inputnext_gameinput_runtime_tests PRIVATE
     inputnext_gameinput_runtime inputnext_gameinput_rumble inputnext_gameinput_dualsense_usb

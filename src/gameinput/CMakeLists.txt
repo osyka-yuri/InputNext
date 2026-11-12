@@ -1,9 +1,24 @@
+add_library(inputnext_gameinput_input_policy STATIC
+    input_qualification.cpp
+    dualsense/usb_touch_report.cpp
+)
+target_include_directories(inputnext_gameinput_input_policy PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(inputnext_gameinput_input_policy PUBLIC inputnext_input)
+inputnext_configure_target(inputnext_gameinput_input_policy)
+
 add_library(inputnext_gameinput_history_clock STATIC history/clock_mapping.cpp)
 target_include_directories(inputnext_gameinput_history_clock PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
 )
 target_link_libraries(inputnext_gameinput_history_clock PUBLIC inputnext_input)
 inputnext_configure_target(inputnext_gameinput_history_clock)
+
+add_library(inputnext_gameinput_port STATIC native/native_gameinput.cpp)
+target_include_directories(inputnext_gameinput_port PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+)
+target_link_libraries(inputnext_gameinput_port PUBLIC inputnext_input)
+inputnext_configure_target(inputnext_gameinput_port)
 
 add_library(inputnext_gameinput_capture STATIC
     history/history_capture_log.cpp
@@ -20,7 +35,7 @@ target_include_directories(inputnext_gameinput_history PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
 )
 target_link_libraries(inputnext_gameinput_history
-    PUBLIC inputnext_gameinput_capture inputnext_input
+    PUBLIC inputnext_gameinput_capture inputnext_input inputnext_gameinput_port
 )
 inputnext_configure_target(inputnext_gameinput_history)
 
@@ -39,9 +54,11 @@ add_subdirectory(dualsense)
 if(INPUTNEXT_BUILD_GAMEINPUT)
     include("${PROJECT_SOURCE_DIR}/cmake/GameInput.cmake")
     add_library(inputnext_gameinput_native STATIC
+        native/dualsense_usb_touch_reading.cpp
         native/windows_gameinput.cpp
         native/windows_raw_output_report.cpp
         native/windows_history_cursor.cpp
+        native/windows_input_profile.cpp
         native/native_history_cursor.cpp
         native/gameinput_value_mapping.cpp
     )
@@ -50,7 +67,8 @@ if(INPUTNEXT_BUILD_GAMEINPUT)
         PRIVATE "${PROJECT_SOURCE_DIR}/src"
     )
     target_link_libraries(inputnext_gameinput_native
-        PRIVATE inputnext_gameinput_sdk inputnext_gameinput_history_clock
+        PRIVATE inputnext_gameinput_sdk inputnext_gameinput_history_clock inputnext_gameinput_port
+            inputnext_gameinput_input_policy inputnext_windows_metadata version
     )
 
     inputnext_configure_target(inputnext_gameinput_native)

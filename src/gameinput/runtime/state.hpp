@@ -1,9 +1,11 @@
 #pragma once
 
+#include "gameinput/input_profile.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/reading_parts.hpp"
 #include "history/cursor.hpp"
 #include "history/store.hpp"
+#include "input/program.hpp"
 #include "metadata/provider.hpp"
 #include "owner_identity.hpp"
 #include <inputnext/device_identity.hpp>
@@ -39,6 +41,19 @@ inline constexpr auto retry_period = std::chrono::seconds{1};
     const gameinput_detail::native_failure& failure) noexcept {
     return failure.cause == gameinput_detail::native_failure_cause::device_disconnected;
 }
+
+struct input_report_state final {
+    gameinput_detail::input_history_path configured_path{
+        gameinput_detail::input_history_path::gamepad};
+    std::optional<gameinput_detail::input_history_path> last_selected_history;
+    gameinput_detail::input_fallback_reason reason{gameinput_detail::input_fallback_reason::none};
+    std::array<std::uint16_t, 4U> runtime_version{};
+    physical_transport transport{physical_transport::unknown};
+    gameinput_detail::input_touch_mode touch_mode{gameinput_detail::input_touch_mode::disabled};
+
+    friend constexpr bool operator==(const input_report_state&,
+        const input_report_state&) noexcept = default;
+};
 } // namespace runtime_detail
 
 struct gameinput_runtime::implementation final {
@@ -72,33 +87,34 @@ struct gameinput_runtime::implementation final {
     };
 
     struct owner_slot final {
-        owner_phase state{owner_phase::free};
         gameinput_detail::native_device_handle device{};
         std::uint64_t generation{};
         std::size_t history_leases{};
+        std::size_t output_leases{};
+        gameinput_detail::publication_source* source{};
+        gameinput_detail::native_callback_token reading_token{};
+        std::uint64_t facts_requested{1U};
+        std::uint64_t facts_installed{};
+        std::optional<maintenance_time> registration_retry_at;
+        std::optional<maintenance_time> reading_drain_retry_at;
+        std::optional<maintenance_time> poll_at;
+        std::optional<maintenance_time> facts_retry_at;
+        std::optional<maintenance_time> admission_retry_at;
+        reading_owner reading_owner_context{};
+        connection_target target{};
+        read_binding reader{};
+        read_pin residency;
+        gameinput_detail::native_reading_callback_context reading_context{};
+        std::optional<runtime_detail::input_report_state> reported_input_state;
+        owner_phase state{owner_phase::free};
         bool retire_requested{};
         bool registry_retire_started{};
         bool registry_retired{};
         bool release_started{};
         bool release_inflight{};
-        std::size_t output_leases{};
-        connection_target target{};
-        gameinput_detail::publication_source* source{};
-        read_binding reader{};
-        read_pin residency;
-        reading_owner reading_owner_context{};
-        gameinput_detail::native_reading_callback_context reading_context{};
-        gameinput_detail::native_callback_token reading_token{};
         bool reading_registration_inflight{};
         bool registration_failed{};
-        std::optional<maintenance_time> registration_retry_at;
-        std::optional<maintenance_time> reading_drain_retry_at;
-        std::optional<maintenance_time> poll_at;
-        std::uint64_t facts_requested{1U};
-        std::uint64_t facts_installed{};
         bool metadata_fault{};
-        std::optional<maintenance_time> facts_retry_at;
-        std::optional<maintenance_time> admission_retry_at;
     };
 
     struct catalogue_entry final {
@@ -159,7 +175,8 @@ struct gameinput_runtime::implementation final {
     implementation(device_registry& device_registry,
         gameinput_options runtime_options,
         std::unique_ptr<gameinput_detail::native_gameinput> native_port,
-        std::unique_ptr<metadata_provider> metadata_port);
+        std::unique_ptr<metadata_provider> metadata_port,
+        input::program mappings = input::program::identity());
 
     ~implementation() = default;
     implementation(const implementation&) = delete;
@@ -268,6 +285,7 @@ struct gameinput_runtime::implementation final {
 
     device_registry& registry;
     gameinput_options options;
+    const input::program input_program;
     std::unique_ptr<gameinput_detail::native_gameinput> native;
     std::unique_ptr<metadata_provider> metadata;
     history_provider history_provider_port;

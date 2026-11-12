@@ -1,5 +1,6 @@
 #pragma once
 
+#include "input/touch_resolver.hpp"
 #include <inputnext/gamepad_state.hpp>
 
 #include <cstdint>
@@ -12,6 +13,9 @@ struct reading_parts final {
     std::optional<bool> guide = std::nullopt;
     std::uint64_t source_timestamp_us{};
     std::uint64_t observation_qpc{};
+    std::optional<input::touch_observation> touch = std::nullopt;
+    // Source-resolved state travels with the accepted physical frame into callback capture.
+    std::optional<input::touch_snapshot> resolved_touch = std::nullopt;
 };
 
 } // namespace inputnext::gameinput_detail

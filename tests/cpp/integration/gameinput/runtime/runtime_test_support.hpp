@@ -1,8 +1,10 @@
 #pragma once
 
+#include "gameinput/input_profile.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/reading_parts.hpp"
 #include "gameinput/runtime/factory.hpp"
+#include "input/program.hpp"
 #include "metadata/provider.hpp"
 #include "runtime_history_test_support.hpp"
 #include "runtime_metadata_test_support.hpp"
@@ -93,6 +95,8 @@ public:
         native_device_handle handle{};
         bool connected{};
         std::optional<native_device_facts> facts;
+        std::optional<native_input_profile> input_profile;
+        std::size_t input_profile_describe_calls{};
         std::optional<reading_parts> gamepad_reading;
         std::optional<reading_parts> system_button_reading;
         std::shared_ptr<native_history_script> history_script;
@@ -308,6 +312,16 @@ public:
         return result;
     }
 
+    [[nodiscard]] native_input_profile describe_input(native_device_handle device) override {
+        std::scoped_lock lock{mutex_};
+        auto* const state = find_device(devices, device);
+        if (state == nullptr) {
+            return {};
+        }
+        ++state->input_profile_describe_calls;
+        return state->input_profile.value_or(native_input_profile{});
+    }
+
     [[nodiscard]] bool connected(native_device_handle device) noexcept override {
         std::scoped_lock lock{mutex_};
         const auto* state = find_device(devices, device);
@@ -385,6 +399,19 @@ public:
         if (auto* state = ensure_device(device); state != nullptr) {
             state->facts = std::move(facts);
         }
+    }
+
+    void set_input_profile(native_device_handle device, native_input_profile profile) {
+        std::scoped_lock lock{mutex_};
+        if (auto* const state = ensure_device(device); state != nullptr) {
+            state->input_profile = profile;
+        }
+    }
+
+    [[nodiscard]] std::size_t input_profile_describe_calls(native_device_handle device) {
+        std::scoped_lock lock{mutex_};
+        const auto* const state = find_device(devices, device);
+        return state == nullptr ? 0U : state->input_profile_describe_calls;
     }
 
     [[nodiscard]] std::shared_ptr<rumble_test_controls> rumble_script() const noexcept {
@@ -646,7 +673,8 @@ private:
 
 class runtime_fixture final {
 public:
-    runtime_fixture() : registry(test_runtime_id()) {
+    explicit runtime_fixture(input::program mappings = input::program::identity())
+        : registry(test_runtime_id()) {
         auto fake_native = std::make_unique<fake_gameinput>();
         native = fake_native.get();
         native->device_facts = native_facts(u"old-endpoint");
@@ -659,7 +687,8 @@ public:
         runtime = runtime_factory::create(registry,
             gameinput_options{.runtime_library = L"C:\\fixture\\GameInputRedist.dll"},
             std::move(native_port),
-            std::move(metadata_port));
+            std::move(metadata_port),
+            mappings);
     }
 
     [[nodiscard]] static native_device_facts native_facts(std::u16string endpoint) {

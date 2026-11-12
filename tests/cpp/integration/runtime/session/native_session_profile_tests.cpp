@@ -169,8 +169,8 @@ TEST_CASE("runtime.session.parsed_profile_reaches_the_native_usb_sink",
 
 TEST_CASE("runtime.session.profile_file_child", "[.owned-child]") {
     const auto settings = load_process_profile();
-    REQUIRE(settings.left_trigger.has_value());
-    REQUIRE(settings.right_trigger.has_value());
+    REQUIRE(settings.effects.left_trigger.has_value());
+    REQUIRE(settings.effects.right_trigger.has_value());
     profile_session fixture{settings};
     REQUIRE(fixture.start());
     REQUIRE(fixture.delivered_profile());

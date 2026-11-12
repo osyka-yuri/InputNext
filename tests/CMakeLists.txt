@@ -14,6 +14,10 @@ FetchContent_Declare(Catch2
 FetchContent_MakeAvailable(Catch2)
 
 target_compile_features(Catch2 PUBLIC cxx_std_23)
+# Match the exception model of the test executables, including clang-cl configurations
+# whose global flags do not enable stack unwinding by default.
+target_compile_options(Catch2 PRIVATE /EHsc)
+target_compile_options(Catch2WithMain PRIVATE /EHsc)
 inputnext_configure_sanitizer(Catch2)
 inputnext_configure_sanitizer(Catch2WithMain)
 
@@ -30,10 +34,12 @@ add_subdirectory(cpp/component/output)
 add_subdirectory(cpp/unit/history)
 add_subdirectory(cpp/component/history)
 add_subdirectory(cpp/unit/gameinput/clock)
+add_subdirectory(cpp/unit/gameinput/qualification)
 add_subdirectory(cpp/unit/gameinput/output)
 add_subdirectory(cpp/unit/gameinput/dualsense)
 add_subdirectory(cpp/component/gameinput/history)
 add_subdirectory(cpp/integration/gameinput/publication)
+add_subdirectory(cpp/integration/remap)
 add_subdirectory(cpp/unit/metadata)
 add_subdirectory(cpp/unit/gameinput/probe)
 add_subdirectory(cpp/unit/xinput)

@@ -16,12 +16,15 @@ namespace inputnext::gameinput_detail {
 struct seed_ticket final {
     std::uint64_t pad_epoch{};
     std::uint64_t guide_epoch{};
+    std::uint64_t touch_epoch{};
+    std::uint64_t touch_generation{};
 };
 
 // Narrow constructor seam for exercising terminal epoch exhaustion.
 struct publication_epoch_seed final {
     std::uint64_t pad_epoch{};
     std::uint64_t guide_epoch{};
+    std::uint64_t touch_epoch{};
 };
 
 enum class publication_outcome : std::uint8_t {
@@ -53,30 +56,45 @@ struct source_status final {
     publication_fault fault{publication_fault::none};
     std::uint64_t pad_epoch{};
     std::uint64_t guide_epoch{};
+    input::touch_snapshot touch{};
 };
 
 // Portable latest-state publication for the GameInput source. The registry owns this object
 // after admission; its producer binding borrows that registry's stable record storage.
 class publication_source final : public source_lifetime {
 public:
-    explicit publication_source(publication_epoch_seed seed = {}) noexcept;
+    explicit publication_source(publication_epoch_seed seed = {},
+        input::program mappings = input::program::identity(),
+        native_input_profile profile = {}) noexcept;
 
     [[nodiscard]] bind_outcome bind(producer_binding binding);
     [[nodiscard]] seed_ticket before_seed() const;
     [[nodiscard]] publication_outcome on_callback(const reading_parts& parts);
     [[nodiscard]] publication_outcome on_seed(seed_ticket ticket, const reading_parts& parts);
     [[nodiscard]] history_capture& history() noexcept;
+    void set_callback_coverage(bool active);
     void close();
     [[nodiscard]] source_status status() const;
 
 private:
     [[nodiscard]] publication_outcome
     apply(const reading_parts& parts, seed_ticket ticket, bool is_seed);
-    [[nodiscard]] bool advance_callback_epochs(bool accept_pad, bool accept_guide) noexcept;
+    [[nodiscard]] bool
+    advance_callback_epochs(bool accept_pad, bool accept_guide, bool accept_touch) noexcept;
     void commit_lanes(const reading_parts& parts, bool accept_pad, bool accept_guide) noexcept;
-    [[nodiscard]] publication_outcome
-    publish_selected(const reading_parts& parts, bool accept_pad, bool accept_guide, bool is_seed);
+    [[nodiscard]] publication_outcome publish_selected(const reading_parts& parts,
+        bool accept_pad,
+        bool accept_guide,
+        bool accept_touch,
+        bool is_seed);
     [[nodiscard]] publication_outcome map_publication_failure(error failure) noexcept;
+    [[nodiscard]] bool invalidate_touch_locked(input_fallback_reason reason, bool revoke_profile);
+    void close_locked();
+    void capture_accepted(const reading_parts& parts,
+        bool accept_pad,
+        bool accept_guide,
+        bool accept_touch,
+        bool is_seed);
 
     mutable std::mutex mutex_;
     std::optional<producer_binding> producer_;
@@ -89,6 +107,12 @@ private:
     publication_fault fault_{publication_fault::none};
     std::uint64_t pad_epoch_{};
     std::uint64_t guide_epoch_{};
+    std::uint64_t touch_epoch_{};
+    input::touch_resolver touch_;
+    bool touch_enabled_{};
+    bool touch_suspended_{};
+    std::uint64_t last_source_timestamp_us_{};
+    std::uint64_t last_observation_qpc_{};
 };
 
 } // namespace inputnext::gameinput_detail

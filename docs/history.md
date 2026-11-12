@@ -18,6 +18,12 @@ Source timestamps use microseconds. Effective timestamps and checkpoints use Que
 
 The native history path traverses GameInput Pad readings and merges captured Guide observations. Pad precedes Guide at equal effective QPC. Native Pad history takes precedence over captured Pad samples. Callback fallback replays accepted captured state; its checkpoint advances only with observations. Returning to native history uses a recovery boundary.
 
+History and current-state reads use the same remap rules. On a qualified connection, native history reads the gamepad and mechanical click from the same GameInput reading. Click loss clears the touch contribution and creates a recovery boundary. The cursor rechecks the epoch after native work before accepting a reading or fallback baseline.
+
+Opening native history during a held click can require replay from a known release. If recovery exceeds 256 combined backward and forward transitions, or the replay is incomplete, the cursor uses callback capture when it has a valid baseline. The capture log holds 256 records, including recovery boundaries, and is separate from the reader history bank.
+
+Callback coverage loss also clears the touch contribution. If the source cannot publish the resulting state, it closes history and the runtime retires the connection.
+
 Retention overrun resets the lagging reader to the latest retained state. `lost_count` counts omitted incremental deliveries before that replacement baseline, including exact source losses at recovery boundaries through the selected state. The latest reading is represented by the baseline and is excluded from the count. For example, 257 unread ordinary readings produce a baseline and a known loss of 256. Other readers continue independently.
 
 Source or callback coverage loss inserts an ordered recovery boundary; earlier records remain available within retention capacity. A reset preserves unknown loss across both retained and evicted boundaries. Unknown loss also covers accounting overflow and callback fallback overwrite, and always has `lost_count = 0`.

@@ -19,9 +19,9 @@ Install InputNext separately for each Windows game that uses XInput.
 
 4. Connect the controller and launch the game normally. Check buttons, sticks and triggers. For DualSense and DualSense Edge, use USB for feedback; Bluetooth supports input only.
 
-## Optional trigger effects
+## Optional per-game profile
 
-Copy `examples/inputnext.toml` beside the game EXE to enable persistent trigger effects. See [per-game profiles](profiles.md) to customize them. Restart the game after editing.
+Place `inputnext.toml` beside the game EXE to customize controls or trigger effects. The included [example profile](../examples/inputnext.toml) enables two trigger effects. Without a file, InputNext uses the default assignments, including touchpad clicks on supported controllers. See [per-game profiles](profiles.md) for the format and controller support.
 
 ## Uninstall
 

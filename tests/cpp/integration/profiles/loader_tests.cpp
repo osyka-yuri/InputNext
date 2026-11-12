@@ -102,8 +102,8 @@ TEST_CASE("profiles.loader_resolves_the_executable_sibling_independent_of_cwd",
         const current_path_guard guard(working_directory);
         const auto loaded = load_for_executable(executable_directory / "game.exe");
         REQUIRE(loaded.has_value());
-        REQUIRE(loaded->settings.right_trigger.has_value());
-        CHECK(required_value(loaded->settings.right_trigger).mode ==
+        REQUIRE(loaded->settings.effects.right_trigger.has_value());
+        CHECK(required_value(loaded->settings.effects.right_trigger).mode ==
               inputnext::output::trigger_mode::feedback);
         CHECK(loaded->diagnostics.empty());
 
@@ -176,9 +176,9 @@ TEST_CASE("profiles.loader_keeps_semantic_diagnostics_and_reports_toml_locations
     auto loaded = load_file(semantic_file);
     REQUIRE(loaded.has_value());
     REQUIRE_FALSE(loaded->diagnostics.empty());
-    REQUIRE(loaded->settings.right_trigger.has_value());
-    CHECK(loaded->settings.left_trigger == inputnext::output::trigger_value{});
-    CHECK(required_value(loaded->settings.right_trigger).mode ==
+    REQUIRE(loaded->settings.effects.right_trigger.has_value());
+    CHECK(loaded->settings.effects.left_trigger == inputnext::output::trigger_value{});
+    CHECK(required_value(loaded->settings.effects.right_trigger).mode ==
           inputnext::output::trigger_mode::vibration);
     CHECK(loaded->diagnostics.front().line == 3U);
 
@@ -219,8 +219,8 @@ TEST_CASE("profiles.loader_accepts_caller_relative_files", "[integration][profil
         const current_path_guard guard(working_directory);
         const auto loaded = load_file("profile.toml");
         REQUIRE(loaded.has_value());
-        REQUIRE(loaded->settings.left_trigger.has_value());
-        CHECK(loaded->settings.left_trigger == inputnext::output::trigger_value{});
+        REQUIRE(loaded->settings.effects.left_trigger.has_value());
+        CHECK(loaded->settings.effects.left_trigger == inputnext::output::trigger_value{});
     }
     CHECK(std::filesystem::current_path() == previous_directory);
 }

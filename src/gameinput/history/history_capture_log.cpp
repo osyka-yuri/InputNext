@@ -1,4 +1,5 @@
 #include "history_capture_log.hpp"
+#include "input/program.hpp"
 
 #include <inputnext/history.hpp>
 
@@ -33,10 +34,13 @@ bool history_capture_log::closed() const noexcept {
 }
 
 bool history_capture_log::is_control(capture_record_kind kind) noexcept {
-    return kind == capture_record_kind::guide || kind == capture_record_kind::guide_cut;
+    return kind == capture_record_kind::guide || kind == capture_record_kind::guide_cut ||
+           kind == capture_record_kind::touch_cut;
 }
 
-void history_capture_log::append(capture_record_kind kind, const history_sample& sample) noexcept {
+void history_capture_log::append(capture_record_kind kind,
+    const history_sample& sample,
+    input::touch_source touch) noexcept {
     if (closed_ || exhausted_) {
         return;
     }
@@ -52,7 +56,8 @@ void history_capture_log::append(capture_record_kind kind, const history_sample&
         ++size_;
     }
 
-    records_[slot] = capture_record{.kind = kind, .position = position, .sample = sample};
+    records_[slot] =
+        capture_record{.kind = kind, .touch = touch, .position = position, .sample = sample};
     tail_position_ = position;
     if (position == std::numeric_limits<std::uint64_t>::max()) {
         exhausted_ = true;

@@ -35,6 +35,8 @@ public:
 private:
     friend struct source_history_cursor_test_access;
 
+    enum class capture_context_status : std::uint8_t { current, epoch_changed, closed };
+
     struct native_diagnostic final {
         std::uint32_t code{};
     };
@@ -50,12 +52,16 @@ private:
     start_fallback(const capture_snapshot& snapshot, native_failure native_failure_value) noexcept;
     [[nodiscard]] history_detail::cursor_step next_native() noexcept;
     [[nodiscard]] std::optional<history_detail::cursor_step> read_native_capture() noexcept;
+    [[nodiscard]] std::optional<history_detail::cursor_step> prepare_native_step() noexcept;
     [[nodiscard]] history_detail::cursor_step merge_native_step() noexcept;
     [[nodiscard]] history_detail::cursor_step next_fallback(history_time now) noexcept;
+    [[nodiscard]] history_detail::cursor_step fallback_checkpoint() noexcept;
     [[nodiscard]] history_detail::cursor_step try_native_promotion() noexcept;
     [[nodiscard]] history_detail::cursor_step emit_guide() noexcept;
     [[nodiscard]] history_detail::cursor_step emit_native(const native_history_step& step) noexcept;
     [[nodiscard]] history_detail::cursor_step emit_fallback(const capture_record& record) noexcept;
+    [[nodiscard]] history_detail::cursor_step
+    emit_reading(history_sample reading, history_record_origin origin, bool guide_known) noexcept;
     [[nodiscard]] static history_detail::cursor_step make_step(
         history_detail::cursor_step_kind kind) noexcept;
     [[nodiscard]] static history_detail::cursor_step
@@ -66,6 +72,9 @@ private:
         const native_history_step& step) noexcept;
     void advance_capture_position() noexcept;
     [[nodiscard]] bool caught_up_is_qualified() const noexcept;
+    [[nodiscard]] capture_context_status read_capture_context(capture_snapshot& snapshot) noexcept;
+    [[nodiscard]] gamepad_state logical_state(bool guide_known) const noexcept;
+    [[nodiscard]] bool same_touch_epoch(const capture_snapshot& snapshot) const noexcept;
     void reset_progress() noexcept;
     void schedule_native_retry(history_time completion) noexcept;
     [[nodiscard]] history_time current_time() const noexcept;
@@ -80,11 +89,11 @@ private:
     std::uint64_t capture_position_{1U};
     std::uint64_t promotion_end_position_{};
     std::uint64_t coverage_generation_{};
-    std::uint64_t qpc_frequency_{};
     std::uint64_t timeline_floor_qpc_{};
-    std::uint64_t fallback_horizon_qpc_{};
-    std::uint64_t source_timestamp_us_{};
     gamepad_state current_pad_{};
+    input::touch_source current_touch_{input::touch_source::none};
+    native_input_profile input_profile_{};
+    std::uint64_t touch_epoch_{};
     bool fallback_mode_{};
     bool callback_coverage_{};
     bool guide_fresh_{};

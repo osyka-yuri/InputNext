@@ -3,6 +3,7 @@ include("${PROJECT_SOURCE_DIR}/cmake/Toml.cmake")
 add_library(inputnext_profiles STATIC
     detail/profile_stream.cpp
     detail/trigger_parser.cpp
+    detail/input_parser.cpp
     loader.cpp
     parser.cpp
     toml_implementation.cpp
@@ -11,7 +12,7 @@ target_include_directories(inputnext_profiles
     PUBLIC "${PROJECT_SOURCE_DIR}/include"
     PRIVATE "${PROJECT_SOURCE_DIR}/src"
 )
-target_link_libraries(inputnext_profiles PRIVATE tomlplusplus::tomlplusplus)
+target_link_libraries(inputnext_profiles PRIVATE inputnext_input tomlplusplus::tomlplusplus)
 target_compile_definitions(inputnext_profiles PRIVATE
     TOML_HEADER_ONLY=0
     TOML_ENABLE_FORMATTERS=0

@@ -2,7 +2,7 @@
 
 #include "output/authority_test_access.hpp"
 #include "profiles/application.hpp"
-#include "profiles/model.hpp"
+#include "profiles/effects_profile.hpp"
 #include <inputnext/output.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -28,7 +28,7 @@ TEST_CASE("profiles.application_empty_default_and_replacement_allocate_no_contex
     CHECK_FALSE(default_state.failure.has_value());
     CHECK(output::detail::authority_test_access::logical_version(fixture.authority()) == before);
 
-    const auto empty_replacement = fixture.app().replace_profile(profile{});
+    const auto empty_replacement = fixture.app().replace_profile(effects_profile{});
     CHECK(empty_replacement.pending_contexts == 0U);
     CHECK_FALSE(empty_replacement.failure.has_value());
     CHECK_FALSE(empty_replacement.terminal);
@@ -45,8 +45,9 @@ TEST_CASE("profiles.application_reconciles_preassignment_settings_without_republ
     application_fixture fixture;
     const auto connection = fixture.add_connection();
     const auto target = connection.connection.target;
-    const auto desired =
-        profile{.left_trigger = feedback_trigger(0.4F), .right_trigger = feedback_trigger(0.7F)};
+    effects_profile desired{};
+    desired.left_trigger = feedback_trigger(0.4F);
+    desired.right_trigger = feedback_trigger(0.7F);
 
     const auto initial_version =
         output::detail::authority_test_access::logical_version(fixture.authority());
@@ -102,8 +103,9 @@ TEST_CASE("profiles.application_replacement_removes_channels_and_preserves_expli
     const auto connection = fixture.add_connection();
     static_cast<void>(fixture.assign(connection));
 
-    const auto both =
-        profile{.left_trigger = feedback_trigger(0.25F), .right_trigger = feedback_trigger(0.75F)};
+    effects_profile both{};
+    both.left_trigger = feedback_trigger(0.25F);
+    both.right_trigger = feedback_trigger(0.75F);
     const auto installed = fixture.app().replace_profile(both);
     REQUIRE_FALSE(installed.failure.has_value());
     CHECK(installed.pending_contexts == 1U);
@@ -131,8 +133,8 @@ TEST_CASE("profiles.application_replacement_removes_channels_and_preserves_expli
     CHECK(equal_record_value.revisions[0U] == 1U);
     CHECK(equal_record_value.revisions[1U] == 1U);
 
-    const auto left_only =
-        profile{.left_trigger = feedback_trigger(0.5F), .right_trigger = std::nullopt};
+    effects_profile left_only{};
+    left_only.left_trigger = feedback_trigger(0.5F);
     const auto removed = fixture.app().replace_profile(left_only);
     CHECK(removed.pending_contexts == 1U);
     CHECK_FALSE(removed.failure.has_value());
@@ -144,8 +146,8 @@ TEST_CASE("profiles.application_replacement_removes_channels_and_preserves_expli
     CHECK(replacement_left.value == feedback_trigger(0.5F));
     CHECK(replacement_left.provenance.identity != initial_identity);
 
-    const auto explicit_off =
-        profile{.left_trigger = output::trigger_value{}, .right_trigger = std::nullopt};
+    effects_profile explicit_off{};
+    explicit_off.left_trigger = output::trigger_value{};
     const auto off_replacement = fixture.app().replace_profile(explicit_off);
     REQUIRE_FALSE(off_replacement.failure.has_value());
     CHECK(off_replacement.pending_contexts == 1U);
@@ -156,7 +158,7 @@ TEST_CASE("profiles.application_replacement_removes_channels_and_preserves_expli
     CHECK(off_left.value.mode == output::trigger_mode::off);
     CHECK(off_left.provenance.identity != replacement_left.provenance.identity);
 
-    const auto emptied = fixture.app().replace_profile(profile{});
+    const auto emptied = fixture.app().replace_profile(effects_profile{});
     CHECK(emptied.pending_contexts == 0U);
     CHECK_FALSE(emptied.failure.has_value());
     CHECK_FALSE(emptied.terminal);
@@ -182,7 +184,8 @@ TEST_CASE("profiles.application_invalid_programmatic_profile_keeps_previous_owne
     REQUIRE(before_record.has_value());
     const auto before_record_value = required_value(before_record);
 
-    auto invalid = profile{.left_trigger = feedback_trigger(0.1F), .right_trigger = std::nullopt};
+    effects_profile invalid{};
+    invalid.left_trigger = feedback_trigger(0.1F);
     invalid.right_trigger = feedback_trigger(std::nanf(""));
     const auto rejected = fixture.app().replace_profile(invalid);
     REQUIRE(rejected.failure.has_value());

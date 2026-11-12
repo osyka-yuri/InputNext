@@ -1,6 +1,6 @@
 #include "application.hpp"
 
-#include "model.hpp"
+#include "effects_profile.hpp"
 #include "output/composition/internal_producer.hpp"
 #include "output/policy/policy.hpp"
 #include <inputnext/output.hpp>
@@ -14,11 +14,11 @@
 namespace inputnext::profiles {
 namespace {
 
-[[nodiscard]] bool empty(const profile& value) noexcept {
+[[nodiscard]] bool empty(const effects_profile& value) noexcept {
     return !value.left_trigger.has_value() && !value.right_trigger.has_value();
 }
 
-[[nodiscard]] output::submit_request request_for(const profile& value) noexcept {
+[[nodiscard]] output::submit_request request_for(const effects_profile& value) noexcept {
     output::submit_request request{.sequence = 1U};
     if (value.left_trigger.has_value()) {
         request.selected_channels |= output::left_trigger_mask;
@@ -94,7 +94,7 @@ void application::record_failure(application_report& report,
     }
 }
 
-application_report application::replace_profile(const profile& desired) {
+application_report application::replace_profile(const effects_profile& desired) {
     if (closed_) {
         return finish({.failure = application_failure{.operation = application_operation::validate,
                            .code = output::error::revoked}});

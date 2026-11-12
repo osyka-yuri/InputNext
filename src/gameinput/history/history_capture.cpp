@@ -1,11 +1,15 @@
 #include "history_capture.hpp"
 
+#include "gameinput/input_profile.hpp"
 #include "gameinput/reading_parts.hpp"
 #include "history_capture_log.hpp"
+#include "input/program.hpp"
+#include "input/touch_resolver.hpp"
 #include <inputnext/gamepad_state.hpp>
 #include <inputnext/history.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <mutex>
@@ -26,6 +30,76 @@ merge_guide(gamepad_state pad, bool guide_known, bool guide_pressed) noexcept {
 
 } // namespace
 
+history_capture::history_capture(input::program mappings, native_input_profile profile) noexcept
+    : mappings_(mappings),
+      input_profile_(profile) {
+    if (!mappings_.has_touch_routes()) {
+        input_profile_ = {};
+        input_profile_.reason = input_fallback_reason::none;
+    }
+    diagnostics_.configured_path = input_profile_.history;
+    diagnostics_.profile = input_profile_;
+    record_reason(input_profile_.reason);
+}
+
+const input::program& history_capture::projection() const noexcept {
+    return mappings_;
+}
+
+void history_capture::record_reason(input_fallback_reason reason) noexcept {
+    if (reason == input_fallback_reason::none) {
+        return;
+    }
+    diagnostics_.last_reason = reason;
+    const auto index = static_cast<std::size_t>(reason);
+    if (index < diagnostics_.counts.size() &&
+        diagnostics_.counts[index] != std::numeric_limits<std::uint64_t>::max()) {
+        ++diagnostics_.counts[index];
+    }
+}
+
+void history_capture::record_fallback(input_fallback_reason reason) noexcept {
+    std::scoped_lock lock{mutex_};
+    record_reason(reason);
+}
+
+void history_capture::record_selected_history(input_history_path path) noexcept {
+    std::scoped_lock lock{mutex_};
+    diagnostics_.last_selected_history = path;
+}
+
+input_diagnostics history_capture::diagnostics() const noexcept {
+    std::scoped_lock lock{mutex_};
+    return diagnostics_;
+}
+
+void history_capture::update_touch(const input::touch_snapshot& touch) noexcept {
+    const bool cut = touch.epoch != touch_.epoch;
+    touch_ = touch;
+    if (cut) {
+        append_cut(capture_record_kind::touch_cut, pad_timestamp_us_, pad_qpc_);
+    }
+    refresh_fallback_baseline(pad_timestamp_us_, pad_qpc_);
+}
+
+void history_capture::invalidate_touch(const input::touch_snapshot& touch,
+    input_fallback_reason reason,
+    bool revoke_profile) noexcept {
+    std::scoped_lock lock{mutex_};
+    if (closed_) {
+        return;
+    }
+    if (revoke_profile) {
+        input_profile_.callback_coherent = false;
+        input_profile_.coordinates = touch_coordinate_source::none;
+        input_profile_.history = input_history_path::gamepad;
+        input_profile_.reason = reason;
+        diagnostics_.profile = input_profile_;
+    }
+    record_reason(reason);
+    update_touch(touch);
+}
+
 void history_capture::append(capture_record_kind kind,
     const gamepad_state& pad,
     bool guide_known,
@@ -38,7 +112,8 @@ void history_capture::append(capture_record_kind kind,
             .source_timestamp_us = source_timestamp_us,
             .effective_qpc = qpc,
             .guide_known = guide_known,
-        });
+        },
+        touch_.source);
 }
 
 void history_capture::refresh_fallback_baseline(std::uint64_t source_timestamp_us,
@@ -154,16 +229,21 @@ void history_capture::on_callback(const reading_parts& accepted) noexcept {
         return;
     }
 
-    if (accepted.pad.has_value() && is_valid_gamepad_state(*accepted.pad)) {
+    const bool has_pad = accepted.pad.has_value() && is_valid_gamepad_state(*accepted.pad);
+    const auto old_touch = touch_.source;
+    if (has_pad) {
         update_pad(accepted, false);
-        if (callback_coverage_) {
-            append(capture_record_kind::pad,
-                pad_,
-                guide_fact_.has_value() && guide_fresh_,
-                guide_pressed_,
-                accepted.source_timestamp_us,
-                accepted.observation_qpc);
-        }
+    }
+    if (accepted.resolved_touch.has_value()) {
+        update_touch(*accepted.resolved_touch);
+    }
+    if (callback_coverage_ && pad_known_ && (has_pad || old_touch != touch_.source)) {
+        append(capture_record_kind::pad,
+            pad_,
+            guide_fact_.has_value() && guide_fresh_,
+            guide_pressed_,
+            accepted.source_timestamp_us,
+            accepted.observation_qpc);
     }
 
     update_guide_callback(accepted);
@@ -180,6 +260,15 @@ void history_capture::on_seed(const reading_parts& accepted) noexcept {
 
     if (accepted.pad.has_value() && is_valid_gamepad_state(*accepted.pad)) {
         update_pad(accepted, true);
+    }
+    if (accepted.resolved_touch.has_value()) {
+        const auto old_touch = touch_;
+        update_touch(*accepted.resolved_touch);
+        if (old_touch.source != touch_.source && old_touch.epoch == touch_.epoch) {
+            append_cut(capture_record_kind::touch_cut,
+                accepted.source_timestamp_us,
+                accepted.observation_qpc);
+        }
     }
     update_guide_seed(accepted);
     refresh_fallback_baseline(accepted.source_timestamp_us, accepted.observation_qpc);
@@ -239,6 +328,8 @@ capture_snapshot history_capture::snapshot() const noexcept {
         .guide_fresh = guide_fresh_,
         .closed = closed_,
         .exhausted = log_.exhausted(),
+        .touch = touch_,
+        .input_profile = input_profile_,
     };
 }
 

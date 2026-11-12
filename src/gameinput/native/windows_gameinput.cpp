@@ -1,10 +1,15 @@
 #include "native_gameinput.hpp"
 
+#include "gameinput/input_profile.hpp"
+#include "gameinput/input_qualification.hpp"
 #include "gameinput/reading_parts.hpp"
 #include "gameinput_value_mapping.hpp"
+#include "input/touch_resolver.hpp"
 #include "native_raw_output_report.hpp"
 #include "native_rumble_endpoint.hpp"
+#include "touch_reading.hpp"
 #include "windows_history_cursor.hpp"
+#include "windows_input_profile.hpp"
 #include "windows_raw_output_report.hpp"
 #include <inputnext/device_metadata.hpp>
 #include <inputnext/output.hpp>
@@ -38,6 +43,11 @@ namespace gameinput = GameInput::v4;
 constexpr auto gamepad_and_system_button = std::bit_cast<gameinput::GameInputKind>(
     static_cast<std::uint32_t>(gameinput::GameInputKindGamepad) |
     static_cast<std::uint32_t>(gameinput::GameInputKindSystemButton));
+constexpr auto gamepad_system_and_touch = std::bit_cast<gameinput::GameInputKind>(
+    static_cast<std::uint32_t>(gameinput::GameInputKindGamepad) |
+    static_cast<std::uint32_t>(gameinput::GameInputKindSystemButton) |
+    static_cast<std::uint32_t>(gameinput::GameInputKindControllerButton) |
+    static_cast<std::uint32_t>(gameinput::GameInputKindTouch));
 
 using initialize_gameinput = HRESULT(WINAPI*)(REFIID interface_id, void** instance);
 
@@ -176,6 +186,7 @@ public:
         }
 
         game_input_->EnableBackgroundInput(true);
+        runtime_version_ = loaded_input_runtime_version(module_);
         return {};
     }
 
@@ -198,8 +209,10 @@ public:
         }
 
         gameinput::GameInputCallbackToken token{};
+        const auto kind = context.input_profile.touch_enabled() ? gamepad_system_and_touch
+                                                                : gamepad_and_system_button;
         const auto result = game_input_->RegisterReadingCallback(as_device(device),
-            gamepad_and_system_button,
+            kind,
             &context,
             &on_reading,
             &token);
@@ -218,14 +231,22 @@ public:
 
     [[nodiscard]] native_result<reading_parts> current(native_device_handle device,
         native_reading_lane lane) override {
+        return current(device, lane, native_input_profile{});
+    }
+
+    [[nodiscard]] native_result<reading_parts> current(native_device_handle device,
+        native_reading_lane lane,
+        const native_input_profile& profile) override {
         if (game_input_ == nullptr || !device.valid()) {
             return std::unexpected(failure(native_failure_cause::no_current_reading, E_INVALIDARG));
         }
 
         gameinput::IGameInputReading* raw_reading{};
-        const auto kind = lane == native_reading_lane::gamepad
-                              ? gameinput::GameInputKindGamepad
-                              : gameinput::GameInputKindSystemButton;
+        auto kind = gameinput::GameInputKindSystemButton;
+        if (lane == native_reading_lane::gamepad) {
+            kind = profile.touch_enabled() ? gamepad_system_and_touch
+                                           : gameinput::GameInputKindGamepad;
+        }
         const auto result = game_input_->GetCurrentReading(kind, as_device(device), &raw_reading);
         if (FAILED(result) || raw_reading == nullptr) {
             if (raw_reading != nullptr) {
@@ -238,20 +259,38 @@ public:
         }
 
         const gameinput_reading reading{raw_reading};
-        return extract_parts(reading.get(), lane);
+        return extract_parts(*reading.get(), profile, lane);
     }
 
     [[nodiscard]] native_result<std::unique_ptr<native_history_cursor>> create_history_cursor(
         native_device_handle device) override {
+        return create_history_cursor(device, native_input_profile{}, input::touch_snapshot{});
+    }
+
+    [[nodiscard]] native_result<std::unique_ptr<native_history_cursor>> create_history_cursor(
+        native_device_handle device,
+        const native_input_profile& profile,
+        const input::touch_snapshot& touch_context) override {
         if (game_input_ == nullptr || !device.valid()) {
             return std::unexpected(failure(native_failure_cause::no_current_reading, E_INVALIDARG));
         }
         try {
-            return create_windows_history_cursor(game_input_, device);
+            return create_windows_history_cursor(game_input_, device, profile, touch_context);
         } catch (const std::bad_alloc&) {
             return std::unexpected(
                 failure(native_failure_cause::resource_exhausted, E_OUTOFMEMORY));
         }
+    }
+
+    [[nodiscard]] native_input_profile describe_input(native_device_handle device) override {
+        if (!device.valid()) {
+            return {};
+        }
+        auto* const native_device = as_device(device);
+        const auto path = read_pnp_path(native_device);
+        return describe_windows_input(*native_device,
+            runtime_version_,
+            path.has_value() ? std::string_view{path.value} : std::string_view{});
     }
 
     [[nodiscard]] native_result<std::uint64_t> performance_frequency() noexcept override {
@@ -394,20 +433,26 @@ private:
         return native_callback_token{token};
     }
 
-    [[nodiscard]] static reading_parts extract_parts(gameinput::IGameInputReading* reading,
-        native_reading_lane lane) noexcept {
+    // A callback can carry both lanes. Current reads extract only the requested lane.
+    [[nodiscard]] static reading_parts extract_parts(gameinput::IGameInputReading& reading,
+        const native_input_profile& profile,
+        std::optional<native_reading_lane> lane) noexcept {
         reading_parts result{};
-        result.source_timestamp_us = reading->GetTimestamp();
+        result.source_timestamp_us = reading.GetTimestamp();
         result.observation_qpc = observation_qpc();
 
-        if (lane == native_reading_lane::gamepad) {
+        if (lane.value_or(native_reading_lane::gamepad) == native_reading_lane::gamepad) {
             gameinput::GameInputGamepadState state{};
-            if (reading->GetGamepadState(&state)) {
+            if (reading.GetGamepadState(&state)) {
                 result.pad = map_gamepad_state(state);
             }
-        } else {
+            if (profile.touch_enabled()) {
+                result.touch = read_touch_observation(reading, profile);
+            }
+        }
+        if (lane != native_reading_lane::gamepad) {
             gameinput::GameInputSystemButtons buttons{};
-            if (reading->GetSystemButtonState(&buttons)) {
+            if (reading.GetSystemButtonState(&buttons)) {
                 result.guide = (buttons & gameinput::GameInputSystemButtonGuide) != 0;
             }
         }
@@ -436,26 +481,10 @@ private:
         auto const* callback_context = static_cast<native_reading_callback_context*>(context);
         if (callback_context != nullptr && callback_context->deliver != nullptr &&
             reading != nullptr) {
-            const auto parts = extract_callback_parts(reading);
+            const auto parts =
+                extract_parts(*reading, callback_context->input_profile, std::nullopt);
             callback_context->deliver(callback_context->owner, parts);
         }
-    }
-
-    [[nodiscard]] static reading_parts extract_callback_parts(
-        gameinput::IGameInputReading* reading) noexcept {
-        reading_parts result{};
-        result.source_timestamp_us = reading->GetTimestamp();
-        result.observation_qpc = observation_qpc();
-
-        gameinput::GameInputGamepadState pad{};
-        if (reading->GetGamepadState(&pad)) {
-            result.pad = map_gamepad_state(pad);
-        }
-        gameinput::GameInputSystemButtons buttons{};
-        if (reading->GetSystemButtonState(&buttons)) {
-            result.guide = (buttons & gameinput::GameInputSystemButtonGuide) != 0;
-        }
-        return result;
     }
 
     template <typename T>
@@ -542,6 +571,7 @@ private:
     }
 
     HMODULE module_{};
+    metadata_field<input_version> runtime_version_{};
     gameinput::IGameInput* game_input_{};
 };
 

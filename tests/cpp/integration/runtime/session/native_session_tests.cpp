@@ -3,8 +3,11 @@
 #include "core/core.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_history_test_support.hpp"
 #include "gameinput/native/native_gameinput.hpp"
+#include "profiles/parser.hpp"
 #include "runtime/session/native_session_dependencies.hpp"
 #include <inputnext/gameinput_runtime.hpp>
+#include <inputnext/gamepad_state.hpp>
+#include <inputnext/history.hpp>
 #include <inputnext/xinput_types.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -127,6 +130,67 @@ TEST_CASE("runtime.session.explicit_shutdown_drains_owners_in_dependency_order",
     fixture.session->shutdown();
     CHECK(fixture.rumble_controls->native_cleanup_complete());
     CHECK(fixture.initialize_calls->load(std::memory_order_relaxed) == 1U);
+}
+
+TEST_CASE("runtime.session.input_profile_reaches_core_and_xinput_once",
+    "[integration][runtime][session][remap]") {
+    const auto parsed = profiles::parse_profile(R"(
+[input]
+layout = "playstation"
+remap = [
+    { from = "cross", to = "circle" },
+    { from = "circle", to = "cross" },
+    { from = "l2", to = "l1" },
+    { from = "l1", to = "l2" },
+    { from = "touchpad_left", to = "options" },
+]
+)");
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->diagnostics.empty());
+    session_fixture fixture{nullptr, nullptr, nullptr, {}, {}, parsed->settings.input};
+    REQUIRE(fixture.session != nullptr);
+    const auto history = std::make_shared<native_history_script>();
+    const gamepad_state physical{
+        .buttons = static_cast<button_mask>(gamepad_button::south),
+        .left_trigger = 0.75F,
+        .right_trigger = 0.25F,
+    };
+    fixture.configure_device(history, physical);
+    REQUIRE(fixture.start().has_value());
+    fixture.session->activate();
+    REQUIRE(fixture.wait_for_presentation());
+
+    XINPUT_STATE xinput_state{};
+    REQUIRE(fixture.read_state(xinput_state) == ERROR_SUCCESS);
+    CHECK((xinput_state.Gamepad.wButtons & XINPUT_GAMEPAD_B) != 0U);
+    CHECK((xinput_state.Gamepad.wButtons & XINPUT_GAMEPAD_A) == 0U);
+    CHECK((xinput_state.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0U);
+    CHECK(xinput_state.Gamepad.bLeftTrigger == 0U);
+
+    const auto assignment = fixture.session->presentation().positions()[0U];
+    REQUIRE(assignment.has_value());
+    if (!assignment.has_value()) {
+        return;
+    }
+    auto& core_service = fixture.session->core();
+    const auto latest = core_service.read_latest(assignment->target);
+    REQUIRE(latest.has_value());
+    const auto expected_buttons = static_cast<button_mask>(gamepad_button::east) |
+                                  static_cast<button_mask>(gamepad_button::left_shoulder);
+    CHECK(latest->sample.state.buttons == expected_buttons);
+    CHECK(latest->sample.state.left_trigger == 0.0F);
+    CHECK(latest->sample.state.right_trigger == physical.right_trigger);
+
+    const auto reader =
+        core_service.open_reader(assignment->target, core::reader_focus::background);
+    REQUIRE(reader.has_value());
+    const auto events = core_service.read_events(*reader, history_batch_capacity);
+    REQUIRE(events.outcome == core::status::ok);
+    REQUIRE(events.batch.count == 1U);
+    CHECK(events.batch.records[0U].baseline);
+    CHECK(events.batch.records[0U].sample.state.buttons == expected_buttons);
+    CHECK(events.batch.records[0U].sample.state.left_trigger == 0.0F);
+    CHECK(core_service.close_reader(*reader) == core::status::ok);
 }
 
 } // namespace inputnext::runtime_session_test_support

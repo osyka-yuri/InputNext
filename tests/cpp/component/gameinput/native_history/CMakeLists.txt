@@ -1,4 +1,7 @@
-add_executable(inputnext_gameinput_native_history_tests native_history_tests.cpp)
+add_executable(inputnext_gameinput_native_history_tests
+    native_history_tests.cpp
+    composite_history_tests.cpp
+)
 target_link_libraries(inputnext_gameinput_native_history_tests
     PRIVATE inputnext_gameinput_native inputnext_gameinput_sdk Catch2::Catch2WithMain
 )

@@ -17,13 +17,13 @@ using inputnext::test::required_value;
 namespace {
 
 [[nodiscard]] inputnext::output::trigger_value left(const parsed_profile& parsed) {
-    REQUIRE(parsed.settings.left_trigger.has_value());
-    return required_value(parsed.settings.left_trigger);
+    REQUIRE(parsed.settings.effects.left_trigger.has_value());
+    return required_value(parsed.settings.effects.left_trigger);
 }
 
 [[nodiscard]] inputnext::output::trigger_value right(const parsed_profile& parsed) {
-    REQUIRE(parsed.settings.right_trigger.has_value());
-    return required_value(parsed.settings.right_trigger);
+    REQUIRE(parsed.settings.effects.right_trigger.has_value());
+    return required_value(parsed.settings.effects.right_trigger);
 }
 
 [[nodiscard]] bool has_diagnostic(const parsed_profile& parsed, const std::string_view text) {
@@ -36,20 +36,21 @@ namespace {
 TEST_CASE("profiles.empty_and_absent_triggers_have_no_intent", "[unit][profiles]") {
     auto parsed = parse_profile("title = \"unrelated\"\n[game]\nname = \"ignored\"\n");
     REQUIRE(parsed.has_value());
-    CHECK_FALSE(parsed->settings.left_trigger.has_value());
-    CHECK_FALSE(parsed->settings.right_trigger.has_value());
+    CHECK_FALSE(parsed->settings.effects.left_trigger.has_value());
+    CHECK_FALSE(parsed->settings.effects.right_trigger.has_value());
     CHECK(parsed->diagnostics.empty());
 
     parsed = parse_profile("[effects.left_trigger]\nmode = 'off'\n");
     REQUIRE(parsed.has_value());
-    REQUIRE(parsed->settings.left_trigger.has_value());
-    CHECK(required_value(parsed->settings.left_trigger) == inputnext::output::trigger_value{});
+    REQUIRE(parsed->settings.effects.left_trigger.has_value());
+    CHECK(required_value(parsed->settings.effects.left_trigger) ==
+          inputnext::output::trigger_value{});
     CHECK(parsed->diagnostics.empty());
 
     parsed = parse_profile("[effects.left_trigger]\n[effects.right_trigger] # empty\n");
     REQUIRE(parsed.has_value());
-    CHECK_FALSE(parsed->settings.left_trigger.has_value());
-    CHECK_FALSE(parsed->settings.right_trigger.has_value());
+    CHECK_FALSE(parsed->settings.effects.left_trigger.has_value());
+    CHECK_FALSE(parsed->settings.effects.right_trigger.has_value());
     CHECK(parsed->diagnostics.empty());
 }
 
@@ -280,8 +281,8 @@ TEST_CASE("profiles.weapon_boundary_matches_usb_double_quantization", "[unit][pr
     const auto parsed = parse_profile(
         "[effects.left_trigger]\nmode = 'weapon'\nstart = 0.8333333134651184\nend = 0.9\n");
     REQUIRE(parsed.has_value());
-    REQUIRE(parsed->settings.left_trigger.has_value());
-    CHECK(required_value(parsed->settings.left_trigger).mode ==
+    REQUIRE(parsed->settings.effects.left_trigger.has_value());
+    CHECK(required_value(parsed->settings.effects.left_trigger).mode ==
           inputnext::output::trigger_mode::weapon);
     CHECK(parsed->diagnostics.empty());
 }
@@ -413,8 +414,8 @@ TEST_CASE("profiles.non_table_effect_nodes_are_located_and_neutralized", "[unit]
     auto parsed = parse_profile("effects = true\n");
     REQUIRE(parsed.has_value());
     REQUIRE(parsed->diagnostics.size() == 1U);
-    CHECK(parsed->settings.left_trigger == inputnext::output::trigger_value{});
-    CHECK(parsed->settings.right_trigger == inputnext::output::trigger_value{});
+    CHECK(parsed->settings.effects.left_trigger == inputnext::output::trigger_value{});
+    CHECK(parsed->settings.effects.right_trigger == inputnext::output::trigger_value{});
     CHECK(parsed->diagnostics.front().line == 1U);
     CHECK(parsed->diagnostics.front().column > 0U);
 

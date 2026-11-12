@@ -3,6 +3,7 @@
 #include "factory.hpp"
 #include "gameinput/core/publication_source.hpp"
 #include "gameinput/native/native_gameinput.hpp"
+#include "input/program.hpp"
 #include "metadata/provider.hpp"
 #include "metadata/windows/provider.hpp"
 #include <inputnext/device_metadata.hpp>
@@ -60,9 +61,11 @@ void include_deadline(std::optional<maintenance_time>& deadline,
 gameinput_runtime::implementation::implementation(device_registry& device_registry,
     gameinput_options runtime_options,
     std::unique_ptr<gameinput_detail::native_gameinput> native_port,
-    std::unique_ptr<metadata_provider> metadata_port)
+    std::unique_ptr<metadata_provider> metadata_port,
+    input::program mappings)
     : registry(device_registry),
       options(std::move(runtime_options)),
+      input_program(mappings),
       native(std::move(native_port)),
       metadata(std::move(metadata_port)),
       history_provider_port(*this),
@@ -686,11 +689,13 @@ std::unique_ptr<gameinput_runtime> gameinput_detail::runtime_factory::create(
     device_registry& registry,
     gameinput_options options,
     std::unique_ptr<gameinput_detail::native_gameinput> native,
-    std::unique_ptr<metadata_provider> metadata) {
+    std::unique_ptr<metadata_provider> metadata,
+    input::program mappings) {
     auto implementation = std::make_unique<gameinput_runtime::implementation>(registry,
         std::move(options),
         std::move(native),
-        std::move(metadata));
+        std::move(metadata),
+        mappings);
     return std::unique_ptr<gameinput_runtime>{new gameinput_runtime{std::move(implementation)}};
 }
 

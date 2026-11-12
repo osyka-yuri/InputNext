@@ -1,14 +1,20 @@
 #include "source_history_test_support.hpp"
+#include "support/gameinput/scripted_native.hpp"
 
 #include "gameinput/history/source_history_cursor.hpp"
+#include "gameinput/input_profile.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/native/native_history.hpp"
 #include "gameinput/reading_parts.hpp"
 #include "history/cursor.hpp"
+#include "input/program.hpp"
 #include <inputnext/gamepad_state.hpp>
 #include <inputnext/history.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include <chrono>
+#include <expected>
 
 namespace inputnext::gameinput_detail {
 namespace {
@@ -253,6 +259,224 @@ TEST_CASE("gameinput.history.source_cursor_retries_native_prefix_on_same_cursor"
     CHECK(retried.kind == history_detail::cursor_step_kind::caught_up);
     CHECK(fixture.native.create_count == 1U);
     CHECK(fixture.native.history.next_count == 3U);
+}
+
+TEST_CASE("gameinput.history.source_cursor_rejects_native_reading_after_touch_epoch_cut",
+    "[component][gameinput][history][source][remap]") {
+    scripted_now = history_time{};
+    touch_cursor_fixture fixture{input_history_path::composite};
+    fixture.native.history.seed.baseline.state.buttons =
+        static_cast<button_mask>(gamepad_button::south);
+    fixture.native.history.seed.touch = input::touch_source::left;
+    fixture.native.history.steps[0U] = native_history_step{
+        .kind = native_history_step_kind::reading,
+        .reading =
+            input_update{
+                .state = gamepad_state{.buttons = static_cast<button_mask>(gamepad_button::south)},
+                .source_timestamp_us = 200U,
+                .observation_qpc = 200U,
+            },
+        .touch = input::touch_source::left,
+    };
+    fixture.native.history.step_count = 1U;
+
+    REQUIRE(fixture.cursor.start(history_time{}).has_value());
+    test_gate gate;
+    fixture.native.history.next_gate = &gate;
+    auto result = history_detail::cursor_step{};
+    gated_thread reader{gate, [&] { result = fixture.cursor.next(history_time{}); }};
+    const bool entered = reader.wait_until_entered_for(std::chrono::seconds{2});
+    if (entered) {
+        fixture.revoke_touch();
+    }
+    reader.finish();
+
+    CHECK(entered);
+    CHECK(result.kind == history_detail::cursor_step_kind::history_lost);
+    fixture.native.history.next_gate = nullptr;
+    const auto baseline = fixture.cursor.start(history_time{});
+    REQUIRE(baseline.has_value());
+    CHECK(
+        (baseline->baseline.state.buttons & static_cast<button_mask>(gamepad_button::south)) != 0U);
+    CHECK(
+        (baseline->baseline.state.buttons & static_cast<button_mask>(gamepad_button::view)) == 0U);
+}
+
+TEST_CASE("gameinput.history.source_cursor_rejects_pending_guide_after_touch_epoch_cut",
+    "[component][gameinput][history][source][remap]") {
+    scripted_now = history_time{};
+    touch_cursor_fixture fixture{input_history_path::composite};
+    fixture.native.history.seed.touch = input::touch_source::left;
+    fixture.native.history.steps[0U] = native_history_step{
+        .kind = native_history_step_kind::reading,
+        .reading =
+            input_update{
+                .state = gamepad_state{},
+                .source_timestamp_us = 300U,
+                .observation_qpc = 300U,
+            },
+        .touch = input::touch_source::none,
+    };
+    fixture.native.history.step_count = 1U;
+
+    REQUIRE(fixture.cursor.start(history_time{}).has_value());
+    fixture.capture->on_callback(reading_parts{
+        .guide = true,
+        .source_timestamp_us = 200U,
+        .observation_qpc = 200U,
+    });
+    test_gate gate;
+    fixture.native.history.next_gate = &gate;
+    auto result = history_detail::cursor_step{};
+    gated_thread reader{gate, [&] { result = fixture.cursor.next(history_time{}); }};
+    const bool entered = reader.wait_until_entered_for(std::chrono::seconds{2});
+    if (entered) {
+        fixture.revoke_touch();
+    }
+    reader.finish();
+
+    CHECK(entered);
+    CHECK(result.kind == history_detail::cursor_step_kind::history_lost);
+}
+
+TEST_CASE("gameinput.history.source_cursor_preserves_non_touch_guide_before_cut",
+    "[component][gameinput][history][source][remap]") {
+    scripted_now = history_time{};
+    cursor_fixture fixture;
+    fixture.qualify_guide();
+    fixture.native.history.steps[0U] = reading_step(0U, 150U, 150U);
+    fixture.native.history.steps[1U] = reading_step(0U, 180U, 180U);
+    fixture.native.history.step_count = 2U;
+
+    REQUIRE(fixture.cursor.start(history_time{}).has_value());
+    fixture.capture->on_callback(reading_parts{
+        .guide = true,
+        .source_timestamp_us = 120U,
+        .observation_qpc = 120U,
+    });
+    fixture.capture->set_callback_coverage(false);
+
+    const auto guide = fixture.cursor.next(history_time{});
+    REQUIRE(guide.kind == history_detail::cursor_step_kind::reading);
+    CHECK(guide.origin == history_record_origin::callback_guide);
+    CHECK((guide.reading.state.buttons & guide_mask) != 0U);
+    CHECK(
+        fixture.cursor.next(history_time{}).kind == history_detail::cursor_step_kind::history_lost);
+}
+
+TEST_CASE("gameinput.history.source_cursor_orders_native_reading_before_cut_arriving_during_next",
+    "[component][gameinput][history][source][remap]") {
+    scripted_now = history_time{};
+    touch_cursor_fixture fixture{input_history_path::composite};
+    fixture.native.history.seed.touch = input::touch_source::left;
+    fixture.native.history.steps[0U] = native_history_step{
+        .kind = native_history_step_kind::reading,
+        .reading =
+            input_update{
+                .state = gamepad_state{.buttons = static_cast<button_mask>(gamepad_button::south)},
+                .source_timestamp_us = 200U,
+                .observation_qpc = 200U,
+            },
+        .touch = input::touch_source::none,
+    };
+    fixture.native.history.steps[1U] = native_history_step{
+        .kind = native_history_step_kind::reading,
+        .reading =
+            input_update{
+                .state = gamepad_state{},
+                .source_timestamp_us = 300U,
+                .observation_qpc = 300U,
+            },
+        .touch = input::touch_source::none,
+    };
+    fixture.native.history.step_count = 2U;
+
+    REQUIRE(fixture.cursor.start(history_time{}).has_value());
+    test_gate gate;
+    fixture.native.history.next_gate = &gate;
+    auto first = history_detail::cursor_step{};
+    gated_thread reader{gate, [&] { first = fixture.cursor.next(history_time{}); }};
+    const bool entered = reader.wait_until_entered_for(std::chrono::seconds{2});
+    if (entered) {
+        fixture.capture->on_callback(reading_parts{
+            .guide = true,
+            .source_timestamp_us = 250U,
+            .observation_qpc = 250U,
+        });
+        fixture.capture->set_callback_coverage(false);
+    }
+    reader.finish();
+    fixture.native.history.next_gate = nullptr;
+
+    CHECK(entered);
+    CHECK(first.kind == history_detail::cursor_step_kind::progress);
+    const auto pad = fixture.cursor.next(history_time{});
+    REQUIRE(pad.kind == history_detail::cursor_step_kind::reading);
+    CHECK(pad.origin == history_record_origin::native_pad);
+    CHECK(pad.reading.source_timestamp_us == 200U);
+    const auto guide = fixture.cursor.next(history_time{});
+    REQUIRE(guide.kind == history_detail::cursor_step_kind::reading);
+    CHECK(guide.origin == history_record_origin::callback_guide);
+    CHECK(guide.reading.source_timestamp_us == 250U);
+    CHECK(
+        fixture.cursor.next(history_time{}).kind == history_detail::cursor_step_kind::history_lost);
+}
+
+TEST_CASE("gameinput.history.source_cursor_preserves_fallback_prefix_before_cut",
+    "[component][gameinput][history][source][remap]") {
+    scripted_now = history_time{};
+    cursor_fixture fixture;
+    fixture.qualify_guide();
+    fixture.capture->on_seed(reading_parts{
+        .pad = gamepad_state{},
+        .source_timestamp_us = 101U,
+        .observation_qpc = 101U,
+    });
+    fixture.native.create_failures = 1U;
+
+    const auto baseline = fixture.cursor.start(history_time{});
+    REQUIRE(baseline.has_value());
+    CHECK(baseline->source == history_source_kind::callback_capture);
+    fixture.capture->on_callback(reading_parts{
+        .pad = gamepad_state{.buttons = static_cast<button_mask>(gamepad_button::south)},
+        .guide = true,
+        .source_timestamp_us = 200U,
+        .observation_qpc = 200U,
+    });
+    fixture.capture->set_callback_coverage(false);
+
+    const auto pad = fixture.cursor.next(history_time{});
+    REQUIRE(pad.kind == history_detail::cursor_step_kind::reading);
+    CHECK(pad.origin == history_record_origin::callback_pad);
+    CHECK((pad.reading.state.buttons & static_cast<button_mask>(gamepad_button::south)) != 0U);
+    const auto guide = fixture.cursor.next(history_time{});
+    REQUIRE(guide.kind == history_detail::cursor_step_kind::reading);
+    CHECK(guide.origin == history_record_origin::callback_guide);
+    CHECK((guide.reading.state.buttons & guide_mask) != 0U);
+    CHECK(
+        fixture.cursor.next(history_time{}).kind == history_detail::cursor_step_kind::history_lost);
+}
+
+TEST_CASE("gameinput.history.source_cursor_refreshes_touch_baseline_after_frequency_query",
+    "[component][gameinput][history][source][remap]") {
+    scripted_now = history_time{};
+    touch_cursor_fixture fixture{input_history_path::callback_capture};
+    test_gate gate;
+    fixture.native.frequency_gate = &gate;
+    auto baseline = history_result<history_detail::cursor_seed>{
+        std::unexpected(history_failure{.code = history_error::no_data})};
+    gated_thread starter{gate, [&] { baseline = fixture.cursor.start(history_time{}); }};
+    const bool entered = starter.wait_until_entered_for(std::chrono::seconds{2});
+    if (entered) {
+        fixture.revoke_touch();
+    }
+    starter.finish();
+
+    CHECK(entered);
+    REQUIRE(baseline.has_value());
+    CHECK(baseline->source == history_source_kind::callback_capture);
+    CHECK(
+        (baseline->baseline.state.buttons & static_cast<button_mask>(gamepad_button::view)) == 0U);
 }
 
 } // namespace

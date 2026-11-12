@@ -3,7 +3,7 @@
 #include "output/authority_fixture.hpp"
 #include "output/authority_test_access.hpp"
 #include "profiles/application.hpp"
-#include "profiles/model.hpp"
+#include "profiles/effects_profile.hpp"
 #include "support/xinput/test_ports.hpp"
 #include "values/required_value.hpp"
 #include <inputnext/gamepad_state.hpp>
@@ -24,7 +24,7 @@ namespace inputnext::profiles_test_support {
 using inputnext::test::required_value;
 using inputnext::xinput_test_support::test_connection;
 using profiles::application;
-using profiles::profile;
+using profiles::effects_profile;
 
 inline constexpr output::internal_context_options application_options{
     .owner = output::internal_owner_key{1501U},
@@ -41,8 +41,10 @@ inline constexpr output::internal_context_options application_options{
         .strength = strength};
 }
 
-[[nodiscard]] inline profile left_profile(const float strength) noexcept {
-    return profile{.left_trigger = feedback_trigger(strength), .right_trigger = std::nullopt};
+[[nodiscard]] inline effects_profile left_profile(const float strength) noexcept {
+    effects_profile profile{};
+    profile.left_trigger = feedback_trigger(strength);
+    return profile;
 }
 
 class application_fixture final {

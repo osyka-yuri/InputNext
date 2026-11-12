@@ -86,9 +86,12 @@ int wmain(int argc, wchar_t** argv) {
         if (!parsed->diagnostics.empty()) {
             return 1;
         }
-        std::cout << "[OK] " << utf8_path(path)
-                  << "\nleft_trigger=" << describe(parsed->settings.left_trigger)
-                  << "\nright_trigger=" << describe(parsed->settings.right_trigger) << '\n';
+        std::cout << "[OK] " << utf8_path(path) << "\ninput_remap="
+                  << (parsed->settings.input.is_ordinary_identity() ? "identity" : "configured")
+                  << "\ntouchpad_routes="
+                  << (parsed->settings.input.has_touch_routes() ? "enabled" : "disabled")
+                  << "\nleft_trigger=" << describe(parsed->settings.effects.left_trigger)
+                  << "\nright_trigger=" << describe(parsed->settings.effects.right_trigger) << '\n';
         return 0;
     } catch (const std::exception& error) {
         static_cast<void>(std::fprintf(stderr, "Profile validation failed: %s\n", error.what()));

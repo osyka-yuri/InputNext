@@ -1,5 +1,6 @@
 #pragma once
 
+#include "input/program.hpp"
 #include <inputnext/history.hpp>
 
 #include <array>
@@ -15,13 +16,19 @@ enum class capture_record_kind : std::uint8_t {
     guide,
     guide_cut,
     fallback_cut,
+    touch_cut,
 };
 
 struct capture_record final {
     capture_record_kind kind{capture_record_kind::pad};
+    input::touch_source touch{input::touch_source::none};
     std::uint64_t position{};
     history_sample sample{};
 };
+
+// Keep the additional source in the original control-header padding; retention has the same
+// sample count and byte bound as the gamepad-only capture log.
+static_assert(sizeof(capture_record) <= sizeof(history_sample) + (2U * sizeof(std::uint64_t)));
 
 enum class capture_read_kind : std::uint8_t {
     record,
@@ -58,7 +65,9 @@ public:
     [[nodiscard]] bool exhausted() const noexcept;
     [[nodiscard]] bool closed() const noexcept;
 
-    void append(capture_record_kind kind, const history_sample& sample) noexcept;
+    void append(capture_record_kind kind,
+        const history_sample& sample,
+        input::touch_source touch = input::touch_source::none) noexcept;
     void exhaust() noexcept;
     void close() noexcept;
     [[nodiscard]] capture_read read(std::uint64_t position) const noexcept;

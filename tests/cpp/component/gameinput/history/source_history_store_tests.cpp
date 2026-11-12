@@ -1,4 +1,5 @@
 #include "source_history_test_support.hpp"
+#include "support/gameinput/scripted_native.hpp"
 
 #include "gameinput/history/source_history_cursor.hpp"
 #include "gameinput/native/native_gameinput.hpp"

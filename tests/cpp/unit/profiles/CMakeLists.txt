@@ -1,4 +1,9 @@
-add_executable(inputnext_profiles_unit_tests parser_tests.cpp parser_limits_tests.cpp stream_tests.cpp)
+add_executable(inputnext_profiles_unit_tests
+    parser_tests.cpp
+    input_parser_tests.cpp
+    parser_limits_tests.cpp
+    stream_tests.cpp
+)
 target_include_directories(inputnext_profiles_unit_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
     "${PROJECT_SOURCE_DIR}/tests/support"

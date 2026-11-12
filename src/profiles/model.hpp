@@ -1,14 +1,13 @@
 #pragma once
 
-#include <inputnext/output.hpp>
-
-#include <optional>
+#include "effects_profile.hpp"
+#include "input/program.hpp"
 
 namespace inputnext::profiles {
 
 struct profile final {
-    std::optional<output::trigger_value> left_trigger;
-    std::optional<output::trigger_value> right_trigger;
+    input::program input{input::program::defaults()};
+    effects_profile effects;
 
     friend bool operator==(const profile&, const profile&) = default;
 };

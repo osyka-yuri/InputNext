@@ -1,5 +1,6 @@
 #include "parser.hpp"
 
+#include "detail/input_parser.hpp"
 #include "detail/trigger_parser.hpp"
 #include <inputnext/output.hpp>
 
@@ -31,15 +32,18 @@ parse_result parse_profile(const std::string_view content) {
     }
 
     parsed_profile result{};
+    if (const auto* input_node = document.table().get("input"); input_node != nullptr) {
+        result.settings.input = detail::parse_input(*input_node, result.diagnostics);
+    }
+
     const auto* effects_node = document.table().get("effects");
     if (effects_node == nullptr) {
         return result;
     }
-
     const auto* effects = effects_node->as_table();
     if (effects == nullptr) {
-        result.settings.left_trigger = output::trigger_value{};
-        result.settings.right_trigger = output::trigger_value{};
+        result.settings.effects.left_trigger = output::trigger_value{};
+        result.settings.effects.right_trigger = output::trigger_value{};
         result.diagnostics.push_back(
             detail::located_diagnostic(*effects_node, "effects must be a TOML table"));
         return result;
@@ -50,9 +54,9 @@ parse_result parse_profile(const std::string_view content) {
         if (name == "left_trigger" || name == "right_trigger") {
             auto trigger = detail::parse_trigger(value, name);
             if (name == "left_trigger") {
-                result.settings.left_trigger = trigger.value;
+                result.settings.effects.left_trigger = trigger.value;
             } else {
-                result.settings.right_trigger = trigger.value;
+                result.settings.effects.right_trigger = trigger.value;
             }
             result.diagnostics.insert(result.diagnostics.end(),
                 std::make_move_iterator(trigger.diagnostics.begin()),

@@ -1,12 +1,64 @@
 # Per-game profiles
 
-Place `inputnext.toml` beside the game executable to configure persistent adaptive-trigger effects. The native runtime reads it once during initialization, independently of the working directory and XInput DLL location. Restart the game after editing.
+Place `inputnext.toml` beside the game executable to configure remapping or adaptive-trigger effects. InputNext reads the file at startup. Restart the game after editing.
 
-The profile applies to all [assigned XInput controllers](xinput.md#positions-and-state). Higher-priority effects override it until cleared or expired. Effects are reapplied after foreground restoration or controller reassignment. Physical effects require a [supported output backend](gameinput-output.md#backend-selection); DualSense Bluetooth remains input-only.
+Without a readable file, buttons and triggers keep their usual assignments, supported touchpads use the defaults below, and trigger effects are off. Remapping applies inside the game through InputNext's XInput and Core interfaces.
 
-## Configuration
+## Input remapping
 
-Start with the [example profile](../examples/inputnext.toml):
+This profile swaps Cross and Circle and sends Options when you click the left half of the touchpad.
+
+```toml
+[input]
+layout = "playstation"
+remap = [
+    { from = "cross", to = "circle" },
+    { from = "circle", to = "cross" },
+    { from = "touchpad_left", to = "options" },
+]
+```
+
+`from` names the physical control you press. `to` names the final control the game receives. Unlisted sources keep their default assignments. Each source may appear once, even when it has several names. Use `to = "disabled"` to disable that source. For example, disabling physical `create` still lets a touchpad rule send logical `create`.
+
+`layout` selects the names accepted in the file. Universal names work in all layouts and are the default. The connected controller determines which sources are available.
+
+| Control | Universal | PlayStation | Xbox |
+| --- | --- | --- | --- |
+| Bottom face button | `face_bottom` | `cross` × | `a` |
+| Right face button | `face_right` | `circle` ○ | `b` |
+| Left face button | `face_left` | `square` □ | `x` |
+| Top face button | `face_top` | `triangle` △ | `y` |
+| Select and menu | `select`, `menu` | `create`, `options` | `view`, `menu` |
+| D-pad ↑ ↓ ← → | `dpad_up`, `dpad_down`, `dpad_left`, `dpad_right` | Same names | Same names |
+| Left and right shoulders | `left_shoulder`, `right_shoulder` | `l1`, `r1` | `lb`, `rb` |
+| Left and right triggers | `left_trigger`, `right_trigger` | `l2`, `r2` | `lt`, `rt` |
+| Left and right stick clicks | `left_stick_click`, `right_stick_click` | `l3`, `r3` | `ls`, `rs` |
+
+The table lists the available destinations. Stick movement, PS/Guide and Mute are outside the remap controls.
+
+### Trigger thresholds
+
+With `layout = "playstation"`, `{ from = "l2", to = "l1", threshold = 0.7 }` makes L2 send L1 from 70% travel. Only trigger-to-button rules accept a `threshold`. It defaults to `0.5` and must be finite, greater than `0`, and at most `1`.
+
+A button mapped to a trigger sends full travel when pressed. A trigger mapped to another trigger keeps its analog value. If several sources send the same trigger, the highest value wins. A logical button stays pressed while any of its sources is active.
+
+### Touchpad clicks
+
+Touchpad names are available in `from` in every layout. These assignments also apply without a profile file.
+
+| Source | Default game input |
+| --- | --- |
+| `touchpad_left` | Select (Create / View) |
+| `touchpad_right` | Menu (Options / Menu) |
+| `touchpad_unknown_side` | Select (Create / View) |
+
+Touch mappings respond to a mechanical click. The side comes from the finger position at the start of the click and stays fixed until release. The midpoint counts as right. A click already held at connection, or a click without a usable position, uses `touchpad_unknown_side`. Set all three sources to `"disabled"` to turn off touchpad mapping.
+
+Touchpad mapping currently supports the standard DualSense over USB with GameInput `4.0.306.0` and a matching device descriptor. InputNext checks the descriptor on each connection. On unsupported connections, touchpad rules have no effect and ordinary remapping still applies. If a supported connection loses reliable click data, InputNext releases the touchpad's contribution and waits for a valid physical release before accepting another click.
+
+## Trigger effects
+
+The [example profile](../examples/inputnext.toml) enables the two trigger effects below. Effects apply to the physical triggers of all [assigned XInput controllers](xinput.md#positions-and-state) with a [supported output backend](gameinput-output.md#backend-selection). Higher-priority effects take precedence until cleared or expired. InputNext reapplies the profile after foreground restoration or controller reassignment.
 
 ```toml
 [effects.left_trigger]
@@ -54,20 +106,22 @@ An all-zero curve or slope becomes `off`. Feedback and vibration with a strength
 
 ## Validation and errors
 
-Profiles use TOML 1.0 encoded as UTF-8. Files are limited to 64 KiB, nested value depth to 32, and the complete document to 128 tables including implicit tables and the root. Duplicate keys or tables and malformed TOML reject the entire document. A missing, unreadable or rejected document uses neutral defaults.
+Profiles use UTF-8 TOML 1.0. Limits are 64 KiB per file, 32 levels of nesting and 128 tables, including implicit tables and the root. Invalid TOML, duplicate keys or tables, and document limit violations restore default input and turn off trigger effects.
 
 The loader denies shared write access while reading. An open writer makes loading fail; finish saving before starting the game.
 
-Semantic errors disable only the affected trigger and preserve a valid policy on the other trigger. Unknown effect names, unknown or mode-inappropriate parameters, wrong types and invalid ranges are diagnosed. Unrelated top-level configuration sections are ignored by this trigger reader. Runtime diagnostics are sent to the Windows debugger output.
+An invalid rule or field under `input` restores the default input settings for the whole section. Valid trigger effects still apply.
 
-The optional validator uses the same parser and semantic checks as the runtime. Build it explicitly:
+An invalid trigger policy disables that trigger's effect. Other top-level sections are ignored. InputNext reports configuration errors through Windows debugger output.
+
+Build the optional validator from an x64 Visual Studio Developer PowerShell. It uses the runtime's configuration parser.
 
 ```powershell
 cmake --preset windows-x64 -DINPUTNEXT_BUILD_PROFILE_VALIDATOR=ON
-cmake --build --preset windows-x64 --target inputnext_profile_validator
+cmake --build --preset windows-x64 --parallel 16 --target inputnext_profile_validator
 ./build/windows-x64/tools/profile_validator/inputnext_profile_validator.exe ./examples/inputnext.toml
 ```
 
-Exit code `0` means the profile is valid; `1` reports a file or configuration error; `2` reports invalid command-line usage. Validation does not measure controller effects.
+The validator returns `0` for a valid profile, `1` for a file or configuration error, and `2` for invalid command-line usage. `touchpad_routes=enabled` means the effective settings include touchpad assignments. Device support is checked at connection time.
 
 Shutdown closes profile contexts before output backends; [output cleanup](gameinput-output.md#ownership) describes the native completion and neutralization limits.

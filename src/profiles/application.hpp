@@ -1,6 +1,6 @@
 #pragma once
 
-#include "model.hpp"
+#include "effects_profile.hpp"
 #include "output/composition/internal_producer.hpp"
 #include <inputnext/output.hpp>
 #include <inputnext/xinput.hpp>
@@ -39,7 +39,7 @@ public:
     application(application&&) = delete;
     application& operator=(application&&) = delete;
 
-    [[nodiscard]] application_report replace_profile(const profile& desired);
+    [[nodiscard]] application_report replace_profile(const effects_profile& desired);
     [[nodiscard]] application_report maintain();
     // Terminal and idempotent; never reads assignments or admits another context.
     [[nodiscard]] application_report close();
@@ -75,7 +75,7 @@ private:
 
     output::detail::internal_producer producer_;
     xinput::service& presentation_;
-    profile desired_;
+    effects_profile desired_;
     std::array<position, 4U> positions_;
     bool replacement_pending_{};
     bool closed_{};

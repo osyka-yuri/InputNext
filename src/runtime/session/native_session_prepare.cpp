@@ -102,7 +102,8 @@ std::unique_ptr<native_session> native_session::implementation::prepare(
     state->runtime = gameinput_detail::runtime_factory::create(state->registry,
         gameinput_options{.runtime_library = std::move(dependencies.runtime_library)},
         std::move(dependencies.native),
-        std::move(dependencies.metadata));
+        std::move(dependencies.metadata),
+        dependencies.profile_settings.input);
 
     auto runtime_access = gameinput_detail::runtime_output_access::create(*state->runtime);
     if (!runtime_access.has_value()) {
@@ -147,7 +148,7 @@ std::unique_ptr<native_session> native_session::implementation::prepare(
     }
     state->profile_application = std::make_unique<profiles::application>(*profile_producer,
         state->presentation_service->presentation());
-    if (state->profile_application->replace_profile(dependencies.profile_settings)
+    if (state->profile_application->replace_profile(dependencies.profile_settings.effects)
             .failure.has_value()) {
         throw_preparation_failure("native session profile configuration is invalid");
     }

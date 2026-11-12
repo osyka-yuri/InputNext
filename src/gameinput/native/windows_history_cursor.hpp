@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gameinput/input_profile.hpp"
+#include "input/touch_resolver.hpp"
 #include "native_gameinput.hpp"
 #include "native_history.hpp"
 #include "native_history_api.hpp"
@@ -17,5 +19,11 @@ namespace inputnext::gameinput_detail {
 
 [[nodiscard]] native_result<std::unique_ptr<native_history_cursor>>
 create_windows_history_cursor(GameInput::v4::IGameInput* game_input, native_device_handle device);
+
+[[nodiscard]] native_result<std::unique_ptr<native_history_cursor>> create_windows_history_cursor(
+    GameInput::v4::IGameInput* game_input,
+    native_device_handle device,
+    native_input_profile profile,
+    input::touch_snapshot touch_context);
 
 } // namespace inputnext::gameinput_detail

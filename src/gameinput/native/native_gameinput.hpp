@@ -1,6 +1,8 @@
 #pragma once
 
+#include "gameinput/input_profile.hpp"
 #include "gameinput/reading_parts.hpp"
+#include "input/touch_resolver.hpp"
 #include "native_raw_output_report.hpp"
 #include "native_rumble_endpoint.hpp"
 #include <inputnext/device_metadata.hpp>
@@ -55,6 +57,9 @@ struct native_device_callback_context final {
 struct native_reading_callback_context final {
     void* owner{};
     reading_delivery deliver{};
+    // Frozen for the lifetime of the registered callback. The native adapter uses this only to
+    // choose which cached reading views to extract; it never qualifies a device from this value.
+    native_input_profile input_profile{};
 };
 
 enum class native_reading_lane : std::uint8_t {
@@ -80,6 +85,7 @@ struct native_failure final {
     // GameInput normally clears the token on failed registration. Preserve a nonzero partial
     // token so the coordinator can drain it before the context is reused.
     native_callback_token partial_token{};
+    input_fallback_reason input_reason{input_fallback_reason::none};
 };
 
 template <typename T>
@@ -106,8 +112,34 @@ public:
     [[nodiscard]] virtual bool unregister_callback(native_callback_token token) noexcept = 0;
     [[nodiscard]] virtual native_result<reading_parts> current(native_device_handle device,
         native_reading_lane lane) = 0;
+
+    [[nodiscard]] virtual native_result<reading_parts> current(native_device_handle device,
+        native_reading_lane lane,
+        const native_input_profile& profile) {
+        if (lane == native_reading_lane::gamepad &&
+            profile.history == input_history_path::composite) {
+            return std::unexpected(native_failure{
+                .cause = native_failure_cause::api_unavailable,
+            });
+        }
+        return current(device, lane);
+    }
+
     [[nodiscard]] virtual native_result<std::unique_ptr<native_history_cursor>>
     create_history_cursor(native_device_handle device) = 0;
+
+    [[nodiscard]] virtual native_result<std::unique_ptr<native_history_cursor>>
+    create_history_cursor(native_device_handle device,
+        const native_input_profile& profile,
+        const input::touch_snapshot& touch_context);
+
+    // Default remains the unqualified gamepad-only profile. Windows may inspect capabilities,
+    // but a native grant requires an explicit, independently qualified profile.
+    [[nodiscard]] virtual native_input_profile describe_input(native_device_handle device) {
+        static_cast<void>(device);
+        return {};
+    }
+
     [[nodiscard]] virtual native_result<std::uint64_t> performance_frequency() noexcept = 0;
     [[nodiscard]] virtual native_result<native_device_facts> facts(native_device_handle device) = 0;
     [[nodiscard]] virtual bool connected(native_device_handle device) noexcept = 0;

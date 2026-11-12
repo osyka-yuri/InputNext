@@ -1,6 +1,7 @@
 #include "state.hpp"
 
 #include "gameinput/core/publication_source.hpp"
+#include "gameinput/input_profile.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include <inputnext/error.hpp>
 #include <inputnext/gameinput_runtime.hpp>
@@ -163,9 +164,15 @@ void gameinput_runtime::implementation::process_admission(owner_identity identit
 
     facts_attempted[index] = true;
     auto observed_facts = native->facts(device);
+    const auto input_profile = input_program.has_touch_routes()
+                                   ? native->describe_input(device)
+                                   : gameinput_detail::native_input_profile{};
     std::unique_ptr<source_lifetime> candidate;
     try {
-        candidate = std::make_unique<gameinput_detail::publication_source>();
+        candidate = std::make_unique<gameinput_detail::publication_source>(
+            gameinput_detail::publication_epoch_seed{},
+            input_program,
+            input_profile);
     } catch (const std::bad_alloc&) {
         retry_admission(identity, now);
         return;
@@ -203,6 +210,13 @@ void gameinput_runtime::implementation::process_admission(owner_identity identit
     }
     if (attached == attachment_status::retiring) {
         return;
+    }
+    {
+        std::scoped_lock lock{table_gate};
+        auto& owner = owners[index];
+        if (owner.generation == generation && owner.state == owner_phase::active) {
+            owner.reading_context.input_profile = input_profile;
+        }
     }
 
     if (observed_facts.has_value()) {

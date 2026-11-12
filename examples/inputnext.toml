@@ -1,5 +1,20 @@
 # Place beside the game executable. Restart the game after editing.
 
+# Set `from` to the control you press and `to` to the control the game receives.
+[input]
+# Choose the control names used in this file. The default is "universal".
+layout = "playstation"
+remap = [
+    # Uncomment both rules to swap Cross and Circle.
+    # { from = "cross", to = "circle" },
+    # { from = "circle", to = "cross" },
+    # Edit these default click assignments for a supported touchpad.
+    { from = "touchpad_left", to = "create" },
+    { from = "touchpad_right", to = "options" },
+    { from = "touchpad_unknown_side", to = "create" },
+]
+
+# These effects are active when you install this example.
 [effects.left_trigger]
 mode = "feedback"
 start = 0.20
