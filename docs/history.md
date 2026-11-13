@@ -20,7 +20,7 @@ The native history path traverses GameInput Pad readings and merges captured Gui
 
 History and current-state reads use the same remap rules. On a qualified connection, native history reads the gamepad and mechanical click from the same GameInput reading. Click loss clears the touch contribution and creates a recovery boundary. The cursor rechecks the epoch after native work before accepting a reading or fallback baseline.
 
-Opening native history during a held click can require replay from a known release. If recovery exceeds 256 combined backward and forward transitions, or the replay is incomplete, the cursor uses callback capture when it has a valid baseline. The capture log holds 256 records, including recovery boundaries, and is separate from the reader history bank.
+Opening native history during a held click can require replay from a known release. If recovery exceeds 256 combined backward and forward transitions, or the replay is incomplete, the cursor uses callback capture when it has a valid baseline. The capture log holds 256 records, including recovery boundaries, and is separate from the reader history bank. See the [USB measurements](input-qualification.md#supervised-usb-qualification).
 
 Callback coverage loss also clears the touch contribution. If the source cannot publish the resulting state, it closes history and the runtime retires the connection.
 

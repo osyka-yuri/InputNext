@@ -54,7 +54,7 @@ Touchpad names are available in `from` in every layout. These assignments also a
 
 Touch mappings respond to a mechanical click. The side comes from the finger position at the start of the click and stays fixed until release. The midpoint counts as right. A click already held at connection, or a click without a usable position, uses `touchpad_unknown_side`. Set all three sources to `"disabled"` to turn off touchpad mapping.
 
-Touchpad mapping currently supports the standard DualSense over USB with GameInput `4.0.306.0` and a matching device descriptor. InputNext checks the descriptor on each connection. On unsupported connections, touchpad rules have no effect and ordinary remapping still applies. If a supported connection loses reliable click data, InputNext releases the touchpad's contribution and waits for a valid physical release before accepting another click.
+Touchpad mapping currently supports the standard DualSense over USB with GameInput `4.0.306.0` and a matching device descriptor. InputNext checks the descriptor on each connection. On unsupported connections, touchpad rules have no effect and ordinary remapping still applies. If a supported connection loses reliable click data, InputNext releases the touchpad's contribution and waits for a valid physical release before accepting another click. [Qualification details](input-qualification.md#supervised-usb-qualification)
 
 ## Trigger effects
 
