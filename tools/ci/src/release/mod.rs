@@ -148,7 +148,7 @@ pub struct VerifyArgs {
     /// Root containing the public/ and internal/ handoffs.
     #[arg(long)]
     pub release_dir: PathBuf,
-    /// Absolute path to the pinned GitHub CLI 2.103.3 executable.
+    /// Absolute path to the pinned GitHub CLI executable.
     #[arg(long)]
     pub gh: PathBuf,
 }
@@ -162,7 +162,7 @@ pub struct DraftArgs {
     /// Root containing the public/ and internal/ handoffs.
     #[arg(long)]
     pub release_dir: PathBuf,
-    /// Absolute path to the pinned GitHub CLI 2.103.3 executable.
+    /// Absolute path to the pinned GitHub CLI executable.
     #[arg(long)]
     pub gh: PathBuf,
     /// Validate all inputs and print a write plan without GitHub mutations.

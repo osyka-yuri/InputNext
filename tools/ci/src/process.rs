@@ -6,6 +6,7 @@ mod tests;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::io::{self, Read};
+use std::mem::DropGuard;
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::Arc;
@@ -97,14 +98,14 @@ impl Runner for SystemRunner {
         let child = command
             .spawn()
             .with_context(|| format!("could not start {}", spec.program.display()))?;
-        let mut child = ChildGuard::new(child);
-        let mut captures = Captures::start(&mut child, spec.output_limit)?;
-        wait_for_output(&mut child, spec, deadline, &mut captures)
+        let child: ChildGuard = DropGuard::new(child, reap_child);
+        let (child, mut captures) = Captures::start(child, spec.output_limit)?;
+        wait_for_output(child, spec, deadline, &mut captures)
     }
 }
 
 fn wait_for_output(
-    child: &mut ChildGuard,
+    mut child: ChildGuard,
     spec: &CommandSpec,
     deadline: Instant,
     captures: &mut Captures,
@@ -124,7 +125,7 @@ fn wait_for_output(
         if status.is_none() {
             // Poll only the root process. On Windows, JobObjectChild::try_wait consumes the
             // completion-port notification that its later wait() needs to confirm tree exit.
-            match child.child.inner_mut().try_wait() {
+            match child.inner_mut().try_wait() {
                 Ok(exit_status) => status = exit_status,
                 Err(error) => {
                     let original =
@@ -138,8 +139,7 @@ fn wait_for_output(
         }
         if let Some(exit_status) = status.filter(|_| captures.is_complete()) {
             let (stdout, stderr) = captures.take_output()?;
-            let final_status = child
-                .terminate()
+            let final_status = terminate_child(child)
                 .context("could not clean up the completed child process group")?;
             debug_assert_eq!(exit_status, final_status);
             return Ok(output(final_status, stdout, stderr));
@@ -174,41 +174,37 @@ struct Captures {
 }
 
 impl Captures {
-    fn start(child: &mut ChildGuard, limit: usize) -> Result<Self> {
+    fn start(mut child: ChildGuard, limit: usize) -> Result<(ChildGuard, Self)> {
         let stdout = child
-            .child
             .stdout()
             .take()
             .context("child stdout pipe was not created")?;
         let stderr = child
-            .child
             .stderr()
             .take()
             .context("child stderr pipe was not created")?;
         let exceeded = Arc::new(AtomicBool::new(false));
-        let stdout_reader = Some(
-            spawn_capture(stdout, limit, Arc::clone(&exceeded))
-                .context("could not start stdout capture")?,
-        );
+        let stdout_reader = spawn_capture(stdout, limit, Arc::clone(&exceeded))
+            .context("could not start stdout capture")?;
         let stderr_reader = match spawn_capture(stderr, limit, Arc::clone(&exceeded)) {
-            Ok(reader) => Some(reader),
+            Ok(reader) => reader,
             Err(error) => {
-                child
-                    .terminate()
+                terminate_child(child)
                     .context("could not clean up after stderr capture setup failed")?;
-                if let Some(reader) = stdout_reader {
-                    let _ = join_capture(reader);
-                }
+                let _ = join_capture(stdout_reader);
                 return Err(error).context("could not start stderr capture");
             }
         };
-        Ok(Self {
-            exceeded,
-            stdout_reader,
-            stderr_reader,
-            stdout_bytes: None,
-            stderr_bytes: None,
-        })
+        Ok((
+            child,
+            Self {
+                exceeded,
+                stdout_reader: Some(stdout_reader),
+                stderr_reader: Some(stderr_reader),
+                stdout_bytes: None,
+                stderr_bytes: None,
+            },
+        ))
     }
 
     fn collect_finished(&mut self) -> Result<()> {
@@ -253,8 +249,8 @@ impl Captures {
         Ok((stdout, stderr))
     }
 
-    fn terminate_and_join(&mut self, child: &mut ChildGuard) -> Result<()> {
-        child.terminate()?;
+    fn terminate_and_join(&mut self, child: ChildGuard) -> Result<()> {
+        terminate_child(child)?;
         let mut first_error = None;
         for reader in [self.stdout_reader.take(), self.stderr_reader.take()]
             .into_iter()
@@ -270,11 +266,7 @@ impl Captures {
         Ok(())
     }
 
-    fn error_with_cleanup(
-        &mut self,
-        child: &mut ChildGuard,
-        error: anyhow::Error,
-    ) -> anyhow::Error {
+    fn error_with_cleanup(&mut self, child: ChildGuard, error: anyhow::Error) -> anyhow::Error {
         match self.terminate_and_join(child) {
             Ok(()) => error,
             Err(cleanup) => error.context(format!("process cleanup also failed: {cleanup:#}")),
@@ -377,32 +369,19 @@ fn configure_process_tree(command: &mut CommandWrap) {
 #[cfg(not(any(unix, windows)))]
 fn configure_process_tree(_command: &mut CommandWrap) {}
 
-struct ChildGuard {
-    child: Box<dyn ChildWrapper>,
-    finished: bool,
-}
+type ChildGuard = DropGuard<Box<dyn ChildWrapper>, fn(Box<dyn ChildWrapper>)>;
 
-impl ChildGuard {
-    fn new(child: Box<dyn ChildWrapper>) -> Self {
-        Self {
-            child,
-            finished: false,
-        }
+fn terminate_child(mut child: ChildGuard) -> Result<ExitStatus> {
+    match child.start_kill() {
+        Ok(()) => {}
+        Err(error) if process_tree_is_absent(&error) => {}
+        Err(error) => return Err(error).context("could not terminate child process tree"),
     }
-
-    fn terminate(&mut self) -> Result<ExitStatus> {
-        match self.child.start_kill() {
-            Ok(()) => {}
-            Err(error) if process_tree_is_absent(&error) => {}
-            Err(error) => return Err(error).context("could not terminate child process tree"),
-        }
-        let status = self
-            .child
-            .wait()
-            .context("could not wait for child process tree cleanup")?;
-        self.finished = true;
-        Ok(status)
-    }
+    let status = child
+        .wait()
+        .context("could not wait for child process tree cleanup")?;
+    drop(DropGuard::dismiss(child));
+    Ok(status)
 }
 
 fn process_tree_is_absent(error: &io::Error) -> bool {
@@ -413,12 +392,7 @@ fn process_tree_is_absent(error: &io::Error) -> bool {
     error.kind() == io::ErrorKind::NotFound
 }
 
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        if !self.finished {
-            let _ = self.child.start_kill();
-            let _ = self.child.wait();
-            self.finished = true;
-        }
-    }
+fn reap_child(mut child: Box<dyn ChildWrapper>) {
+    let _ = child.start_kill();
+    let _ = child.wait();
 }

@@ -93,6 +93,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           sparse-checkout: |
+            .cargo/config.toml
             .github
             tools/ci
             cmake

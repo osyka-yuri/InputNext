@@ -14,6 +14,8 @@ CodeQL analysis must succeed before the local SARIF check runs. The check reject
 
 Rust is pinned by `rust-toolchain.toml`; dependencies use `Cargo.lock`. Downloaded tools are pinned in `.github/ci/toolchain-lock.json`. Cached archive bytes are hashed on every use, extracted into fresh directories and probed before use. Tool updates produce a report for review; they do not install candidates, edit pins or open pull requests. CodeQL bundle discovery follows release pagination; a failed page or enumeration limit prevents a partial update report. Dependabot proposes separate action and Cargo dependency updates.
 
+Cargo rejects unused regular dependencies in all-target builds. Dependency resolution waits three days before selecting newly published crate versions. Locked builds use the versions in `Cargo.lock`. For an urgent update, run `cargo --config 'resolver.incompatible-publish-age="allow"' update -p <crate> --precise <version>` and review the lockfile diff.
+
 Run the tooling checks locally:
 
 ```powershell

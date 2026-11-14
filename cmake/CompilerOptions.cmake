@@ -36,8 +36,9 @@ function(inputnext_configure_native_target target)
         else()
             set(analysis_target x86_64-pc-windows-msvc)
         endif()
+        # Forward C++23 explicitly when the MSVC standard flag is newer than clang-cl.
         set_property(TARGET ${target} PROPERTY CXX_CLANG_TIDY
-            "${INPUTNEXT_CLANG_TIDY};--extra-arg=/EHsc;--extra-arg=--target=${analysis_target}")
+            "${INPUTNEXT_CLANG_TIDY};--extra-arg=/EHsc;--extra-arg=--target=${analysis_target};--extra-arg-before=-Qunused-arguments;--extra-arg=/clang:-std=c++23")
         set_property(TARGET ${target} PROPERTY C_CLANG_TIDY
             "${INPUTNEXT_CLANG_TIDY};--extra-arg=--target=${analysis_target}")
         get_target_property(sources ${target} SOURCES)

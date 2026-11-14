@@ -393,7 +393,7 @@ fn validate_entry_name(name: &str, directory: bool) -> Result<(String, EntryKind
         trailing_separator == directory,
         "ZIP entry directory marker disagrees with its type: {name:?}"
     );
-    let without_separator = name.strip_suffix('/').unwrap_or(name);
+    let without_separator = name.trim_suffix('/');
     let components = without_separator.split('/').collect::<Vec<_>>();
     ensure!(
         !components.is_empty()

@@ -189,7 +189,7 @@ pub(super) fn normalize_tag(tag: &str) -> Result<String> {
             normalized = stripped;
         }
     }
-    normalized = normalized.strip_prefix('v').unwrap_or(normalized);
+    normalized = normalized.trim_prefix('v');
     let version = Version::parse(normalized)
         .with_context(|| format!("upstream stable tag '{tag}' is not semantic versioning"))?;
     ensure!(

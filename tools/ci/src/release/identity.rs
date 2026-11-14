@@ -483,8 +483,7 @@ fn release_notes(root: &Path, version: &str) -> Result<String> {
         .filter_map(|(index, line)| {
             let captures = heading.captures(line)?;
             let label = captures.name("label")?.as_str();
-            let label = label.strip_prefix('[').unwrap_or(label);
-            let label = label.strip_suffix(']').unwrap_or(label);
+            let label = label.trim_prefix('[').trim_suffix(']');
             (label == version).then_some(index)
         })
         .collect::<Vec<_>>();

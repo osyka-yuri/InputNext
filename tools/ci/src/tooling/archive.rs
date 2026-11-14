@@ -319,7 +319,7 @@ fn canonical_member_path(raw_name: &str, kind: MemberKind) -> Result<String> {
     );
 
     let trimmed = if kind == MemberKind::Directory {
-        raw_name.strip_suffix('/').unwrap_or(raw_name)
+        raw_name.trim_suffix('/')
     } else {
         raw_name
     };

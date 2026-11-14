@@ -5,9 +5,14 @@ resolver = "3"
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 license = "MIT"
 publish = false
+
+[workspace.lints.cargo]
+unused_dependencies = "deny"
+unused_workspace_dependencies = "deny"
+missing_lints_inheritance = "deny"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
