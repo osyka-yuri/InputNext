@@ -81,6 +81,7 @@ if(INPUTNEXT_BUILD_GAMEINPUT)
         runtime/metadata.cpp
         runtime/readings.cpp
         runtime/history.cpp
+        runtime/history_access.cpp
         runtime/history_provider.cpp
     )
     target_link_libraries(inputnext_gameinput_runtime

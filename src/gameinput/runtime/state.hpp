@@ -132,6 +132,8 @@ struct gameinput_runtime::implementation final {
         [[nodiscard]] history_result<std::unique_ptr<history_detail::history_cursor>> open_cursor(
             connection_target target) override;
         [[nodiscard]] bool is_live(connection_target target) noexcept override;
+        [[nodiscard]] std::optional<history_detail::source_clock_sample>
+        sample_history_clock() noexcept override;
 
         implementation& runtime;
     };
@@ -192,6 +194,10 @@ struct gameinput_runtime::implementation final {
         history_time now,
         std::optional<std::uint32_t> reserved_position = std::nullopt);
     [[nodiscard]] history_batch read_history(history_reader_handle reader, history_time now);
+    [[nodiscard]] history_result<history_reader_handle>
+    open_directinput_history(connection_target target, std::size_t lane_index, history_time now);
+    [[nodiscard]] history_detail::observed_read
+    read_directinput_history(history_reader_handle reader, history_time now, bool capture_boundary);
     [[nodiscard]] history_result<void> close_history(history_reader_handle reader);
     [[nodiscard]] std::optional<history_failure> begin_history_call(bool allow_stopping,
         history_open_hook_snapshot* hook_snapshot = nullptr) noexcept;

@@ -4,6 +4,8 @@
 #include "gameinput/native/native_history.hpp"
 #include "gameinput/reading_parts.hpp"
 #include "gameinput/runtime/factory.hpp"
+#include "gameinput/runtime/history_access.hpp"
+#include "history/reader_observation.hpp"
 #include "runtime_history_test_support.hpp"
 #include "runtime_test_support.hpp"
 #include "support/history/history_store_test_access.hpp"
@@ -153,6 +155,36 @@ TEST_CASE("gameinput.runtime.history_returns_native_baseline_and_closes_reader",
     CHECK(fixture.runtime->stop(fixture.now).drained);
     CHECK(script->cursor_factories.load(std::memory_order_relaxed) == 1U);
     CHECK(script->cursor_destructions.load(std::memory_order_relaxed) == 1U);
+}
+
+TEST_CASE("gameinput.runtime.directinput_fallback_clock_does_not_require_native_cursor",
+    "[integration][gameinput][history][directinput]") {
+    runtime_fixture fixture;
+    const auto script = std::make_shared<native_history_script>();
+    script->start_failure = native_failure{.cause = native_failure_cause::resource_exhausted};
+    const auto target = start_history_device(fixture, script);
+    constexpr auto source_timestamp = 987'654U;
+    fixture.native->set_history_source_timestamp(source_timestamp);
+
+    auto reader =
+        runtime_history_access::open_directinput(*fixture.runtime, target, 0U, fixture.now);
+    REQUIRE(reader.has_value());
+    const auto observed =
+        runtime_history_access::read_directinput(*fixture.runtime, *reader, fixture.now, true);
+
+    REQUIRE(observed.batch.count == 1U);
+    CHECK(observed.batch.source == history_source_kind::callback_capture);
+    REQUIRE(observed.boundary.has_value());
+    const auto boundary = observed.boundary.value_or(history_detail::reader_boundary{});
+    CHECK(boundary.domain == observed.batch.domain);
+    CHECK(boundary.sequence == observed.batch.last_sequence);
+    CHECK(boundary.clock.timestamp_us == source_timestamp);
+    CHECK(boundary.clock.system_time_ms == source_timestamp / 1'000U);
+    CHECK(script->cursor_factories.load(std::memory_order_relaxed) == 1U);
+    CHECK(script->cursor_destructions.load(std::memory_order_relaxed) == 1U);
+
+    CHECK(fixture.runtime->close_history(*reader).has_value());
+    CHECK(fixture.runtime->stop(fixture.now).drained);
 }
 
 TEST_CASE("gameinput.runtime.history_keeps_checkpoint_unqualified_after_activation_cut",

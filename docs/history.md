@@ -28,7 +28,7 @@ Retention overrun resets the lagging reader to the latest retained state. `lost_
 
 Source or callback coverage loss inserts an ordered recovery boundary; earlier records remain available within retention capacity. A reset preserves unknown loss across both retained and evicted boundaries. Unknown loss also covers accounting overflow and callback fallback overwrite, and always has `lost_count = 0`.
 
-History retains 256 entries per bank, including baselines. The runtime admits 28 public readers and reserves one additional reader for each of the four XInput positions. Both groups share at most 32 resident banks, including opening, retiring, and destroying banks. Reserved reader capacity does not guarantee a free bank. Each read processes at most 64 cursor steps. These limits bound local work and storage, without bounding synchronous native completion time.
+History retains 256 entries per bank, including baselines. The runtime admits 28 public readers, reserves a reader for each of the four XInput positions, and reserves 16 readers for DirectInput workers. All readers share at most 32 resident banks, including opening, retiring, and destroying banks. Reserved reader capacity does not guarantee a free bank. Each read processes at most 64 cursor steps. These limits bound local work and storage. Synchronous native completion time can vary.
 
 ## Ownership and concurrency
 

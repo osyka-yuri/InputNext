@@ -2,6 +2,7 @@
 
 #include "gameinput/input_profile.hpp"
 #include "gameinput/reading_parts.hpp"
+#include "history/reader_observation.hpp"
 #include "input/touch_resolver.hpp"
 #include "native_raw_output_report.hpp"
 #include "native_rumble_endpoint.hpp"
@@ -12,6 +13,7 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 
 namespace inputnext::gameinput_detail {
 
@@ -138,6 +140,11 @@ public:
     [[nodiscard]] virtual native_input_profile describe_input(native_device_handle device) {
         static_cast<void>(device);
         return {};
+    }
+
+    [[nodiscard]] virtual std::optional<history_detail::source_clock_sample>
+    sample_history_clock() noexcept {
+        return std::nullopt;
     }
 
     [[nodiscard]] virtual native_result<std::uint64_t> performance_frequency() noexcept = 0;

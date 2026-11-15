@@ -1,7 +1,10 @@
 #include "input_access.hpp"
 
+#include "dinput/buffered/service.hpp"
+
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <utility>
 
 namespace inputnext::dinput {
@@ -13,7 +16,8 @@ input_access::input_access(core::service& core,
     : core_(core),
       runtime_(runtime),
       focus_(focus),
-      discovery_(discovery_budget) {
+      discovery_(discovery_budget),
+      buffers_(std::make_unique<buffered_input>(core, runtime, focus)) {
 }
 
 input_access::~input_access() {
@@ -59,6 +63,10 @@ focus::observer& input_access::call::focus() const noexcept {
     return owner_->focus_;
 }
 
+buffered_input& input_access::call::buffers() const noexcept {
+    return *owner_->buffers_;
+}
+
 input_access::call input_access::enter() noexcept {
     auto observed = admission_.load(std::memory_order_acquire);
     while ((observed & closed_bit) == 0U && observed < closed_bit - 1U) {
@@ -89,6 +97,7 @@ void input_access::leave() noexcept {
 void input_access::close_admission() noexcept {
     admission_.fetch_or(closed_bit, std::memory_order_acq_rel);
     discovery_.close();
+    buffers_->close_admission();
 }
 
 void input_access::drain() noexcept {
@@ -96,6 +105,14 @@ void input_access::drain() noexcept {
     while ((observed & ~closed_bit) != 0U) {
         admission_.wait(observed, std::memory_order_acquire);
         observed = admission_.load(std::memory_order_acquire);
+    }
+    buffers_->drain();
+}
+
+void input_access::refresh_buffered_eligibility() noexcept {
+    const auto admitted = enter();
+    if (admitted) {
+        buffers_->refresh_eligibility();
     }
 }
 

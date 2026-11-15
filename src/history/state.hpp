@@ -17,13 +17,15 @@ namespace inputnext::history_detail {
 
 inline constexpr std::size_t public_history_reader_capacity = 28U;
 inline constexpr std::size_t reserved_xinput_history_reader_capacity = 4U;
-inline constexpr std::size_t history_reader_capacity =
-    public_history_reader_capacity + reserved_xinput_history_reader_capacity;
+inline constexpr std::size_t reserved_directinput_history_reader_capacity = 16U;
+inline constexpr std::size_t history_reader_capacity = public_history_reader_capacity +
+                                                       reserved_xinput_history_reader_capacity +
+                                                       reserved_directinput_history_reader_capacity;
 inline constexpr std::size_t resident_history_bank_capacity = 32U;
 inline constexpr std::size_t history_work_per_read = 64U;
 inline constexpr std::size_t invalid_bank_index = resident_history_bank_capacity;
 
-static_assert(history_reader_capacity == resident_history_bank_capacity);
+static_assert(history_reader_capacity >= resident_history_bank_capacity);
 
 struct identity_seed final {
     std::uint64_t next_reader{1U};
@@ -129,6 +131,11 @@ void reserve_bank_operation_locked(history_store_state& state,
     history_reader_handle& handle) noexcept;
 [[nodiscard]] bool allocate_xinput_reader_locked(history_store_state& state,
     std::uint32_t position,
+    connection_target target,
+    std::size_t& reader_index,
+    history_reader_handle& handle) noexcept;
+[[nodiscard]] bool allocate_directinput_reader_locked(history_store_state& state,
+    std::size_t lane_index,
     connection_target target,
     std::size_t& reader_index,
     history_reader_handle& handle) noexcept;

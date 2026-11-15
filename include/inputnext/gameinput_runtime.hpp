@@ -80,6 +80,7 @@ namespace gameinput_detail {
 class runtime_factory;
 class runtime_output_access;
 class runtime_output_lease;
+class runtime_history_access;
 } // namespace gameinput_detail
 
 class gameinput_xinput;
@@ -117,6 +118,7 @@ private:
     friend class gameinput_detail::runtime_factory;
     friend class gameinput_detail::runtime_output_access;
     friend class gameinput_detail::runtime_output_lease;
+    friend class gameinput_detail::runtime_history_access;
     friend class gameinput_xinput;
 
     std::unique_ptr<implementation> implementation_;

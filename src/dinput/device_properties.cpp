@@ -71,7 +71,8 @@ void write_property(DIPROPHEADER* header, const Property& value) noexcept {
 
 [[nodiscard]] HRESULT read_device_dword(const GUID* token,
     DIPROPHEADER* header,
-    const device_identity& identity) noexcept {
+    const device_identity& identity,
+    DWORD requested_buffer_size) noexcept {
     if (header->dwSize != sizeof(DIPROPDWORD) || header->dwHow != DIPH_DEVICE) {
         return DIERR_INVALIDPARAM;
     }
@@ -82,7 +83,7 @@ void write_property(DIPROPHEADER* header, const Property& value) noexcept {
         }
         value.dwData = *identity.vendor_product;
     } else {
-        value.dwData = token == &DIPROP_AXISMODE ? DIPROPAXISMODE_ABS : 0U;
+        value.dwData = token == &DIPROP_AXISMODE ? DIPROPAXISMODE_ABS : requested_buffer_size;
     }
     write_property(header, value);
     return DI_OK;
@@ -165,13 +166,14 @@ HRESULT read_device_property(const GUID* token,
     DIPROPHEADER* header,
     const device_identity& identity,
     const compiled_format* format,
-    const axis_configuration& axes) noexcept {
+    const axis_configuration& axes,
+    DWORD requested_buffer_size) noexcept {
     if (token == &DIPROP_RANGE || token == &DIPROP_DEADZONE || token == &DIPROP_SATURATION ||
         token == &DIPROP_GRANULARITY) {
         return read_axis_property(token, header, format, axes);
     }
     if (token == &DIPROP_AXISMODE || token == &DIPROP_BUFFERSIZE || token == &DIPROP_VIDPID) {
-        return read_device_dword(token, header, identity);
+        return read_device_dword(token, header, identity, requested_buffer_size);
     }
     return read_identity_property(token, header, identity);
 }
@@ -210,7 +212,9 @@ HRESULT apply_property_change(const property_change& change,
     const compiled_format* format,
     axis_configuration& candidate) noexcept {
     if (!change.affects_axes()) {
-        return change.value == 0U ? DI_OK : DIERR_UNSUPPORTED;
+        return change.kind == setting::buffer_size || change.value == DIPROPAXISMODE_ABS
+                   ? DI_OK
+                   : DIERR_UNSUPPORTED;
     }
     if (header.dwHow == DIPH_DEVICE) {
         for (auto& axis : candidate) {

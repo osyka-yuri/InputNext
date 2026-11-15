@@ -1,6 +1,11 @@
 add_executable(inputnext_dinput_input_tests
     catalogue_native_fakes.cpp
     immediate_tests.cpp
+    buffered_tests.cpp
+    buffered_capacity_tests.cpp
+    buffered_acquisition_tests.cpp
+    buffered_lifecycle_tests.cpp
+    buffered_handoff_tests.cpp
     device_info_tests.cpp
     focus_tests.cpp
     lifecycle_tests.cpp

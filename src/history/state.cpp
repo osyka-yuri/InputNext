@@ -178,4 +178,17 @@ bool allocate_xinput_reader_locked(history_store_state& state,
     return allocate_reader_at_locked(state, index, target, reader_index, handle);
 }
 
+bool allocate_directinput_reader_locked(history_store_state& state,
+    std::size_t lane_index,
+    connection_target target,
+    std::size_t& reader_index,
+    history_reader_handle& handle) noexcept {
+    if (lane_index >= reserved_directinput_history_reader_capacity) {
+        return false;
+    }
+    const auto index =
+        public_history_reader_capacity + reserved_xinput_history_reader_capacity + lane_index;
+    return allocate_reader_at_locked(state, index, target, reader_index, handle);
+}
+
 } // namespace inputnext::history_detail

@@ -1,10 +1,12 @@
 #pragma once
 
+#include "reader_observation.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/history.hpp>
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 namespace inputnext::history_detail {
 
@@ -63,6 +65,10 @@ public:
     [[nodiscard]] virtual history_result<std::unique_ptr<history_cursor>> open_cursor(
         connection_target target) = 0;
     [[nodiscard]] virtual bool is_live(connection_target target) noexcept = 0;
+
+    [[nodiscard]] virtual std::optional<source_clock_sample> sample_history_clock() noexcept {
+        return std::nullopt;
+    }
 
 protected:
     history_provider() = default;

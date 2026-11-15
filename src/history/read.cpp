@@ -1,6 +1,7 @@
 #include "store.hpp"
 
 #include "cursor.hpp"
+#include "reader_observation.hpp"
 #include "ring.hpp"
 #include "state.hpp"
 #include <inputnext/gamepad_state.hpp>
@@ -26,6 +27,7 @@ struct read_operation final {
     history_batch batch{};
     history_sample selected_baseline{};
     history_source_kind selected_source{history_source_kind::callback_capture};
+    std::optional<source_clock_sample> source_clock;
     history_failure terminal_failure{.code = history_error::sequence_exhausted};
     std::size_t reader_index{};
     std::size_t bank_index{};
@@ -38,6 +40,8 @@ struct read_operation final {
     void (*before_commit_test_hook)(void*) noexcept {};
     void* before_commit_test_context{};
     bool selected_baseline_ready{};
+    bool caught_up_checkpoint_in_read{};
+    bool fresh_checkpoint{};
     bool terminal{};
 };
 
@@ -78,7 +82,8 @@ void append_record(history_batch& batch,
 
 [[nodiscard]] bool reserve_read(history_store_state& state,
     history_reader_handle reader_handle,
-    read_operation& operation) noexcept {
+    read_operation& operation,
+    bool require_directinput_reader = false) noexcept {
     operation.handle = reader_handle;
     if (!reader_handle.target.valid() || reader_handle.value == 0U) {
         operation.batch = failed_batch(reader_handle, 0U, failure(history_error::invalid_argument));
@@ -93,6 +98,11 @@ void append_record(history_batch& batch,
 
     const auto reader_index = find_reader_locked(state, reader_handle);
     if (!reader_index.has_value()) {
+        operation.batch = failed_batch(reader_handle, 0U, failure(history_error::invalid_reader));
+        return false;
+    }
+    if (require_directinput_reader &&
+        *reader_index < public_history_reader_capacity + reserved_xinput_history_reader_capacity) {
         operation.batch = failed_batch(reader_handle, 0U, failure(history_error::invalid_reader));
         return false;
     }
@@ -168,7 +178,8 @@ void clear_batch_records(history_batch& batch) noexcept {
     return failure(history_error::disconnected);
 }
 
-void commit_read(history_store_state& state, read_operation& operation, bool source_live) noexcept {
+[[nodiscard]] bool
+commit_read(history_store_state& state, read_operation& operation, bool source_live) noexcept {
     std::scoped_lock lock{state.gate};
     auto const& slot = state.banks[operation.bank_index];
     auto& reader = state.readers[operation.reader_index];
@@ -213,6 +224,7 @@ void commit_read(history_store_state& state, read_operation& operation, bool sou
         --state.active_read_calls;
     }
     state.operations_drained.notify_all();
+    return can_commit;
 }
 
 [[nodiscard]] std::optional<std::uint64_t> reserve_stream_id(history_store_state& state,
@@ -480,9 +492,8 @@ start_cursor(history_bank& bank, read_operation& operation, history_time now) no
     return true;
 }
 
-void update_checkpoint(history_bank& bank,
-    const cursor_step& step,
-    read_operation& operation) noexcept {
+[[nodiscard]] bool
+update_checkpoint(history_bank& bank, const cursor_step& step, read_operation& operation) noexcept {
     const auto valid_checkpoint =
         step.checkpoint_qpc != 0U &&
         (bank.last_qpc == 0U || step.checkpoint_qpc >= bank.last_qpc) &&
@@ -490,7 +501,7 @@ void update_checkpoint(history_bank& bank,
     if (valid_checkpoint) {
         bank.checkpoint_position = bank.ring.next_position();
         bank.checkpoint_qpc = step.checkpoint_qpc;
-        return;
+        return true;
     }
 
     const auto moved_backwards =
@@ -506,6 +517,7 @@ void update_checkpoint(history_bank& bank,
             0U);
         operation.batch.failure = bank.deferred_failure;
     }
+    return false;
 }
 
 [[nodiscard]] bool append_cursor_step(history_bank& bank,
@@ -517,7 +529,8 @@ void update_checkpoint(history_bank& bank,
     case cursor_step_kind::progress:
         return true;
     case cursor_step_kind::caught_up:
-        update_checkpoint(bank, step, operation);
+        operation.caught_up_checkpoint_in_read =
+            update_checkpoint(bank, step, operation) || operation.caught_up_checkpoint_in_read;
         operation.remaining_work = 0U;
         return false;
     case cursor_step_kind::history_lost: {
@@ -621,10 +634,14 @@ void populate_batch(history_store_state& state,
         }
     }
     set_caught_up(bank, operation);
+    operation.fresh_checkpoint =
+        operation.caught_up_checkpoint_in_read && operation.batch.caught_up;
 }
 
-[[nodiscard]] read_execution_state
-execute_read(history_store_state& state, read_operation& operation, history_time now) {
+[[nodiscard]] read_execution_state execute_read(history_store_state& state,
+    read_operation& operation,
+    history_time now,
+    bool capture_boundary = false) {
     auto* bank = state.banks[operation.bank_index].bank.get();
     std::unique_lock bank_lock{bank->operation_gate, std::try_to_lock};
     if (!bank_lock.owns_lock()) {
@@ -637,6 +654,9 @@ execute_read(history_store_state& state, read_operation& operation, history_time
 
     operation.batch.failure.reset();
     populate_batch(state, *bank, operation, now);
+    if (capture_boundary) {
+        operation.source_clock = state.provider.sample_history_clock();
+    }
     bank_lock.unlock();
     return state.provider.is_live(operation.handle.target)
                ? read_execution_state::completed
@@ -663,8 +683,42 @@ history_batch history_store::read(history_reader_handle reader, history_time now
     } else if (execution == read_execution_state::source_disconnected) {
         retire(reader.target);
     }
-    commit_read(state_, operation, execution != read_execution_state::source_disconnected);
+    static_cast<void>(
+        commit_read(state_, operation, execution != read_execution_state::source_disconnected));
     return operation.batch;
+}
+
+observed_read history_store::read_directinput(history_reader_handle reader,
+    history_time now,
+    bool capture_boundary) {
+    auto operation = read_operation{};
+    if (!reserve_read(state_, reader, operation, true)) {
+        return observed_read{.batch = operation.batch};
+    }
+
+    const auto execution = execute_read(state_, operation, now, capture_boundary);
+    if (execution == read_execution_state::completed) {
+        invoke_before_commit_hook(operation);
+    } else if (execution == read_execution_state::source_disconnected) {
+        retire(reader.target);
+    }
+
+    const auto committed =
+        commit_read(state_, operation, execution != read_execution_state::source_disconnected);
+
+    auto result = observed_read{.batch = operation.batch};
+    result.fresh_checkpoint = committed && operation.fresh_checkpoint;
+    if (committed && capture_boundary && operation.source_clock.has_value()) {
+        const auto sequence =
+            operation.next_output_sequence == 0U ? maximum : operation.next_output_sequence - 1U;
+        result.boundary = reader_boundary{
+            .domain = operation.batch.domain,
+            .sequence = sequence,
+            .checkpoint_qpc = result.fresh_checkpoint ? operation.batch.checkpoint_qpc : 0U,
+            .clock = *operation.source_clock,
+        };
+    }
+    return result;
 }
 
 } // namespace inputnext::history_detail

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cursor.hpp"
+#include "reader_observation.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/gamepad_state.hpp>
 #include <inputnext/history.hpp>
@@ -14,6 +15,7 @@
 #include <expected>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -242,6 +244,15 @@ public:
         return is_live_locked(target);
     }
 
+    [[nodiscard]] std::optional<source_clock_sample> sample_history_clock() noexcept override {
+        clock_sample_calls.fetch_add(1U, std::memory_order_relaxed);
+        const auto timestamp = source_timestamp_us.load(std::memory_order_relaxed);
+        if (timestamp == 0U) {
+            return std::nullopt;
+        }
+        return source_clock_sample{.timestamp_us = timestamp, .system_time_ms = timestamp / 1'000U};
+    }
+
     void fail_next_factory(history_error error) {
         std::scoped_lock lock{mutex_};
         factory_failures_.push_back(history_failure{.code = error});
@@ -272,6 +283,10 @@ public:
         live_[target.connection.value] = live;
     }
 
+    void set_source_timestamp(std::uint64_t timestamp_us) noexcept {
+        source_timestamp_us.store(timestamp_us, std::memory_order_relaxed);
+    }
+
     [[nodiscard]] std::shared_ptr<fake_cursor_state> cursor_state(connection_target target) const {
         std::scoped_lock lock{mutex_};
         const auto found = cursors_.find(target.connection.value);
@@ -280,6 +295,8 @@ public:
 
     std::atomic<std::size_t> cursor_destructions;
     std::atomic<std::size_t> factory_calls;
+    std::atomic<std::size_t> clock_sample_calls;
+    std::atomic<std::uint64_t> source_timestamp_us;
 
 private:
     void wait_for_factory_release() {

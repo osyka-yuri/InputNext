@@ -39,6 +39,8 @@ struct open_selection final {
     bool can_open{true};
 };
 
+enum class reader_reservation_kind : std::uint8_t { public_api, xinput, directinput };
+
 class open_call_guard final {
 public:
     explicit open_call_guard(history_store_state& state) noexcept : state_(state) {}
@@ -121,38 +123,67 @@ void release_opening_bank_locked(history_store_state& state,
 
 [[nodiscard]] history_result<open_reservation> reserve_open(history_store_state& state,
     connection_target target,
-    std::optional<std::uint32_t> reserved_position) noexcept {
+    reader_reservation_kind reservation_kind,
+    std::size_t reserved_position) noexcept {
     std::scoped_lock lock{state.gate};
     if (state.closed) {
         return std::unexpected(failure(history_error::closed));
     }
-
-    auto reservation = open_reservation{};
-    if (reserved_position.has_value()) {
-        const auto reader_index =
-            public_history_reader_capacity + static_cast<std::size_t>(*reserved_position);
-        if (reader_index >= state.readers.size()) {
-            return std::unexpected(failure(history_error::invalid_argument));
-        }
-        if (state.readers[reader_index].used) {
-            return std::unexpected(failure(history_error::busy));
-        }
+    if ((reservation_kind == reader_reservation_kind::xinput &&
+            reserved_position >= reserved_xinput_history_reader_capacity) ||
+        (reservation_kind == reader_reservation_kind::directinput &&
+            reserved_position >= reserved_directinput_history_reader_capacity)) {
+        return std::unexpected(failure(history_error::invalid_argument));
     }
 
+    auto reservation = open_reservation{};
     if (find_opening_bank_locked(state, target).has_value()) {
         return std::unexpected(failure(history_error::busy));
     }
 
-    const auto allocated =
-        reserved_position.has_value()
-            ? allocate_xinput_reader_locked(state,
-                  *reserved_position,
-                  target,
-                  reservation.reader_index,
-                  reservation.handle)
-            : allocate_reader_locked(state, target, reservation.reader_index, reservation.handle);
+    const auto allocated = [&] {
+        switch (reservation_kind) {
+        case reader_reservation_kind::public_api:
+            return allocate_reader_locked(state,
+                target,
+                reservation.reader_index,
+                reservation.handle);
+        case reader_reservation_kind::xinput:
+            return allocate_xinput_reader_locked(state,
+                static_cast<std::uint32_t>(reserved_position),
+                target,
+                reservation.reader_index,
+                reservation.handle);
+        case reader_reservation_kind::directinput:
+            return allocate_directinput_reader_locked(state,
+                reserved_position,
+                target,
+                reservation.reader_index,
+                reservation.handle);
+        }
+        return false;
+    }();
     if (!allocated) {
         const auto identities_exhausted = state.next_reader_id == 0U || state.next_stream_id == 0U;
+        auto occupied_reserved_slot = false;
+        switch (reservation_kind) {
+        case reader_reservation_kind::public_api:
+            break;
+        case reader_reservation_kind::xinput:
+            occupied_reserved_slot =
+                state.readers[public_history_reader_capacity + reserved_position].used;
+            break;
+        case reader_reservation_kind::directinput:
+            occupied_reserved_slot =
+                state
+                    .readers[public_history_reader_capacity +
+                             reserved_xinput_history_reader_capacity + reserved_position]
+                    .used;
+            break;
+        }
+        if (occupied_reserved_slot) {
+            return std::unexpected(failure(history_error::busy));
+        }
         return std::unexpected(failure(identities_exhausted ? history_error::identity_exhausted
                                                             : history_error::capacity_exceeded));
     }
@@ -374,16 +405,19 @@ namespace {
 [[nodiscard]] history_result<history_reader_handle> open_reader(history_store_state& state,
     connection_target target,
     [[maybe_unused]] history_time now,
-    std::optional<std::uint32_t> reserved_position) {
+    reader_reservation_kind reservation_kind,
+    std::size_t reserved_position = 0U) {
     if (!target.valid()) {
         return std::unexpected(failure(history_error::invalid_argument));
     }
-    if (reserved_position.has_value() &&
-        *reserved_position >= reserved_xinput_history_reader_capacity) {
+    if ((reservation_kind == reader_reservation_kind::xinput &&
+            reserved_position >= reserved_xinput_history_reader_capacity) ||
+        (reservation_kind == reader_reservation_kind::directinput &&
+            reserved_position >= reserved_directinput_history_reader_capacity)) {
         return std::unexpected(failure(history_error::invalid_argument));
     }
 
-    auto reserved = reserve_open(state, target, reserved_position);
+    auto reserved = reserve_open(state, target, reservation_kind, reserved_position);
     if (!reserved.has_value()) {
         return std::unexpected(reserved.error());
     }
@@ -419,13 +453,23 @@ namespace {
 
 history_result<history_reader_handle> history_store::open(connection_target target,
     [[maybe_unused]] history_time now) {
-    return open_reader(state_, target, now, std::nullopt);
+    return open_reader(state_, target, now, reader_reservation_kind::public_api);
 }
 
 history_result<history_reader_handle> history_store::open_xinput_reader(std::uint32_t position,
     connection_target target,
     history_time now) {
-    return open_reader(state_, target, now, position);
+    return open_reader(state_,
+        target,
+        now,
+        reader_reservation_kind::xinput,
+        static_cast<std::size_t>(position));
+}
+
+history_result<history_reader_handle> history_store::open_directinput_reader(std::size_t lane_index,
+    connection_target target,
+    history_time now) {
+    return open_reader(state_, target, now, reader_reservation_kind::directinput, lane_index);
 }
 
 } // namespace inputnext::history_detail

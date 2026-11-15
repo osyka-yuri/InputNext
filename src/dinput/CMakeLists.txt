@@ -6,6 +6,9 @@ target_include_directories(inputnext_dinput_profile
 inputnext_configure_target(inputnext_dinput_profile)
 
 add_library(inputnext_dinput STATIC
+    buffered/event_registration.cpp
+    buffered/service.cpp
+    buffered/subscription.cpp
     catalogue/devices.cpp
     catalogue/discovery.cpp
     catalogue/identity.cpp

@@ -1,6 +1,9 @@
 #include "device.hpp"
 
 #include "core/core.hpp"
+#include "dinput/buffered/event_registration.hpp"
+#include "dinput/buffered/service.hpp"
+#include "dinput/buffered/subscription.hpp"
 #include "dinput/device_info.hpp"
 #include "dinput/device_properties.hpp"
 #include "dinput/format.hpp"
@@ -106,6 +109,13 @@ public:
     }
 
     ~device() {
+        if (buffered_ != nullptr) {
+            buffered_->cancel();
+            buffered_->synchronize_signals();
+        }
+        if (notification_ != nullptr) {
+            notification_->disable();
+        }
         object_destroyed();
         parent_.Release();
     }
@@ -192,7 +202,12 @@ public:
                 return DIERR_INPUTLOST;
             }
             std::scoped_lock lock{gate_};
-            return read_device_property(token, header, identity_, active_format(), axes_);
+            return read_device_property(token,
+                header,
+                identity_,
+                active_format(),
+                axes_,
+                requested_buffer_size_);
         });
     }
 
@@ -215,8 +230,18 @@ public:
             }
             auto candidate = axes_;
             const auto updated = apply_property_change(change, *header, active_format(), candidate);
-            if (FAILED(updated) || !change.affects_axes()) {
+            if (FAILED(updated)) {
                 return updated;
+            }
+            if (change.kind == property_change::setting::buffer_size) {
+                if (change.value != requested_buffer_size_ && !advance_generation()) {
+                    return DIERR_GENERIC;
+                }
+                requested_buffer_size_ = change.value;
+                return DI_OK;
+            }
+            if (!change.affects_axes()) {
+                return DI_OK;
             }
             if (!advance_generation()) {
                 return DIERR_GENERIC;
@@ -227,61 +252,25 @@ public:
     }
 
     HRESULT STDMETHODCALLTYPE Acquire() noexcept override {
-        return guarded([&] -> HRESULT {
-            const auto call = access_->enter();
-            if (!call) {
-                return DIERR_INPUTLOST;
-            }
-            std::uint64_t expected{};
-            HWND window{};
-            bool foreground{};
-            {
-                std::scoped_lock lock{gate_};
-                if (!has_format_ || cooperation_ == 0U) {
-                    return DIERR_INVALIDPARAM;
-                }
-                expected = generation_;
-                window = window_;
-                foreground = (cooperation_ & DISCL_FOREGROUND) != 0U;
-            }
-            const auto latest = call.core().read_latest(identity_.target);
-            if (!latest.has_value() && latest.error() != core::status::no_data) {
-                return lose(expected);
-            }
-            std::scoped_lock lock{gate_};
-            if (generation_ != expected || !access_->open()) {
-                return DIERR_INPUTLOST;
-            }
-            std::optional<focus::window_epoch> epoch;
-            if (foreground) {
-                const auto guard = call.focus().lock_presentation();
-                epoch = guard.current_foreground_window_epoch(
-                    reinterpret_cast<focus::window_id>(window));
-                if (!epoch.has_value()) {
-                    if (acquisition_ == acquisition::acquired) {
-                        mark_lost();
-                    }
-                    return DIERR_OTHERAPPHASPRIO;
-                }
-            }
-            if (acquisition_ == acquisition::acquired && acquired_window_ == epoch) {
-                return S_FALSE;
-            }
-            if (!advance_generation()) {
-                return DIERR_GENERIC;
-            }
-            acquired_window_ = epoch;
-            acquisition_ = acquisition::acquired;
-            return DI_OK;
-        });
+        return guarded([&] { return acquire(); });
     }
 
     HRESULT STDMETHODCALLTYPE Unacquire() noexcept override {
         return guarded([&] -> HRESULT {
-            std::scoped_lock lock{gate_};
-            static_cast<void>(advance_generation());
-            acquisition_ = acquisition::unacquired;
-            acquired_window_.reset();
+            std::shared_ptr<buffered_subscription> retired;
+            {
+                std::scoped_lock lock{gate_};
+                retired = std::move(buffered_);
+                if (retired != nullptr) {
+                    retired->cancel();
+                }
+                static_cast<void>(advance_generation());
+                acquisition_ = acquisition::unacquired;
+                acquired_window_.reset();
+            }
+            if (retired != nullptr) {
+                retired->synchronize_signals();
+            }
             return DI_OK;
         });
     }
@@ -325,18 +314,36 @@ public:
     }
 
     HRESULT STDMETHODCALLTYPE GetDeviceData(DWORD size,
-        [[maybe_unused]] DIDEVICEOBJECTDATA* data,
+        DIDEVICEOBJECTDATA* data,
         DWORD* count,
         DWORD flags) noexcept override {
         constexpr DWORD allowed_flags = DIGDD_PEEK;
-        if (count == nullptr || size != sizeof(DIDEVICEOBJECTDATA) ||
+        if (count == nullptr ||
+            (size != sizeof(DIDEVICEOBJECTDATA) && size != sizeof(DIDEVICEOBJECTDATA_DX3)) ||
             (flags & ~allowed_flags) != 0U) {
             return DIERR_INVALIDPARAM;
         }
+        const DWORD requested = *count;
         *count = 0U;
         return guarded([&] -> HRESULT {
-            const auto ready = poll_eligibility();
-            return FAILED(ready) ? ready : static_cast<HRESULT>(DIERR_NOTBUFFERED);
+            const auto call = access_->enter();
+            if (!call) {
+                return DIERR_INPUTLOST;
+            }
+            std::uint64_t generation{};
+            const auto captured = capture_live_acquisition(call, generation);
+            if (FAILED(captured)) {
+                return captured;
+            }
+            std::scoped_lock lock{gate_};
+            const auto ready = revalidate_locked(call, generation);
+            if (FAILED(ready)) {
+                return ready;
+            }
+            if (requested_buffer_size_ == 0U || buffered_ == nullptr) {
+                return DIERR_NOTBUFFERED;
+            }
+            return buffered_->read(size, data, requested, *count, (flags & DIGDD_PEEK) != 0U);
         });
     }
 
@@ -366,9 +373,33 @@ public:
 
     HRESULT STDMETHODCALLTYPE SetEventNotification(HANDLE event) noexcept override {
         return guarded([&] -> HRESULT {
-            std::scoped_lock lock{gate_};
-            const auto allowed = configure_allowed();
-            return FAILED(allowed) ? allowed : (event == nullptr ? DI_OK : DIERR_UNSUPPORTED);
+            {
+                std::scoped_lock lock{gate_};
+                const auto allowed = configure_allowed();
+                if (FAILED(allowed)) {
+                    return allowed;
+                }
+            }
+            auto registration = event_registration::duplicate(event);
+            if (!registration.has_value()) {
+                return registration.error();
+            }
+            std::shared_ptr<event_registration> previous;
+            {
+                std::scoped_lock lock{gate_};
+                const auto allowed = configure_allowed();
+                if (FAILED(allowed)) {
+                    return allowed;
+                }
+                if (!advance_generation()) {
+                    return DIERR_GENERIC;
+                }
+                previous = std::exchange(notification_, std::move(*registration));
+            }
+            if (previous != nullptr) {
+                previous->disable();
+            }
+            return DI_OK;
         });
     }
 
@@ -589,6 +620,63 @@ public:
     }
 
 private:
+    HRESULT acquire() {
+        const auto call = access_->enter();
+        if (!call) {
+            return DIERR_INPUTLOST;
+        }
+        std::uint64_t expected{};
+        HWND window{};
+        bool foreground{};
+        {
+            std::scoped_lock lock{gate_};
+            if (!has_format_ || cooperation_ == 0U) {
+                return DIERR_INVALIDPARAM;
+            }
+            if (acquiring_) {
+                return DIERR_ACQUIRED;
+            }
+            expected = generation_;
+            window = window_;
+            foreground = (cooperation_ & DISCL_FOREGROUND) != 0U;
+        }
+        if (!target_available(call)) {
+            return lose(expected);
+        }
+        std::unique_lock lock{gate_};
+        if (generation_ != expected || !access_->open()) {
+            return DIERR_INPUTLOST;
+        }
+        observe_buffer_loss();
+        std::optional<focus::window_epoch> epoch;
+        if (foreground) {
+            const auto guard = call.focus().lock_presentation();
+            epoch =
+                guard.current_foreground_window_epoch(reinterpret_cast<focus::window_id>(window));
+            if (!epoch.has_value()) {
+                if (acquisition_ == acquisition::acquired) {
+                    mark_lost();
+                }
+                return DIERR_OTHERAPPHASPRIO;
+            }
+        }
+        if (acquisition_ == acquisition::acquired && acquired_window_ == epoch) {
+            return S_FALSE;
+        }
+        if (acquisition_ == acquisition::acquired) {
+            mark_lost();
+        }
+        if (requested_buffer_size_ != 0U || notification_ != nullptr) {
+            return acquire_buffered(call, epoch, lock);
+        }
+        if (!advance_generation()) {
+            return DIERR_GENERIC;
+        }
+        acquired_window_ = epoch;
+        acquisition_ = acquisition::acquired;
+        return DI_OK;
+    }
+
     template <typename Structure>
     static HRESULT unsupported_action(Structure* value) noexcept {
         return value == nullptr || value->dwSize != sizeof(*value) ? DIERR_INVALIDPARAM
@@ -643,7 +731,104 @@ private:
         });
     }
 
+    [[nodiscard]] bool target_available(const input_access::call& call) const {
+        const auto latest = call.core().read_latest(identity_.target);
+        return latest.has_value() || latest.error() == core::status::no_data;
+    }
+
+    [[nodiscard]] static bool window_matches(const input_access::call& call,
+        const std::optional<focus::window_epoch>& epoch) noexcept {
+        if (!epoch.has_value()) {
+            return true;
+        }
+        const auto guard = call.focus().lock_presentation();
+        return guard.matches_foreground_window_epoch(*epoch);
+    }
+
+    HRESULT acquire_buffered(const input_access::call& call,
+        const std::optional<focus::window_epoch>& epoch,
+        std::unique_lock<std::mutex>& lock) {
+        if (!advance_generation()) {
+            return DIERR_GENERIC;
+        }
+        const auto expected = generation_;
+        acquiring_ = true;
+        auto retired = buffered_;
+        if (retired != nullptr) {
+            retired->cancel();
+        }
+        buffer_configuration configuration{.target = identity_.target,
+            .format = format_,
+            .axes = axes_,
+            .requested_size = requested_buffer_size_,
+            .notification = notification_,
+            .window = epoch};
+        lock.unlock();
+        if (retired != nullptr) {
+            retired->synchronize_signals();
+            lock.lock();
+            if (generation_ != expected || !access_->open()) {
+                if (generation_ == expected) {
+                    mark_lost();
+                }
+                return DIERR_INPUTLOST;
+            }
+            buffered_.reset();
+            lock.unlock();
+            retired.reset();
+        }
+        const auto pending = call.buffers().subscribe(std::move(configuration));
+        lock.lock();
+        if (generation_ != expected || !access_->open()) {
+            if (pending.has_value()) {
+                (*pending)->cancel();
+            }
+            if (generation_ == expected) {
+                mark_lost();
+            }
+            return DIERR_INPUTLOST;
+        }
+        if (!pending.has_value()) {
+            acquiring_ = false;
+            if (pending.error() == DIERR_INPUTLOST) {
+                mark_lost();
+            }
+            return pending.error();
+        }
+        buffered_ = *pending;
+
+        lock.unlock();
+        const auto ready = guarded([&] { return (*pending)->wait_ready(); });
+        const bool live = SUCCEEDED(ready) && target_available(call);
+        lock.lock();
+        if (generation_ != expected) {
+            return DIERR_INPUTLOST;
+        }
+        acquiring_ = false;
+        if (FAILED(ready) && access_->open() && ready != DIERR_INPUTLOST) {
+            buffered_->cancel();
+            buffered_.reset();
+            return ready;
+        }
+        if (!live || !access_->open() || !window_matches(call, epoch) || !buffered_->activate()) {
+            mark_lost();
+            return DIERR_INPUTLOST;
+        }
+        acquired_window_ = epoch;
+        acquisition_ = acquisition::acquired;
+        lock.unlock();
+        (*pending)->signal_pending();
+        return DI_OK;
+    }
+
     [[nodiscard]] bool advance_generation() noexcept {
+        if (acquiring_) {
+            acquiring_ = false;
+            if (buffered_ != nullptr) {
+                buffered_->cancel();
+                buffered_.reset();
+            }
+        }
         if (generation_ == std::numeric_limits<std::uint64_t>::max()) {
             acquisition_ = acquisition::lost;
             return false;
@@ -654,8 +839,17 @@ private:
 
     void mark_lost() noexcept {
         acquisition_ = acquisition::lost;
+        if (buffered_ != nullptr) {
+            buffered_->lose();
+        }
         static_cast<void>(advance_generation());
         acquired_window_.reset();
+    }
+
+    void observe_buffer_loss() noexcept {
+        if (acquisition_ == acquisition::acquired && buffered_ != nullptr && !buffered_->active()) {
+            mark_lost();
+        }
     }
 
     HRESULT lose(std::uint64_t expected) {
@@ -666,24 +860,23 @@ private:
         return DIERR_INPUTLOST;
     }
 
-    [[nodiscard]] HRESULT configure_allowed() const noexcept {
+    [[nodiscard]] HRESULT configure_allowed() noexcept {
         if (!access_->open()) {
             return DIERR_INPUTLOST;
         }
+        observe_buffer_loss();
         return acquisition_ == acquisition::acquired ? DIERR_ACQUIRED : DI_OK;
     }
 
     // Requires gate_. The window check also qualifies the process epoch and freshness.
     HRESULT check_acquisition(const input_access::call& call) {
+        observe_buffer_loss();
         if (acquisition_ != acquisition::acquired) {
             return acquisition_ == acquisition::lost ? DIERR_INPUTLOST : DIERR_NOTACQUIRED;
         }
-        if (acquired_window_.has_value()) {
-            const auto guard = call.focus().lock_presentation();
-            if (!guard.matches_foreground_window_epoch(*acquired_window_)) {
-                mark_lost();
-                return DIERR_INPUTLOST;
-            }
+        if (!window_matches(call, acquired_window_)) {
+            mark_lost();
+            return DIERR_INPUTLOST;
         }
         return DI_OK;
     }
@@ -705,18 +898,17 @@ private:
 
     HRESULT revalidate(const input_access::call& call, std::uint64_t generation) {
         std::scoped_lock lock{gate_};
+        return revalidate_locked(call, generation);
+    }
+
+    HRESULT revalidate_locked(const input_access::call& call, std::uint64_t generation) {
         if (!access_->open() || generation_ != generation) {
             return acquisition_ == acquisition::unacquired ? DIERR_NOTACQUIRED : DIERR_INPUTLOST;
         }
         return check_acquisition(call);
     }
 
-    HRESULT poll_eligibility() {
-        const auto call = access_->enter();
-        if (!call) {
-            return DIERR_INPUTLOST;
-        }
-        std::uint64_t generation{};
+    HRESULT capture_live_acquisition(const input_access::call& call, std::uint64_t& generation) {
         {
             std::scoped_lock lock{gate_};
             const auto eligible = check_acquisition(call);
@@ -725,9 +917,18 @@ private:
             }
             generation = generation_;
         }
-        const auto latest = call.core().read_latest(identity_.target);
-        if (!latest.has_value() && latest.error() != core::status::no_data) {
-            return lose(generation);
+        return target_available(call) ? DI_OK : lose(generation);
+    }
+
+    HRESULT poll_eligibility() {
+        const auto call = access_->enter();
+        if (!call) {
+            return DIERR_INPUTLOST;
+        }
+        std::uint64_t generation{};
+        const auto captured = capture_live_acquisition(call, generation);
+        if (FAILED(captured)) {
+            return captured;
         }
         const auto valid = revalidate(call, generation);
         return FAILED(valid) ? valid : DI_NOEFFECT;
@@ -745,12 +946,16 @@ private:
     mutable std::mutex gate_;
     compiled_format format_{};
     axis_configuration axes_{};
+    std::shared_ptr<buffered_subscription> buffered_;
+    std::shared_ptr<event_registration> notification_;
     HWND window_{};
     DWORD cooperation_{};
+    DWORD requested_buffer_size_{};
     std::uint64_t generation_{1U};
     acquisition acquisition_{acquisition::unacquired};
     std::optional<focus::window_epoch> acquired_window_;
     bool has_format_{};
+    bool acquiring_{};
 };
 
 } // namespace

@@ -26,7 +26,11 @@ public:
         history_time now);
     [[nodiscard]] history_result<history_reader_handle>
     open_xinput_reader(std::uint32_t position, connection_target target, history_time now);
+    [[nodiscard]] history_result<history_reader_handle>
+    open_directinput_reader(std::size_t lane_index, connection_target target, history_time now);
     [[nodiscard]] history_batch read(history_reader_handle reader, history_time now);
+    [[nodiscard]] observed_read
+    read_directinput(history_reader_handle reader, history_time now, bool capture_boundary);
     [[nodiscard]] history_result<void> close(history_reader_handle reader);
 
     void retire(connection_target target) noexcept;

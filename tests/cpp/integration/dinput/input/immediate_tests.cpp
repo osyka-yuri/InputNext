@@ -157,6 +157,10 @@ TEST_CASE("dinput.device_returns_standard_state_and_projects_object_properties",
     REQUIRE(inputnext_dinput_get_property_w(device.get(), &DIPROP_BUFFERSIZE, &buffer_size.diph) ==
             DI_OK);
     CHECK(buffer_size.dwData == 0U);
+    const auto requested_buffer = device_dword_property(8U);
+    CHECK(
+        inputnext_dinput_set_property_w(device.get(), &DIPROP_BUFFERSIZE, &requested_buffer.diph) ==
+        DIERR_ACQUIRED);
     auto vendor_product = device_dword_property();
     REQUIRE(inputnext_dinput_get_property_w(device.get(), &DIPROP_VIDPID, &vendor_product.diph) ==
             DI_OK);
@@ -182,12 +186,15 @@ TEST_CASE("dinput.device_returns_standard_state_and_projects_object_properties",
     CHECK(inputnext_dinput_set_property_w(device.get(), &DIPROP_AXISMODE, &relative_mode.diph) ==
           DIERR_UNSUPPORTED);
     const auto empty_buffer = device_dword_property();
-    CHECK(inputnext_dinput_set_property_w(device.get(), &DIPROP_BUFFERSIZE, &empty_buffer.diph) ==
-          DI_OK);
-    const auto requested_buffer = device_dword_property(8U);
-    CHECK(
+    REQUIRE(
         inputnext_dinput_set_property_w(device.get(), &DIPROP_BUFFERSIZE, &requested_buffer.diph) ==
-        DIERR_UNSUPPORTED);
+        DI_OK);
+    buffer_size.dwData = 0U;
+    REQUIRE(inputnext_dinput_get_property_w(device.get(), &DIPROP_BUFFERSIZE, &buffer_size.diph) ==
+            DI_OK);
+    CHECK(buffer_size.dwData == 8U);
+    REQUIRE(inputnext_dinput_set_property_w(device.get(), &DIPROP_BUFFERSIZE, &empty_buffer.diph) ==
+            DI_OK);
     REQUIRE(inputnext_dinput_set_property_w(device.get(), &DIPROP_RANGE, &configured_range.diph) ==
             DI_OK);
     const auto configured_deadzone = x_dword_property(5000U);
@@ -294,7 +301,6 @@ TEST_CASE("dinput.device_supports_custom_formats_and_reports_unsupported_operati
 
     CHECK(device->Unacquire() == DI_OK);
     CHECK(device->SetEventNotification(nullptr) == DI_OK);
-    CHECK(device->SetEventNotification(sentinel_event) == DIERR_UNSUPPORTED);
     CHECK(device->SetDataFormat(&format) == DI_OK);
 }
 

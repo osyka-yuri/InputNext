@@ -63,7 +63,8 @@ TEST_CASE("gameinput.history.store_and_evidence_reject_guide_only_native_progres
     fixture.native.history.steps[0U] = provider_failure_step(17U);
     fixture.native.history.step_count = 1U;
     auto provider = source_history_provider{fixture};
-    auto store = history_detail::history_store{provider};
+    const auto store_storage = std::make_unique<history_detail::history_store>(provider);
+    auto& store = *store_storage;
     const auto target = source_cursor_target();
 
     const auto opened = store.open(target, history_time{});

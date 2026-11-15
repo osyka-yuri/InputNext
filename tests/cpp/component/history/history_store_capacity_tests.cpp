@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -174,6 +175,82 @@ TEST_CASE("history.store.reserved_xinput_readers_are_independent_from_public_cap
     REQUIRE(store.close(*reopened_reserved).has_value());
 }
 
+TEST_CASE("history.store.reserved_directinput_readers_are_independent_from_other_ranges",
+    "[component][history][capacity]") {
+    auto provider = fake_history_provider{};
+    auto store = history_store{provider};
+    const auto target = make_target(15U);
+    std::vector<history_reader_handle> public_readers(public_history_reader_capacity);
+    std::vector<history_reader_handle> xinput_readers(reserved_xinput_history_reader_capacity);
+    std::vector<history_reader_handle> directinput_readers(
+        reserved_directinput_history_reader_capacity);
+
+    for (auto& reader : public_readers) {
+        const auto opened = store.open(target, test_now);
+        REQUIRE(opened.has_value());
+        reader = *opened;
+    }
+    for (std::size_t position = 0U; position < xinput_readers.size(); ++position) {
+        const auto opened =
+            store.open_xinput_reader(static_cast<std::uint32_t>(position), target, test_now);
+        REQUIRE(opened.has_value());
+        xinput_readers[position] = *opened;
+    }
+    for (std::size_t lane = 0U; lane < directinput_readers.size(); ++lane) {
+        const auto opened = store.open_directinput_reader(lane, target, test_now);
+        REQUIRE(opened.has_value());
+        directinput_readers[lane] = *opened;
+    }
+
+    const auto duplicate_lane = store.open_directinput_reader(0U, target, test_now);
+    REQUIRE(!duplicate_lane.has_value());
+    CHECK(duplicate_lane.error().code == history_error::busy);
+    const auto invalid_lane =
+        store.open_directinput_reader(reserved_directinput_history_reader_capacity,
+            target,
+            test_now);
+    REQUIRE(!invalid_lane.has_value());
+    CHECK(invalid_lane.error().code == history_error::invalid_argument);
+
+    const auto public_full = store.open(target, test_now);
+    REQUIRE(!public_full.has_value());
+    CHECK(public_full.error().code == history_error::capacity_exceeded);
+    const auto xinput_duplicate = store.open_xinput_reader(0U, target, test_now);
+    REQUIRE(!xinput_duplicate.has_value());
+    CHECK(xinput_duplicate.error().code == history_error::busy);
+
+    std::vector<std::uint64_t> streams;
+    streams.reserve(public_readers.size() + xinput_readers.size() + directinput_readers.size());
+    const auto check_initial_read = [&](history_reader_handle reader) {
+        const auto batch = store.read(reader, test_now);
+        REQUIRE(batch.count == 1U);
+        CHECK(!batch.failure.has_value());
+        CHECK(batch.reset == history_reset::initial_open);
+        streams.push_back(batch.domain.stream);
+    };
+    for (const auto reader : public_readers) {
+        check_initial_read(reader);
+    }
+    for (const auto reader : xinput_readers) {
+        check_initial_read(reader);
+    }
+    for (const auto reader : directinput_readers) {
+        check_initial_read(reader);
+    }
+    std::ranges::sort(streams);
+    CHECK(std::ranges::adjacent_find(streams) == streams.end());
+
+    for (const auto reader : public_readers) {
+        REQUIRE(store.close(reader).has_value());
+    }
+    for (const auto reader : xinput_readers) {
+        REQUIRE(store.close(reader).has_value());
+    }
+    for (const auto reader : directinput_readers) {
+        REQUIRE(store.close(reader).has_value());
+    }
+}
+
 TEST_CASE("history.store.reserved_reader_identity_does_not_wrap", "[component][history]") {
     constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
     auto provider = fake_history_provider{};
@@ -215,14 +292,22 @@ TEST_CASE("history.store.resident_capacity_recovers_after_retirement", "[compone
     CHECK(store.resident_bank_count() == resident_history_bank_capacity);
     CHECK(provider.factory_calls.load(std::memory_order_relaxed) == resident_history_bank_capacity);
 
+    const auto unavailable_directinput =
+        store.open_directinput_reader(0U, unavailable_target, test_now);
+    REQUIRE(!unavailable_directinput.has_value());
+    CHECK(unavailable_directinput.error().code == history_error::capacity_exceeded);
+    CHECK(store.resident_bank_count() == resident_history_bank_capacity);
+    CHECK(provider.factory_calls.load(std::memory_order_relaxed) == resident_history_bank_capacity);
+
     const auto retired_target = make_target(100U);
     store.retire(retired_target);
     CHECK(store.drain_retired() == 1U);
     CHECK(provider.cursor_destructions.load(std::memory_order_relaxed) == 1U);
 
-    const auto recovered = store.open(unavailable_target, test_now);
+    const auto recovered = store.open_directinput_reader(0U, unavailable_target, test_now);
     REQUIRE(recovered.has_value());
     CHECK(store.resident_bank_count() == resident_history_bank_capacity);
+    REQUIRE(store.close(*recovered).has_value());
 }
 
 TEST_CASE("history.store.opening_reservations_enforce_capacity_until_disposal",

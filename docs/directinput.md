@@ -4,9 +4,9 @@ InputNext provides an app-local `dinput8.dll` for x86 and x64 processes. It pres
 normalized GameInput gamepad profile through DirectInput 8 A/W interfaces, using the same
 runtime, device connections and cached input as XInput and the Core SDK.
 
-This version supports immediate, nonexclusive gamepad input. Buffered data, event
-notification, exclusive acquisition, action mapping and DirectInput force feedback are
-unsupported. Devices forwarded to Windows retain their native DirectInput behavior.
+This version supports nonexclusive gamepad input with immediate and buffered reads and
+event notification. Exclusive acquisition, action mapping and DirectInput force feedback
+are unsupported. Devices forwarded to Windows retain their native DirectInput behavior.
 
 ## Loading
 
@@ -131,11 +131,45 @@ returns `DIERR_NOTACQUIRED`; lost acquisition or a retired connection returns
 `DIERR_INPUTLOST`. Failed state reads leave the caller's buffer unchanged.
 
 The profile does not require polling. `Poll` checks acquisition eligibility and returns
-`DI_NOEFFECT`. Buffer size is zero; nonzero buffer sizes and non-null notification events
-are unsupported. `GetDeviceData` returns `DIERR_NOTBUFFERED` on an eligible acquired
-device. Force-feedback capabilities are absent and effect enumeration is empty.
+`DI_NOEFFECT`.
 
-These limits can prevent a game that requires exclusive mode, buffered input, action
-mapping or force feedback from using the normalized device. XInput rumble and the
-Effects SDK remain available through their own contracts. Sony Bluetooth remains
-input-only.
+## Buffered input and notifications
+
+Set `DIPROP_BUFFERSIZE` before acquisition. The default size is zero, which disables
+buffering. Reading the property returns the requested size. For a positive request,
+the queue holds one fewer event than the lesser of the request and 4096.
+
+`GetDeviceData` reads projected changes at offsets from the selected format. It accepts
+DirectInput 8 and DX3 event sizes. Use `DIGDD_PEEK` to leave events in the queue. A null
+destination with count `INFINITE` counts events with peek and flushes them without it.
+With a finite count, a null destination discards up to that many events unless peeking.
+The caller must provide enough array entries for a nonnull destination; the API cannot
+infer its allocation size.
+Each acquired device object consumes its own queue. A shared counter orders publication
+across InputNext DirectInput devices, and events from one source reading share a number.
+Independent workers and forwarded Windows devices have no common source-time ordering.
+
+An overflow preserves the events already queued. `DI_BUFFEROVERFLOW` also reports
+uncertain source history, including ambiguous readings at the acquisition boundary or
+gaps in coverage. The buffer resumes from a qualified state without inventing
+transitions across the gap. Peek and zero-count queries preserve pending loss. A
+consuming read or flush acknowledges resolved loss when it reports overflow.
+
+Use `SetEventNotification` while unacquired to select an event or disable notification
+with a null handle. InputNext owns a duplicate and signals projected changes, loss of
+buffered history, or loss of acquisition. A zero buffer size can still use notifications.
+The handle must identify a Windows event. Registration preserves its current state;
+the application controls reset behavior for manual-reset events.
+
+Buffered acquisition establishes a history boundary on a worker for the exact device
+connection. Acquire waits for that boundary and can be canceled by Unacquire.
+Native delays can extend acquisition and final session drainage. Each worker uses
+the shared GameInput history store. Ready calls read local events or cached state.
+Objects for the same connection share a worker through reader handoffs. Session capacity
+is 16 resident workers and 64 resident subscriptions, including resources awaiting cleanup.
+The capped queues keep their combined event payload below 8 MiB.
+
+Games that require exclusive mode, action mapping or force feedback may be unable to
+use the normalized device. Force-feedback capabilities are absent and effect
+enumeration is empty. XInput rumble and the Effects SDK remain available through their
+own contracts. Sony Bluetooth remains input-only.

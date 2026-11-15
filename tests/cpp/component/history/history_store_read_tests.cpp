@@ -1,7 +1,9 @@
 #include "history_store_test_support.hpp"
 
+#include "reader_observation.hpp"
 #include "ring.hpp"
 #include "state.hpp"
+#include "store.hpp"
 #include "support/history/history_store_test_access.hpp"
 #include <inputnext/gamepad_state.hpp>
 #include <inputnext/history.hpp>
@@ -9,16 +11,19 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <thread>
 
 namespace inputnext::history_component_test {
 
 TEST_CASE("history.store.open_remains_pending_until_baseline", "[component][history]") {
     auto provider = fake_history_provider{};
-    auto store = history_store{provider};
+    const auto store_storage = std::make_unique<history_store>(provider);
+    auto& store = *store_storage;
     const auto target = make_target(1U);
     const auto opened = store.open(target, test_now);
     REQUIRE(opened.has_value());
@@ -74,6 +79,185 @@ TEST_CASE("history.store.open_remains_pending_until_baseline", "[component][hist
     CHECK(resumed->caught_up);
     CHECK(resumed->checkpoint_qpc == 13U);
     CHECK(resumed->checkpoint_sequence == 4U);
+}
+
+TEST_CASE("history.store.directinput_observation_reports_only_committed_fresh_checkpoints",
+    "[component][history][directinput]") {
+    auto provider = fake_history_provider{};
+    provider.set_source_timestamp(500'000U);
+    const auto store_storage = std::make_unique<history_store>(provider);
+    auto& store = *store_storage;
+    const auto target = make_target(1'100U);
+    const auto opened = store.open_directinput_reader(0U, target, test_now);
+    REQUIRE(opened.has_value());
+
+    const auto baseline = store.read_directinput(*opened, test_now, true);
+    REQUIRE(baseline.batch.count == 1U);
+    REQUIRE(baseline.boundary.has_value());
+    const auto baseline_boundary = baseline.boundary.value_or(reader_boundary{});
+    CHECK(baseline_boundary.domain == baseline.batch.domain);
+    CHECK(baseline_boundary.sequence == baseline.batch.last_sequence);
+    CHECK(baseline_boundary.sequence == 1U);
+    CHECK(baseline_boundary.checkpoint_qpc == 0U);
+    CHECK(baseline_boundary.clock.timestamp_us == 500'000U);
+    CHECK(baseline_boundary.clock.system_time_ms == 500U);
+    CHECK(!baseline.fresh_checkpoint);
+
+    const auto caught_up = store.read_directinput(*opened, test_now, false);
+    REQUIRE(caught_up.batch.caught_up);
+    CHECK(caught_up.batch.checkpoint_qpc == 10U);
+    CHECK(caught_up.batch.checkpoint_sequence == 1U);
+    CHECK(caught_up.fresh_checkpoint);
+    CHECK(!caught_up.boundary.has_value());
+
+    const auto next_boundary = store.read_directinput(*opened, test_now, true);
+    REQUIRE(next_boundary.boundary.has_value());
+    const auto boundary = next_boundary.boundary.value_or(reader_boundary{});
+    CHECK(next_boundary.fresh_checkpoint);
+    CHECK(boundary.sequence == 1U);
+    CHECK(boundary.checkpoint_qpc == 10U);
+    REQUIRE(store.close(*opened).has_value());
+}
+
+TEST_CASE("history.store.directinput_boundary_is_omitted_when_clock_is_unavailable",
+    "[component][history][directinput]") {
+    auto provider = fake_history_provider{};
+    const auto store_storage = std::make_unique<history_store>(provider);
+    auto& store = *store_storage;
+    const auto target = make_target(1'101U);
+    const auto opened = store.open_directinput_reader(1U, target, test_now);
+    REQUIRE(opened.has_value());
+
+    const auto no_clock = store.read_directinput(*opened, test_now, true);
+    REQUIRE(no_clock.batch.count == 1U);
+    CHECK(!no_clock.boundary.has_value());
+    CHECK(provider.clock_sample_calls.load(std::memory_order_relaxed) == 1U);
+    REQUIRE(store.close(*opened).has_value());
+}
+
+TEST_CASE("history.store.directinput_busy_bank_does_not_sample_source_clock",
+    "[component][history][directinput][concurrency]") {
+    auto provider = fake_history_provider{};
+    provider.set_source_timestamp(800'000U);
+    const auto store_storage = std::make_unique<history_store>(provider);
+    auto& store = *store_storage;
+    const auto target = make_target(1'103U);
+    const auto public_reader = store.open(target, test_now);
+    const auto directinput_reader = store.open_directinput_reader(3U, target, test_now);
+    REQUIRE(public_reader.has_value());
+    REQUIRE(directinput_reader.has_value());
+    REQUIRE(store.read(*public_reader, test_now).count == 1U);
+    const auto cursor = provider.cursor_state(target);
+    REQUIRE(cursor != nullptr);
+
+    cursor->block_next();
+    auto worker = std::jthread{[&] { static_cast<void>(store.read(*public_reader, test_now)); }};
+    const auto blocked = cursor->wait_until_blocked(std::chrono::seconds{2});
+    if (!blocked) {
+        cursor->release_blocked_call();
+        worker.join();
+    }
+    REQUIRE(blocked);
+
+    const auto before = provider.clock_sample_calls.load(std::memory_order_relaxed);
+    const auto busy = store.read_directinput(*directinput_reader, test_now, true);
+    cursor->release_blocked_call();
+    worker.join();
+    REQUIRE(busy.batch.failure.has_value());
+    const auto busy_failure = busy.batch.failure.value_or(history_failure{});
+    CHECK(busy_failure.code == history_error::busy);
+    CHECK(!busy.boundary.has_value());
+    CHECK(!busy.fresh_checkpoint);
+    CHECK(provider.clock_sample_calls.load(std::memory_order_relaxed) == before);
+
+    REQUIRE(store.close(*public_reader).has_value());
+    REQUIRE(store.close(*directinput_reader).has_value());
+}
+
+TEST_CASE("history.store.directinput_boundary_captures_clock_without_a_baseline",
+    "[component][history][directinput]") {
+    auto provider = fake_history_provider{};
+    provider.set_source_timestamp(750'000U);
+    const auto store_storage = std::make_unique<history_store>(provider);
+    auto& store = *store_storage;
+    const auto target = make_target(1'102U);
+    const auto opened = store.open_directinput_reader(2U, target, test_now);
+    REQUIRE(opened.has_value());
+    const auto cursor = provider.cursor_state(target);
+    REQUIRE(cursor != nullptr);
+    cursor->fail_start(history_error::no_data);
+
+    const auto no_baseline = store.read_directinput(*opened, test_now, true);
+    REQUIRE(no_baseline.batch.failure.has_value());
+    const auto no_baseline_failure = no_baseline.batch.failure.value_or(history_failure{});
+    CHECK(no_baseline_failure.code == history_error::no_data);
+    REQUIRE(no_baseline.boundary.has_value());
+    const auto boundary = no_baseline.boundary.value_or(reader_boundary{});
+    CHECK(boundary.domain == no_baseline.batch.domain);
+    CHECK(boundary.sequence == 0U);
+    CHECK(boundary.checkpoint_qpc == 0U);
+    CHECK(boundary.clock.timestamp_us == 750'000U);
+
+    const auto baseline = store.read_directinput(*opened, test_now, false);
+    REQUIRE(baseline.batch.count == 1U);
+    CHECK(baseline.batch.records[0U].sequence == 1U);
+    CHECK(!baseline.boundary.has_value());
+    REQUIRE(store.close(*opened).has_value());
+}
+
+TEST_CASE("history.store.directinput_reader_earns_fresh_checkpoint_after_public_reader_pumps_bank",
+    "[component][history][directinput]") {
+    auto provider = fake_history_provider{};
+    provider.set_source_timestamp(1'000'000U);
+    const auto store_storage = std::make_unique<history_store>(provider);
+    auto& store = *store_storage;
+    const auto target = make_target(1'104U);
+    const auto public_open = store.open(target, test_now);
+    const auto directinput_open = store.open_directinput_reader(4U, target, test_now);
+    REQUIRE(public_open.has_value());
+    REQUIRE(directinput_open.has_value());
+
+    const auto directinput_baseline = store.read_directinput(*directinput_open, test_now, false);
+    REQUIRE(directinput_baseline.batch.count == 1U);
+    const auto public_baseline = store.read(*public_open, test_now);
+    REQUIRE(public_baseline.count == 1U);
+    CHECK(public_baseline.records[0U].sequence == directinput_baseline.batch.last_sequence);
+
+    const auto cursor = provider.cursor_state(target);
+    REQUIRE(cursor != nullptr);
+    for (std::uint64_t index = 0U; index < history_batch_capacity + 1U; ++index) {
+        cursor->enqueue_reading(make_sample(500U + index, 11U + index));
+    }
+
+    const auto public_prefix = std::make_unique<history_batch>(store.read(*public_open, test_now));
+    REQUIRE(public_prefix->count == history_batch_capacity);
+    CHECK(!public_prefix->caught_up);
+    const auto public_tail = std::make_unique<history_batch>(store.read(*public_open, test_now));
+    REQUIRE(public_tail->count == 1U);
+    CHECK(public_tail->caught_up);
+    CHECK(public_tail->checkpoint_sequence == public_tail->last_sequence);
+
+    const auto directinput_prefix = store.read_directinput(*directinput_open, test_now, true);
+    REQUIRE(directinput_prefix.batch.count == history_batch_capacity);
+    CHECK(!directinput_prefix.batch.caught_up);
+    CHECK(!directinput_prefix.fresh_checkpoint);
+    REQUIRE(directinput_prefix.boundary.has_value());
+    const auto prefix_boundary = directinput_prefix.boundary.value_or(reader_boundary{});
+    CHECK(prefix_boundary.sequence == directinput_prefix.batch.last_sequence);
+    CHECK(prefix_boundary.checkpoint_qpc == 0U);
+
+    const auto directinput_tail = store.read_directinput(*directinput_open, test_now, true);
+    REQUIRE(directinput_tail.batch.count == 1U);
+    CHECK(directinput_tail.batch.caught_up);
+    CHECK(directinput_tail.fresh_checkpoint);
+    REQUIRE(directinput_tail.boundary.has_value());
+    const auto tail_boundary = directinput_tail.boundary.value_or(reader_boundary{});
+    CHECK(tail_boundary.sequence == directinput_tail.batch.last_sequence);
+    CHECK(tail_boundary.checkpoint_qpc == directinput_tail.batch.checkpoint_qpc);
+    CHECK(tail_boundary.checkpoint_qpc == 11U + history_batch_capacity);
+
+    REQUIRE(store.close(*public_open).has_value());
+    REQUIRE(store.close(*directinput_open).has_value());
 }
 
 TEST_CASE("history.store.readers_share_bank_with_independent_streams", "[component][history]") {
@@ -325,8 +509,9 @@ TEST_CASE("history.store.stream_identity_exhaustion_preserves_other_reader",
     "[component][history]") {
     constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
     auto provider = fake_history_provider{};
-    auto store =
-        history_store{provider, identity_seed{.next_reader = 1U, .next_stream = maximum - 1U}};
+    const auto store_storage = std::make_unique<history_store>(provider,
+        identity_seed{.next_reader = 1U, .next_stream = maximum - 1U});
+    auto& store = *store_storage;
     const auto target = make_target(4U);
     const auto slow_open = store.open(target, test_now);
     const auto fast_open = store.open(target, test_now);
@@ -364,7 +549,8 @@ TEST_CASE("history.store.stream_identity_exhaustion_preserves_other_reader",
 TEST_CASE("history.store.output_sequence_exhaustion_is_reader_local", "[component][history]") {
     constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
     auto provider = fake_history_provider{};
-    auto store = history_store{provider};
+    const auto store_storage = std::make_unique<history_store>(provider);
+    auto& store = *store_storage;
     const auto target = make_target(5U);
     const auto first_open = store.open(target, test_now);
     const auto second_open = store.open(target, test_now);
@@ -400,7 +586,8 @@ TEST_CASE("history.store.output_sequence_exhaustion_is_reader_local", "[componen
 TEST_CASE("history.store.bank_position_exhaustion_is_bank_local", "[component][history]") {
     constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
     auto provider = fake_history_provider{};
-    auto store = history_store{provider};
+    const auto store_storage = std::make_unique<history_store>(provider);
+    auto& store = *store_storage;
     const auto exhausted_target = make_target(6U);
     const auto active_target = make_target(7U);
     const auto exhausted_open = store.open(exhausted_target, test_now);

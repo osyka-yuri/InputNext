@@ -7,8 +7,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <memory>
+#include <semaphore>
 #include <thread>
 #include <utility>
 
@@ -50,6 +52,67 @@ public:
 private:
     std::shared_ptr<fake_cursor_state> cursor_;
     std::unique_ptr<history_batch> result_{std::make_unique<history_batch>()};
+    std::thread thread_;
+};
+
+class commit_pause final {
+public:
+    static void block(void* context) noexcept {
+        auto& pause = *static_cast<commit_pause*>(context);
+        pause.entered_.release();
+        pause.released_.acquire();
+    }
+
+    [[nodiscard]] bool wait_until_entered() {
+        return entered_.try_acquire_for(std::chrono::seconds{2});
+    }
+
+    void release() noexcept {
+        if (!released_once_) {
+            released_once_ = true;
+            released_.release();
+        }
+    }
+
+private:
+    std::binary_semaphore entered_{0};
+    std::binary_semaphore released_{0};
+    bool released_once_{};
+};
+
+class pending_directinput_read final {
+public:
+    pending_directinput_read(history_store& store,
+        history_reader_handle reader,
+        commit_pause& pause)
+        : pause_(pause),
+          thread_([this, &store, reader] {
+              result_ = store.read_directinput(reader, test_now, true);
+          }) {}
+
+    ~pending_directinput_read() {
+        pause_.release();
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+    }
+
+    pending_directinput_read(const pending_directinput_read&) = delete;
+    pending_directinput_read& operator=(const pending_directinput_read&) = delete;
+    pending_directinput_read(pending_directinput_read&&) = delete;
+    pending_directinput_read& operator=(pending_directinput_read&&) = delete;
+
+    [[nodiscard]] history_detail::observed_read finish() {
+        pause_.release();
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+        return result_;
+    }
+
+private:
+    commit_pause& pause_;
+    history_detail::observed_read result_{};
     std::thread thread_;
 };
 
@@ -225,6 +288,67 @@ TEST_CASE("history.store.retirement_waits_for_active_read", "[component][history
     CHECK(store.drain_retired() == 1U);
     CHECK(store.resident_bank_count() == 0U);
     CHECK(provider.cursor_destructions.load(std::memory_order_relaxed) == 1U);
+}
+
+TEST_CASE("history.store.directinput_close_cancels_observed_boundary_commit",
+    "[component][history][directinput][concurrency]") {
+    auto provider = fake_history_provider{};
+    provider.set_source_timestamp(900'000U);
+    auto store = history_store{provider};
+    const auto target = make_target(32U);
+    const auto opened = store.open_directinput_reader(0U, target, test_now);
+    REQUIRE(opened.has_value());
+    REQUIRE(store.read_directinput(*opened, test_now, false).batch.count == 1U);
+
+    auto pause = commit_pause{};
+    history_store_test_access::set_before_read_commit_test_hook(store, commit_pause::block, &pause);
+    auto read = pending_directinput_read{store, *opened, pause};
+    const auto entered = pause.wait_until_entered();
+    if (!entered) {
+        pause.release();
+    }
+    REQUIRE(entered);
+
+    REQUIRE(store.close(*opened).has_value());
+    const auto canceled = read.finish();
+    history_store_test_access::set_before_read_commit_test_hook(store, nullptr, nullptr);
+
+    CHECK(canceled.batch.count == 0U);
+    CHECK(canceled.batch.failure == history_failure{.code = history_error::closed});
+    CHECK(!canceled.boundary.has_value());
+    CHECK(!canceled.fresh_checkpoint);
+    CHECK(provider.clock_sample_calls.load(std::memory_order_relaxed) == 1U);
+}
+
+TEST_CASE("history.store.directinput_retirement_cancels_observed_boundary_commit",
+    "[component][history][directinput][concurrency]") {
+    auto provider = fake_history_provider{};
+    provider.set_source_timestamp(910'000U);
+    auto store = history_store{provider};
+    const auto target = make_target(33U);
+    const auto opened = store.open_directinput_reader(1U, target, test_now);
+    REQUIRE(opened.has_value());
+    REQUIRE(store.read_directinput(*opened, test_now, false).batch.count == 1U);
+
+    auto pause = commit_pause{};
+    history_store_test_access::set_before_read_commit_test_hook(store, commit_pause::block, &pause);
+    auto read = pending_directinput_read{store, *opened, pause};
+    const auto entered = pause.wait_until_entered();
+    if (!entered) {
+        pause.release();
+    }
+    REQUIRE(entered);
+
+    store.retire(target);
+    const auto canceled = read.finish();
+    history_store_test_access::set_before_read_commit_test_hook(store, nullptr, nullptr);
+
+    CHECK(canceled.batch.count == 0U);
+    CHECK(canceled.batch.failure == history_failure{.code = history_error::disconnected});
+    CHECK(!canceled.boundary.has_value());
+    CHECK(!canceled.fresh_checkpoint);
+    CHECK(provider.clock_sample_calls.load(std::memory_order_relaxed) == 1U);
+    CHECK(store.drain_retired() == 1U);
 }
 
 TEST_CASE("history.store.recovery_cut_follows_retained_prefix", "[component][history][recovery]") {

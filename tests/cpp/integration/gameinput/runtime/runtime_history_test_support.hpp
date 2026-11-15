@@ -39,6 +39,7 @@ struct native_history_script final {
     std::uint64_t last_qpc{1'000U};
     std::atomic<std::size_t> cursor_factories;
     std::atomic<std::size_t> cursor_destructions;
+    std::atomic<std::size_t> next_calls;
     bool block_next_call{};
     bool next_call_entered{};
     bool release_next_call{};
@@ -95,6 +96,7 @@ public:
     }
 
     [[nodiscard]] native_history_step next() noexcept override {
+        script_->next_calls.fetch_add(1U, std::memory_order_relaxed);
         std::unique_lock lock{script_->gate};
         if (script_->block_next_call) {
             script_->next_call_entered = true;

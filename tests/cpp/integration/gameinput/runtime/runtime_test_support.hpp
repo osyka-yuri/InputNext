@@ -4,6 +4,7 @@
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/reading_parts.hpp"
 #include "gameinput/runtime/factory.hpp"
+#include "history/reader_observation.hpp"
 #include "input/program.hpp"
 #include "metadata/provider.hpp"
 #include "runtime_history_test_support.hpp"
@@ -266,6 +267,19 @@ public:
         script->cursor_factories.fetch_add(1U, std::memory_order_relaxed);
         return std::unique_ptr<native_history_cursor>{
             new scripted_native_history_cursor{std::move(script)}};
+    }
+
+    [[nodiscard]] std::optional<history_detail::source_clock_sample>
+    sample_history_clock() noexcept override {
+        const auto timestamp = history_source_timestamp_us_.load(std::memory_order_relaxed);
+        return history_detail::source_clock_sample{
+            .timestamp_us = timestamp,
+            .system_time_ms = timestamp / 1'000U,
+        };
+    }
+
+    void set_history_source_timestamp(std::uint64_t timestamp_us) noexcept {
+        history_source_timestamp_us_.store(timestamp_us, std::memory_order_relaxed);
     }
 
     [[nodiscard]] native_result<std::uint64_t> performance_frequency() noexcept override {
@@ -563,6 +577,8 @@ public:
     native_device_facts device_facts{};
 
 private:
+    std::atomic<std::uint64_t> history_source_timestamp_us_{1'000'000U};
+
     [[nodiscard]] native_result<native_callback_token>
     register_device_callback(registration_kind kind, native_device_callback_context& context) {
         std::scoped_lock lock{mutex_};

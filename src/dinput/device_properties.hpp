@@ -31,7 +31,8 @@ struct property_change final {
     DIPROPHEADER* header,
     const device_identity& identity,
     const compiled_format* format,
-    const axis_configuration& axes) noexcept;
+    const axis_configuration& axes,
+    DWORD requested_buffer_size) noexcept;
 
 // Decode the request before acquisition gating. Apply it to a candidate under
 // the device's gate, then let the device publish it with a new generation.

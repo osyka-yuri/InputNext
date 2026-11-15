@@ -4,6 +4,7 @@
 #include "gameinput/history/source_history_cursor.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include "history/cursor.hpp"
+#include "history/reader_observation.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/error.hpp>
 #include <inputnext/gameinput_runtime.hpp>
@@ -16,6 +17,7 @@
 #include <memory>
 #include <mutex>
 #include <new>
+#include <optional>
 #include <utility>
 
 namespace inputnext {
@@ -142,6 +144,14 @@ bool gameinput_runtime::implementation::history_provider::is_live(
 
     residency.release();
     return true;
+}
+
+std::optional<history_detail::source_clock_sample>
+gameinput_runtime::implementation::history_provider::sample_history_clock() noexcept {
+    if (runtime.native == nullptr) {
+        return std::nullopt;
+    }
+    return runtime.native->sample_history_clock();
 }
 
 gameinput_runtime::implementation::history_lease::history_lease(implementation& runtime,

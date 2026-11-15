@@ -1,6 +1,7 @@
 #include "state.hpp"
 
 #include "factory.hpp"
+#include "history/reader_observation.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/gameinput_runtime.hpp>
 #include <inputnext/history.hpp>
@@ -117,6 +118,66 @@ history_batch gameinput_runtime::implementation::read_history(history_reader_han
         return history_batch{
             .domain = history_domain{.target = reader.target},
             .failure = history_failure{.code = history_error::provider_failure},
+        };
+    }
+}
+
+history_result<history_reader_handle> gameinput_runtime::implementation::open_directinput_history(
+    connection_target target,
+    std::size_t lane_index,
+    history_time now) {
+    if (const auto failure = begin_history_call(false); failure.has_value()) {
+        return std::unexpected(*failure);
+    }
+    const auto finish_call = [](implementation* runtime) noexcept {
+        runtime->end_history_call();
+    };
+    const std::unique_ptr<implementation, decltype(finish_call)> call_guard{this, finish_call};
+
+    try {
+        return history.open_directinput_reader(lane_index, target, now);
+    } catch (const std::bad_alloc&) {
+        return std::unexpected(history_failure{.code = history_error::capacity_exceeded});
+    } catch (...) {
+        return std::unexpected(history_failure{.code = history_error::provider_failure});
+    }
+}
+
+history_detail::observed_read gameinput_runtime::implementation::read_directinput_history(
+    history_reader_handle reader,
+    history_time now,
+    bool capture_boundary) {
+    if (const auto failure = begin_history_call(false); failure.has_value()) {
+        return history_detail::observed_read{
+            .batch =
+                history_batch{
+                    .domain = history_domain{.target = reader.target},
+                    .failure = *failure,
+                },
+        };
+    }
+    const auto finish_call = [](implementation* runtime) noexcept {
+        runtime->end_history_call();
+    };
+    const std::unique_ptr<implementation, decltype(finish_call)> call_guard{this, finish_call};
+
+    try {
+        return history.read_directinput(reader, now, capture_boundary);
+    } catch (const std::bad_alloc&) {
+        return history_detail::observed_read{
+            .batch =
+                history_batch{
+                    .domain = history_domain{.target = reader.target},
+                    .failure = history_failure{.code = history_error::capacity_exceeded},
+                },
+        };
+    } catch (...) {
+        return history_detail::observed_read{
+            .batch =
+                history_batch{
+                    .domain = history_domain{.target = reader.target},
+                    .failure = history_failure{.code = history_error::provider_failure},
+                },
         };
     }
 }

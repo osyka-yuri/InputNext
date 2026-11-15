@@ -4,6 +4,7 @@
 #include "gameinput/input_qualification.hpp"
 #include "gameinput/reading_parts.hpp"
 #include "gameinput_value_mapping.hpp"
+#include "history/reader_observation.hpp"
 #include "input/touch_resolver.hpp"
 #include "native_raw_output_report.hpp"
 #include "native_rumble_endpoint.hpp"
@@ -291,6 +292,22 @@ public:
         return describe_windows_input(*native_device,
             runtime_version_,
             path.has_value() ? std::string_view{path.value} : std::string_view{});
+    }
+
+    [[nodiscard]] std::optional<history_detail::source_clock_sample>
+    sample_history_clock() noexcept override {
+        if (game_input_ == nullptr) {
+            return std::nullopt;
+        }
+
+        const auto before = GetTickCount64();
+        const auto timestamp = game_input_->GetCurrentTimestamp();
+        const auto after = GetTickCount64();
+        const auto uptime = before + ((after - before) / 2U);
+        return history_detail::source_clock_sample{
+            .timestamp_us = timestamp,
+            .system_time_ms = uptime,
+        };
     }
 
     [[nodiscard]] native_result<std::uint64_t> performance_frequency() noexcept override {
