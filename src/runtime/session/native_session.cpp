@@ -90,6 +90,10 @@ effects::service& native_session::effects() noexcept {
     return *implementation_->effects_service;
 }
 
+std::shared_ptr<dinput::input_access> native_session::directinput() noexcept {
+    return implementation_->directinput_access;
+}
+
 void native_session::shutdown() noexcept {
     if (implementation_ != nullptr) {
         implementation_->shutdown();

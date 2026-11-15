@@ -16,6 +16,7 @@ public:
         clock_callback now,
         const void* clock_context);
     static void seed_counters(observer& target, const snapshot& seed) noexcept;
+    static void seed_window_state(observer& target, const snapshot& seed) noexcept;
     [[nodiscard]] static snapshot stored_snapshot(const observer& target);
 };
 

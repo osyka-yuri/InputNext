@@ -2,6 +2,7 @@
 
 #include "core/core.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_history_test_support.hpp"
+#include "dinput/profile.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 #include "profiles/parser.hpp"
 #include "runtime/session/native_session_dependencies.hpp"
@@ -12,6 +13,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <atomic>
 #include <exception>
 #include <memory>
@@ -132,7 +134,7 @@ TEST_CASE("runtime.session.explicit_shutdown_drains_owners_in_dependency_order",
     CHECK(fixture.initialize_calls->load(std::memory_order_relaxed) == 1U);
 }
 
-TEST_CASE("runtime.session.input_profile_reaches_core_and_xinput_once",
+TEST_CASE("runtime.session.input_profile_reaches_core_xinput_and_directinput_once",
     "[integration][runtime][session][remap]") {
     const auto parsed = profiles::parse_profile(R"(
 [input]
@@ -180,6 +182,12 @@ remap = [
     CHECK(latest->sample.state.buttons == expected_buttons);
     CHECK(latest->sample.state.left_trigger == 0.0F);
     CHECK(latest->sample.state.right_trigger == physical.right_trigger);
+
+    const std::array<dinput::axis_properties, dinput::axis_count> properties{};
+    const auto directinput = dinput::project(latest->sample.state, properties);
+    CHECK(directinput.buttons[0U] == 0U);
+    CHECK(directinput.buttons[1U] == 0x80U);
+    CHECK(directinput.buttons[4U] == 0x80U);
 
     auto reader = core_service.open_reader(assignment->target, core::reader_focus::background);
     REQUIRE(wait_until([&] {

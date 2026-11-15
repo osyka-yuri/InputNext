@@ -18,6 +18,7 @@ target_link_libraries(inputnext_runtime_session PRIVATE
     inputnext_profiles
     inputnext_profile_application
     inputnext_core
+    inputnext_dinput
     inputnext_effects
     inputnext_audio
     ole32
@@ -37,6 +38,7 @@ add_library(inputnext_runtime_core OBJECT
     abi/xinput/api.cpp
     abi/core/api.cpp
     abi/core/projection.cpp
+    abi/dinput/api.cpp
     abi/session_access.cpp
     abi/effects/api.cpp
     abi/effects/api_context.cpp

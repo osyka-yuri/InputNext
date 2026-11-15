@@ -3,6 +3,7 @@
 #include "audio/audio_service.hpp"
 #include "audio/native_port.hpp"
 #include "core/core.hpp"
+#include "dinput/input_access.hpp"
 #include "effects/effects.hpp"
 #include "effects/identity.hpp"
 #include "gameinput/native/native_gameinput.hpp"
@@ -139,6 +140,10 @@ std::unique_ptr<native_session> native_session::implementation::prepare(
         *state->focus_observer,
         state->presentation_service->presentation());
 
+    state->directinput_access = std::make_shared<dinput::input_access>(*state->core_service,
+        *state->runtime,
+        *state->focus_observer);
+
     const auto profile_producer = state->output_composition->make_producer({.owner = profile_owner,
         .priority = output::internal_priority::game_profile,
         .ttl = output::ttl_permission::finite_or_indefinite,
@@ -205,7 +210,7 @@ std::unique_ptr<native_session> native_session::prepare() {
     options.profile_settings = load_process_profile();
     options.native = gameinput_detail::make_native_gameinput();
     options.metadata = metadata_detail::make_windows_metadata_provider();
-    options.focus_source = focus::make_current_process_source();
+    options.focus_source = focus::make_current_process_source(true);
     options.audio_factory = audio_detail::make_windows_native_port_factory();
     options.audio_launcher = audio_detail::make_std_audio_worker_launcher();
     return prepare(std::move(options));

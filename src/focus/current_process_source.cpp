@@ -1,9 +1,12 @@
 #include <inputnext/focus.hpp>
 
+#include "window_events.hpp"
+
 #include <Windows.h>
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <system_error>
 
 namespace inputnext::focus {
@@ -38,15 +41,25 @@ namespace {
 
 class current_process_source final : public source {
 public:
-    current_process_source() : process_(current_process_identity()) {}
+    explicit current_process_source(bool track_windows) : process_(current_process_identity()) {
+        if (track_windows) {
+            window_events_.emplace();
+        }
+    }
 
     [[nodiscard]] process_instance process() const noexcept override { return process_; }
 
     [[nodiscard]] reading observe() noexcept override {
+        const auto before =
+            window_events_.has_value() ? window_events_->read() : detail::window_events::sample{};
         SetLastError(ERROR_SUCCESS);
         HWND const foreground_window = GetForegroundWindow();
         if (foreground_window == nullptr) {
-            return reading{.process = process_, .state = evidence::unavailable, .native_code = 0U};
+            return with_window(
+                reading{.process = process_, .state = evidence::unavailable, .native_code = 0U},
+                foreground_window,
+                0U,
+                before);
         }
 
         DWORD foreground_process_id{};
@@ -54,29 +67,52 @@ public:
         const auto thread_id = GetWindowThreadProcessId(foreground_window, &foreground_process_id);
         const auto native_code = thread_id == 0U ? static_cast<std::uint32_t>(GetLastError()) : 0U;
         if (thread_id == 0U || foreground_process_id == 0U) {
-            return reading{
-                .process = process_,
-                .state = evidence::unavailable,
-                .native_code = native_code,
-            };
+            return with_window(reading{.process = process_,
+                                   .state = evidence::unavailable,
+                                   .native_code = native_code},
+                foreground_window,
+                foreground_process_id,
+                before);
         }
 
-        return reading{
-            .process = process_,
-            .state =
-                foreground_process_id == process_.pid ? evidence::foreground : evidence::background,
-            .native_code = native_code,
-        };
+        return with_window(reading{.process = process_,
+                               .state = foreground_process_id == process_.pid
+                                            ? evidence::foreground
+                                            : evidence::background,
+                               .native_code = native_code},
+            foreground_window,
+            foreground_process_id,
+            before);
     }
 
 private:
+    [[nodiscard]] reading with_window(reading result,
+        HWND foreground_window,
+        DWORD foreground_process_id,
+        detail::window_events::sample before) const noexcept {
+        if (!window_events_.has_value()) {
+            return result;
+        }
+
+        const auto after = window_events_->read();
+        result.window_transition = after.transition;
+        result.window_available =
+            before.available && after.available && before.transition == after.transition &&
+            foreground_window != nullptr && foreground_process_id == process_.pid;
+        if (result.window_available) {
+            result.foreground_window = reinterpret_cast<window_id>(foreground_window);
+        }
+        return result;
+    }
+
     const process_instance process_;
+    std::optional<detail::window_events> window_events_;
 };
 
 } // namespace
 
-std::unique_ptr<source> make_current_process_source() {
-    return std::make_unique<current_process_source>();
+std::unique_ptr<source> make_current_process_source(bool track_windows) {
+    return std::make_unique<current_process_source>(track_windows);
 }
 
 } // namespace inputnext::focus

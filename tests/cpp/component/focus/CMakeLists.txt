@@ -3,6 +3,7 @@ add_executable(inputnext_focus_component_tests
     freshness_tests.cpp
     observer_tests.cpp
     projection_tests.cpp
+    window_tests.cpp
 )
 target_include_directories(inputnext_focus_component_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/src"

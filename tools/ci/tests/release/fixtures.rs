@@ -290,6 +290,10 @@ pub(super) fn write_symbols_zip(
             "symbols/xinput9_1_0.pdb".to_owned(),
             b"fixture xinput 9.1.0 pdb".to_vec(),
         ),
+        (
+            "symbols/dinput8.pdb".to_owned(),
+            b"fixture dinput8 pdb".to_vec(),
+        ),
     ]);
     let info = json!({
         "name": "InputNext",
@@ -375,6 +379,7 @@ pub(super) fn runtime_required_files() -> &'static [&'static str] {
         "bin/xinput1_3.dll",
         "bin/xinput1_4.dll",
         "bin/xinput9_1_0.dll",
+        "bin/dinput8.dll",
         "bin/GameInputRedist.dll",
         "bin/GameInputRawInputProxy.exe",
         "LICENSE",

@@ -24,4 +24,20 @@ XInput captures initial focus and control state together, then reads and transla
 
 Keep the observer alive through all consumer calls and guards. Stop new calls and join their callers before destruction. A successor observer receives a new incarnation; a copied snapshot does not authorize work through it.
 
+## Window-qualified consumers
+
+The runtime also publishes independent foreground-window evidence for [DirectInput](directinput.md).
+An opt-in native source owns an out-of-context foreground-event hook and its message-pump
+thread. Transition serials retain observed away-and-back window changes between probes;
+probes are bracketed by that serial. Window evidence has its own revision, freshness and
+exhaustion. A failed hook or stale pump heartbeat invalidates window evidence while the
+existing process evidence remains independently available.
+Hook installation runs asynchronously, so process observation can start while the window
+source is still unavailable.
+
+Switching between windows of the same process changes the window epoch without changing
+the process epoch used by XInput and the SDKs. DirectInput additionally retains the epoch
+of its associated window and requires explicit reacquisition after loss. Ready consumers
+read the published evidence without querying Windows. Event delivery is asynchronous.
+
 The native source observes the current process without changing the foreground window. See [XInput presentation](xinput.md) for its consumer policy and [development](development.md) for test selection.

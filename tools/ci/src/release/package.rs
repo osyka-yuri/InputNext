@@ -25,6 +25,7 @@ const RUNTIME_REQUIRED_FILES: &[&str] = &[
     "bin/xinput1_3.dll",
     "bin/xinput1_4.dll",
     "bin/xinput9_1_0.dll",
+    "bin/dinput8.dll",
     "bin/GameInputRedist.dll",
     "bin/GameInputRawInputProxy.exe",
     "LICENSE",
@@ -533,6 +534,7 @@ fn validate_package_shape(
             "symbols/xinput1_3.pdb",
             "symbols/xinput1_4.pdb",
             "symbols/xinput9_1_0.pdb",
+            "symbols/dinput8.pdb",
         ]
         .into_iter()
         .collect::<std::collections::BTreeSet<_>>();

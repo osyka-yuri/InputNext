@@ -1,10 +1,11 @@
-if(NOT TARGET inputnext_xinput_bundle)
+if(NOT TARGET inputnext_dinput_bundle)
     message(FATAL_ERROR "Distribution requires INPUTNEXT_BUILD_GAMEINPUT=ON.")
 endif()
 
 set(inputnext_distribution_name "InputNext-${PROJECT_VERSION}-windows-${inputnext_compiler_architecture}")
 set(inputnext_distribution_targets
-    inputnext_runtime inputnext_xinput13 inputnext_xinput14 inputnext_xinput910)
+    inputnext_runtime inputnext_xinput13 inputnext_xinput14 inputnext_xinput910
+    inputnext_dinput8)
 install(TARGETS ${inputnext_distribution_targets}
     RUNTIME DESTINATION bin COMPONENT Runtime
 )
@@ -55,6 +56,6 @@ add_custom_target(inputnext_distribution
         "-DPACKAGE_DIRECTORY=${CPACK_PACKAGE_DIRECTORY}"
         "-DPACKAGE_NAME=${inputnext_distribution_name}"
         -P "${PROJECT_SOURCE_DIR}/cmake/HashPackages.cmake"
-    DEPENDS inputnext_xinput_bundle
+    DEPENDS inputnext_dinput_bundle
     VERBATIM
 )

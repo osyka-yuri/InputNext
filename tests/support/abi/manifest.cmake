@@ -1,3 +1,8 @@
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${PROJECT_SOURCE_DIR}/abi/inputnext_runtime.json"
+    "${PROJECT_SOURCE_DIR}/abi/dinput8.json"
+)
+
 function(inputnext_validate_abi_manifest json expected_library out_error out_count)
     set(_error_message "")
 
@@ -157,6 +162,8 @@ function(inputnext_generate_abi_expected_header output_path)
         "xinput9_1_0.dll" xinput910_exports)
     inputnext_append_abi_manifest(_header "${PROJECT_SOURCE_DIR}/abi/inputnext_runtime.json"
         "inputnext_runtime.dll" runtime_exports)
+    inputnext_append_abi_manifest(_header "${PROJECT_SOURCE_DIR}/abi/dinput8.json"
+        "dinput8.dll" dinput8_exports)
     string(APPEND _header "} // namespace inputnext::test::abi\n")
     file(WRITE "${output_path}" "${_header}")
 endfunction()

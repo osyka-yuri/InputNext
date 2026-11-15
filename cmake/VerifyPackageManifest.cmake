@@ -50,14 +50,15 @@ endif()
 if(PACKAGE_SYMBOLS)
     set(required build-info.json manifest.json
         symbols/inputnext_runtime.pdb symbols/xinput1_3.pdb
-        symbols/xinput1_4.pdb symbols/xinput9_1_0.pdb)
+        symbols/xinput1_4.pdb symbols/xinput9_1_0.pdb symbols/dinput8.pdb)
     list(SORT required)
     if(NOT actual STREQUAL required)
-        message(FATAL_ERROR "Symbols package must contain exactly the four PDBs and metadata.")
+        message(FATAL_ERROR "Symbols package must contain exactly the five PDBs and metadata.")
     endif()
 else()
     set(required
         bin/inputnext_runtime.dll bin/xinput1_3.dll bin/xinput1_4.dll bin/xinput9_1_0.dll
+        bin/dinput8.dll
         bin/GameInputRedist.dll bin/GameInputRawInputProxy.exe
         LICENSE README.md THIRD_PARTY_NOTICES.md build-info.json manifest.json
         sdk/input_next_core.h sdk/input_next_effects.h examples/inputnext.toml examples/CMakeLists.txt

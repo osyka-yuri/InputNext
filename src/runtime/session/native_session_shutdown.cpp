@@ -28,6 +28,9 @@ void native_session::implementation::request_stop() noexcept {
 }
 
 bool native_session::implementation::close_admission_and_presentation() noexcept {
+    if (directinput_access != nullptr) {
+        directinput_access->close_admission();
+    }
     bool effects_closed = true;
     if (effects_service != nullptr) {
         effects_service->close_admission();
@@ -86,6 +89,9 @@ void native_session::implementation::drain_owned_domains() noexcept {
 
     while (!close_admission_and_presentation()) {
         std::this_thread::sleep_for(drain_retry_period);
+    }
+    if (directinput_access != nullptr) {
+        directinput_access->drain();
     }
     if (output_executor != nullptr) {
         output_executor->request_drive();

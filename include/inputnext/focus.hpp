@@ -28,10 +28,15 @@ enum class evidence : std::uint8_t {
     foreground,
 };
 
+using window_id = std::uintptr_t;
+
 struct reading final {
     process_instance process{};
     evidence state{evidence::unavailable};
     std::uint32_t native_code{};
+    window_id foreground_window{};
+    std::uint64_t window_transition{};
+    bool window_available{};
 };
 
 struct snapshot final {
@@ -46,6 +51,12 @@ struct snapshot final {
     // These fields are diagnostic and do not affect the evidence revision.
     std::uint64_t completed_observations{};
     std::uint32_t native_code{};
+    window_id foreground_window{};
+    std::uint64_t window_revision{};
+    std::uint64_t window_transition{};
+    std::chrono::steady_clock::time_point window_observation_started;
+    bool window_available{};
+    bool window_exhausted{};
 };
 
 // Identifies one foreground evidence revision without retaining that observation's short lease.
@@ -55,6 +66,14 @@ struct foreground_epoch final {
     std::uint64_t revision{};
 
     friend bool operator==(const foreground_epoch&, const foreground_epoch&) = default;
+};
+
+struct window_epoch final {
+    foreground_epoch process{};
+    window_id window{};
+    std::uint64_t revision{};
+
+    friend bool operator==(const window_epoch&, const window_epoch&) = default;
 };
 
 class source {
@@ -71,7 +90,7 @@ public:
     [[nodiscard]] virtual reading observe() noexcept = 0;
 };
 
-[[nodiscard]] std::unique_ptr<source> make_current_process_source();
+[[nodiscard]] std::unique_ptr<source> make_current_process_source(bool track_windows = false);
 
 class observer final {
 public:
@@ -125,6 +144,9 @@ public:
     // Current foreground evidence can remain the same epoch across timestamp refreshes.
     [[nodiscard]] std::optional<foreground_epoch> current_foreground_epoch() const noexcept;
     [[nodiscard]] bool matches_foreground_epoch(const foreground_epoch& epoch) const noexcept;
+    [[nodiscard]] std::optional<window_epoch> current_foreground_window_epoch(
+        window_id window) const noexcept;
+    [[nodiscard]] bool matches_foreground_window_epoch(const window_epoch& epoch) const noexcept;
 
 private:
     friend class observer;

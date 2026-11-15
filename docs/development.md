@@ -152,6 +152,11 @@ See [distribution](distribution.md) for optimized packages and archive verificat
 
 The [Core SDK](core-sdk.md) is exposed by the same runtime. `INPUTNEXT_BUILD_SDK_EXAMPLES=ON` builds its optional C/C++ example separately from the bundle. Pure C and C++ ABI contract checks are included in ordinary tests.
 
+The [DirectInput 8 facade](directinput.md) uses the same runtime. Build
+`inputnext_dinput_bundle` to include `dinput8.dll` alongside the XInput bundle. Its
+format, COM, input, focus and DLL checks participate in the matching architecture's
+ordinary verification and diagnostic profiles.
+
 ## Formatting
 
 The C++ style starts from LLVM with four-space indentation, a 100-column limit, left-aligned pointers and references, and LF line endings. Wrapped parameter and argument lists use one item per line. Includes are sorted within existing blocks; comment text is preserved.

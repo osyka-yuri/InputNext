@@ -90,6 +90,7 @@ void native_session::implementation::maintenance_loop() noexcept {
 
 std::optional<gameinput_failure> native_session::implementation::run_maintenance_cycle() {
     runtime->maintain(std::chrono::steady_clock::now());
+    directinput_access->notify_discovery();
     if (should_stop()) {
         return std::nullopt;
     }

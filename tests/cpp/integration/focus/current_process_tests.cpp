@@ -35,4 +35,17 @@ TEST_CASE("focus.current_process_source_uses_passive_os_observation",
     CHECK(!value.published().open);
 }
 
+TEST_CASE("focus.current_process_window_source_stops_its_owned_event_pump",
+    "[integration][focus][windows]") {
+    auto source = make_current_process_source(true);
+    REQUIRE(source != nullptr);
+    const auto process = source->process();
+    const auto reading = source->observe();
+    CHECK(reading.process == process);
+    CHECK(static_cast<std::uint8_t>(reading.state) <=
+          static_cast<std::uint8_t>(evidence::foreground));
+    source.reset();
+    SUCCEED("window hook shutdown and callback drain completed");
+}
+
 } // namespace

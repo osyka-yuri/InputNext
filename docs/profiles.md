@@ -2,7 +2,7 @@
 
 Place `inputnext.toml` beside the game executable to configure remapping or adaptive-trigger effects. InputNext reads the file at startup. Restart the game after editing.
 
-Without a readable file, buttons and triggers keep their usual assignments, supported touchpads use the defaults below, and trigger effects are off. Remapping applies inside the game through InputNext's XInput and Core interfaces.
+Without a readable file, buttons and triggers keep their usual assignments, supported touchpads use the defaults below, and trigger effects are off. Remapping applies inside the game through InputNext's XInput, DirectInput and Core interfaces.
 
 ## Input remapping
 

@@ -10,10 +10,10 @@ cmake --build --preset windows-x64-production --parallel
 Use `windows-x86-production` from an x86 Developer shell for 32-bit games. Each build produces three files under `build/<preset>/packages/`:
 
 - `InputNext-<version>-windows-<architecture>.zip`: runtime, public SDK, examples, documentation and licenses.
-- `InputNext-<version>-windows-<architecture>-symbols.zip`: matching PDBs for the four InputNext DLLs.
+- `InputNext-<version>-windows-<architecture>-symbols.zip`: matching PDBs for the five InputNext DLLs.
 - `InputNext-<version>-windows-<architecture>-SHA256SUMS.txt`: SHA-256 of both archives.
 
-The runtime archive keeps the six deployment binaries in `bin/`. Follow the [game installation guide](installation.md) to place them beside the game executable and configure the optional per-game profile. Tests, diagnostics, private C++ headers and build tools are excluded.
+The runtime archive keeps seven deployment binaries in `bin/`, including the optional [DirectInput 8 facade](directinput.md). Follow the [game installation guide](installation.md) to select the replacement DLLs and configure the optional per-game profile. Tests, diagnostics, private C++ headers and build tools are excluded.
 
 Every archive includes build metadata and a manifest of file hashes. Hashes detect changed or missing contents; they do not authenticate the publisher. Metadata records the compiler, architecture and dependency versions. Git fields describe the source tree at packaging time, not binary provenance. Build before packaging and keep sources unchanged during both operations. Runtime and symbol archives must come from the same build.
 
@@ -54,7 +54,7 @@ cmake --build --preset windows-x64-production --target inputnext_distribution_ch
     -Package ./build/windows-x64-production/packages/InputNext-1.1.0-windows-x64-symbols.zip -Symbols
 ```
 
-Use matching x86 arguments and paths for that architecture. Trusted checks verify exact public exports and binary architecture, build the packaged C/C++ SDK examples, query both public tables and run a normally imported XInput call from a separate deployment copy. The verified extraction stays unchanged. Runtime checks use an independent working directory and a system-only `PATH`. Logs and extracted files remain under `build/<preset>/package-verification/`.
+Use matching x86 arguments and paths for that architecture. Trusted checks verify exact public exports and binary architecture, build the packaged C/C++ SDK examples, query both public tables, exercise DirectInput COM and system input forwarding, and run a normally imported XInput call from a separate deployment copy. The verified extraction stays unchanged. Runtime checks use an independent working directory and a system-only `PATH`. Logs and extracted files remain under `build/<preset>/package-verification/`.
 
 The checks send no effects and require no controller. They establish deployment and ABI behavior, not connected-device startup, physical effects, game compatibility or performance.
 

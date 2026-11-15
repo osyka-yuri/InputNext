@@ -3,3 +3,4 @@ EXPORTS
     input_next_runtime_query_api @1
     input_next_runtime_query_effects_api @2
     input_next_runtime_query_core_api @3
+    input_next_runtime_query_directinput_api @4

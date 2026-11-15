@@ -14,6 +14,7 @@ add_executable(inputnext_distribution_probe
 )
 target_include_directories(inputnext_distribution_probe PRIVATE
     "${PROJECT_SOURCE_DIR}/tests/support" "${generated}")
+target_link_libraries(inputnext_distribution_probe PRIVATE dxguid uuid)
 
 inputnext_configure_target(inputnext_distribution_probe)
 add_custom_target(inputnext_distribution_checks DEPENDS

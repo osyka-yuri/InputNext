@@ -66,6 +66,24 @@ constexpr auto freshness_budget = 250ms;
     return current;
 }
 
+[[nodiscard]] snapshot effective_window_at(snapshot current,
+    std::chrono::steady_clock::time_point sampled_now) noexcept {
+    if (!current.window_available || current.window_exhausted ||
+        fresh_at(sampled_now, current.window_observation_started)) {
+        return current;
+    }
+
+    current.window_available = false;
+    current.foreground_window = 0U;
+    current.window_observation_started = {};
+    if (current.window_revision == std::numeric_limits<std::uint64_t>::max()) {
+        current.window_exhausted = true;
+    } else {
+        ++current.window_revision;
+    }
+    return current;
+}
+
 } // namespace
 
 struct observer::implementation final {
@@ -88,6 +106,12 @@ struct observer::implementation final {
               .exhausted = false,
               .completed_observations = 0U,
               .native_code = 0U,
+              .foreground_window = 0U,
+              .window_revision = 0U,
+              .window_transition = 0U,
+              .window_observation_started = {},
+              .window_available = false,
+              .window_exhausted = false,
           }),
           worker([this](const std::stop_token& token) { run_worker(token); }) {}
 
@@ -132,7 +156,56 @@ struct observer::implementation final {
 
     [[nodiscard]] snapshot read_publication(
         std::chrono::steady_clock::time_point sampled_now) const noexcept {
-        return effective_at(publication, sampled_now);
+        return effective_window_at(effective_at(publication, sampled_now), sampled_now);
+    }
+
+    [[nodiscard]] bool advance_window_revision() noexcept {
+        if (publication.window_revision == std::numeric_limits<std::uint64_t>::max()) {
+            publication.window_exhausted = true;
+            publication.window_available = false;
+            publication.foreground_window = 0U;
+            publication.window_observation_started = {};
+            return false;
+        }
+        ++publication.window_revision;
+        return true;
+    }
+
+    void apply_window_reading(const reading& reading_value,
+        std::chrono::steady_clock::time_point observation_started,
+        std::chrono::steady_clock::time_point sampled_now) noexcept {
+        publication = effective_window_at(publication, sampled_now);
+        if (publication.window_exhausted) {
+            return;
+        }
+
+        const bool valid =
+            reading_value.window_available && reading_value.process == process &&
+            normalize_reading(reading_value, observation_started, sampled_now) ==
+                evidence::foreground &&
+            reading_value.foreground_window != 0U &&
+            reading_value.window_transition != std::numeric_limits<std::uint64_t>::max();
+        if (!valid) {
+            if (publication.window_available) {
+                static_cast<void>(advance_window_revision());
+            }
+            publication.window_available = false;
+            publication.foreground_window = 0U;
+            publication.window_observation_started = {};
+            return;
+        }
+
+        const bool changed = !publication.window_available ||
+                             publication.foreground_window != reading_value.foreground_window ||
+                             publication.window_transition != reading_value.window_transition;
+        if (changed && !advance_window_revision()) {
+            return;
+        }
+
+        publication.foreground_window = reading_value.foreground_window;
+        publication.window_transition = reading_value.window_transition;
+        publication.window_observation_started = observation_started;
+        publication.window_available = true;
     }
 
     [[nodiscard]] evidence normalize_reading(const reading& reading_value,
@@ -152,6 +225,7 @@ struct observer::implementation final {
         std::chrono::steady_clock::time_point observation_started,
         std::chrono::steady_clock::time_point sampled_now) noexcept {
         publication = effective_at(publication, sampled_now);
+        apply_window_reading(reading_value, observation_started, sampled_now);
 
         if (publication.completed_observations != std::numeric_limits<std::uint64_t>::max()) {
             ++publication.completed_observations;
@@ -367,6 +441,34 @@ bool observer::presentation_guard::matches_foreground_epoch(
     return current_epoch.has_value() && *current_epoch == epoch;
 }
 
+std::optional<window_epoch> observer::presentation_guard::current_foreground_window_epoch(
+    window_id window) const noexcept {
+    if (implementation_ == nullptr || window == 0U) {
+        return std::nullopt;
+    }
+
+    const auto current = implementation_->read_publication(implementation_->current_time());
+    if (!current.open || current.exhausted || current.state != evidence::foreground ||
+        current.revision == 0U || !current.window_available || current.window_exhausted ||
+        current.foreground_window != window || current.window_revision == 0U) {
+        return std::nullopt;
+    }
+
+    return window_epoch{
+        .process = foreground_epoch{.observer_incarnation = current.observer_incarnation,
+            .process = current.process,
+            .revision = current.revision},
+        .window = current.foreground_window,
+        .revision = current.window_revision,
+    };
+}
+
+bool observer::presentation_guard::matches_foreground_window_epoch(
+    const window_epoch& epoch) const noexcept {
+    const auto current = current_foreground_window_epoch(epoch.window);
+    return current.has_value() && *current == epoch;
+}
+
 std::unique_ptr<observer> detail::observer_test_access::make_with_clock(runtime_id incarnation,
     std::unique_ptr<source> owned_source,
     clock_callback now,
@@ -380,6 +482,18 @@ void detail::observer_test_access::seed_counters(observer& target, const snapsho
     std::scoped_lock lock{state.presentation_mutex};
     state.publication.revision = seed.revision;
     state.publication.completed_observations = seed.completed_observations;
+}
+
+void detail::observer_test_access::seed_window_state(observer& target,
+    const snapshot& seed) noexcept {
+    auto& state = *target.implementation_;
+    std::scoped_lock lock{state.presentation_mutex};
+    state.publication.foreground_window = seed.foreground_window;
+    state.publication.window_revision = seed.window_revision;
+    state.publication.window_transition = seed.window_transition;
+    state.publication.window_observation_started = seed.window_observation_started;
+    state.publication.window_available = seed.window_available;
+    state.publication.window_exhausted = seed.window_exhausted;
 }
 
 snapshot detail::observer_test_access::stored_snapshot(const observer& target) {

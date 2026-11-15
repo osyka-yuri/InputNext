@@ -2,10 +2,11 @@ cmake_minimum_required(VERSION 4.4.4)
 
 string(RANDOM LENGTH 16 ALPHABET 0123456789abcdef run)
 set(TEST_ROOT "${TEST_ROOT}/${run}")
+set(PACKAGE_SYMBOLS_MODE ON)
 
 function(verify expected_success label)
     execute_process(COMMAND "${CMAKE_COMMAND}" "-DPACKAGE_ROOT=${TEST_ROOT}"
-        -DPACKAGE_ARCHITECTURE=x64 -DPACKAGE_SYMBOLS=ON
+        -DPACKAGE_ARCHITECTURE=x64 "-DPACKAGE_SYMBOLS=${PACKAGE_SYMBOLS_MODE}"
         -P "${PROJECT_ROOT}/cmake/VerifyPackageManifest.cmake"
         RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors)
     if(expected_success AND NOT result EQUAL 0)
@@ -16,7 +17,7 @@ function(verify expected_success label)
 endfunction()
 
 file(MAKE_DIRECTORY "${TEST_ROOT}/symbols")
-foreach(name IN ITEMS inputnext_runtime xinput1_3 xinput1_4 xinput9_1_0)
+foreach(name IN ITEMS inputnext_runtime xinput1_3 xinput1_4 xinput9_1_0 dinput8)
     file(WRITE "${TEST_ROOT}/symbols/${name}.pdb" "controlled symbol bytes")
 endforeach()
 file(WRITE "${TEST_ROOT}/build-info.json"
@@ -52,3 +53,45 @@ file(WRITE "${TEST_ROOT}/manifest.json" "${traversal}")
 verify(FALSE "parent path")
 file(WRITE "${TEST_ROOT}/manifest.json" "${original_manifest}")
 verify(TRUE "restored package")
+
+set(PACKAGE_SYMBOLS_MODE OFF)
+set(TEST_ROOT "${TEST_ROOT}/runtime")
+set(runtime_files
+    bin/inputnext_runtime.dll
+    bin/xinput1_3.dll
+    bin/xinput1_4.dll
+    bin/xinput9_1_0.dll
+    bin/dinput8.dll
+    bin/GameInputRedist.dll
+    bin/GameInputRawInputProxy.exe
+    LICENSE
+    README.md
+    THIRD_PARTY_NOTICES.md
+    sdk/input_next_core.h
+    sdk/input_next_effects.h
+    examples/inputnext.toml
+    examples/CMakeLists.txt
+    licenses/third-party/Microsoft-GameInput.txt
+    licenses/third-party/MIT-GameInput.txt
+    licenses/third-party/NOTICE-GameInput.txt
+    licenses/third-party/MIT-tomlplusplus.txt
+    examples/core/core_example.cpp
+    examples/core/core_reader.c
+    examples/core/core_reader.h
+    examples/effects/effects_example.cpp
+    examples/effects/effects_demo.c
+    examples/effects/effects_demo.h
+)
+foreach(path IN LISTS runtime_files)
+    get_filename_component(parent "${TEST_ROOT}/${path}" DIRECTORY)
+    file(MAKE_DIRECTORY "${parent}")
+    file(WRITE "${TEST_ROOT}/${path}" "controlled runtime package bytes")
+endforeach()
+file(WRITE "${TEST_ROOT}/build-info.json"
+    "{\"architecture\":\"x64\",\"configuration\":\"Release\",\"optimization\":\"LTCG\",\"pgo\":\"Off\"}")
+set(CMAKE_INSTALL_PREFIX "${TEST_ROOT}")
+include("${PROJECT_ROOT}/cmake/WritePackageManifest.cmake")
+verify(TRUE "valid runtime package")
+file(REMOVE "${TEST_ROOT}/bin/dinput8.dll")
+include("${PROJECT_ROOT}/cmake/WritePackageManifest.cmake")
+verify(FALSE "runtime package requires dinput8.dll")

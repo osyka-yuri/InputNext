@@ -2,6 +2,7 @@
 
 #include "audio/audio_service.hpp"
 #include "core/core.hpp"
+#include "dinput/input_access.hpp"
 #include "effects/effects.hpp"
 #include "gameinput/output/connections/manager.hpp"
 #include "gameinput/runtime/output_access.hpp"
@@ -69,6 +70,7 @@ struct native_session::implementation final {
     std::unique_ptr<gameinput_xinput> presentation_service;
     std::unique_ptr<profiles::application> profile_application;
     std::unique_ptr<core::service> core_service;
+    std::shared_ptr<dinput::input_access> directinput_access;
     std::unique_ptr<effects::service> effects_service;
     std::thread worker;
 

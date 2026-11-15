@@ -1,0 +1,12 @@
+{
+  "library": "dinput8.dll",
+  "version": "1.0.0",
+  "exports": [
+    { "ordinal": 1, "name": "DirectInput8Create", "noname": false },
+    { "ordinal": 2, "name": "DllCanUnloadNow", "noname": false },
+    { "ordinal": 3, "name": "DllGetClassObject", "noname": false },
+    { "ordinal": 4, "name": "DllRegisterServer", "noname": false },
+    { "ordinal": 5, "name": "DllUnregisterServer", "noname": false },
+    { "ordinal": 6, "name": "GetdfDIJoystick", "noname": false }
+  ]
+}
