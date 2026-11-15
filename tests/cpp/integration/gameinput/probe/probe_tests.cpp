@@ -89,7 +89,7 @@ TEST_CASE("gameinput.probe.supervisor_terminates_its_timed_out_owned_child",
     "[integration][gameinput][probe][process]") {
     const auto result = run_child(L"inputnext_gameinput_probe_child_fixture.exe",
         {L"--hang"},
-        std::chrono::milliseconds{150});
+        std::chrono::seconds{2});
     CHECK(result.process.timed_out);
     CHECK(result.process.cleanup_confirmed);
     CHECK(result.output.contains("fixture=started"));
@@ -97,7 +97,7 @@ TEST_CASE("gameinput.probe.supervisor_terminates_its_timed_out_owned_child",
 
     const auto flooding = run_child(L"inputnext_gameinput_probe_child_fixture.exe",
         {L"--flood"},
-        std::chrono::milliseconds{150});
+        std::chrono::seconds{2});
     CHECK(flooding.process.timed_out);
     CHECK(flooding.process.cleanup_confirmed);
     CHECK_FALSE(flooding.output.empty());

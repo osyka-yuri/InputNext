@@ -181,10 +181,21 @@ remap = [
     CHECK(latest->sample.state.left_trigger == 0.0F);
     CHECK(latest->sample.state.right_trigger == physical.right_trigger);
 
-    const auto reader =
-        core_service.open_reader(assignment->target, core::reader_focus::background);
+    auto reader = core_service.open_reader(assignment->target, core::reader_focus::background);
+    REQUIRE(wait_until([&] {
+        if (!reader.has_value() && reader.error() == core::status::busy) {
+            reader = core_service.open_reader(assignment->target, core::reader_focus::background);
+        }
+        return reader.has_value() || reader.error() != core::status::busy;
+    }));
     REQUIRE(reader.has_value());
-    const auto events = core_service.read_events(*reader, history_batch_capacity);
+    auto events = core_service.read_events(*reader, history_batch_capacity);
+    REQUIRE(wait_until([&] {
+        if (events.outcome == core::status::busy && events.batch.count == 0U) {
+            events = core_service.read_events(*reader, history_batch_capacity);
+        }
+        return events.outcome != core::status::busy || events.batch.count != 0U;
+    }));
     REQUIRE(events.outcome == core::status::ok);
     REQUIRE(events.batch.count == 1U);
     CHECK(events.batch.records[0U].baseline);

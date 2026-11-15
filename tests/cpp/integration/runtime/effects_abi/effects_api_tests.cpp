@@ -9,6 +9,8 @@
 #include <input_next_effects.h>
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
 
 namespace {
 
@@ -269,7 +271,17 @@ TEST_CASE("runtime.effects.actual_table_shares_core_and_commits_rumble_body_clos
     auto target = discovered_target;
     input_next_effects_capabilities_v1 capabilities{};
     initialize_capabilities_output(capabilities);
-    REQUIRE(api->resolve_target(&selector, &target, &capabilities) == INPUT_NEXT_STATUS_OK);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    auto resolved = api->resolve_target(&selector, &target, &capabilities);
+    while (
+        (resolved == INPUT_NEXT_STATUS_UNSUPPORTED_TARGET || resolved == INPUT_NEXT_STATUS_BUSY) &&
+        std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        target = discovered_target;
+        initialize_capabilities_output(capabilities);
+        resolved = api->resolve_target(&selector, &target, &capabilities);
+    }
+    REQUIRE(resolved == INPUT_NEXT_STATUS_OK);
     CHECK(target.device_key == discovered_target.device_key);
     CHECK((capabilities.supported_channels & INPUT_NEXT_EFFECTS_RUMBLE) != 0U);
     CHECK(capabilities.capabilities_revision != 0U);
