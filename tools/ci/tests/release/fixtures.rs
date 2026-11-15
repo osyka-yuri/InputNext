@@ -48,9 +48,15 @@ impl Fixture {
                 "repositoryOwnerId": REPOSITORY_OWNER_ID
             }))?,
         )?;
+        let root_cmake = include_str!("../../../../CMakeLists.txt");
+        let project = root_cmake
+            .lines()
+            .find(|line| line.starts_with("project(InputNext VERSION "))
+            .context("root CMakeLists.txt is missing the InputNext project declaration")?;
+        let fixture_project = format!("project(InputNext VERSION {VERSION} LANGUAGES C CXX)");
         fs::write(
             source_root.join("CMakeLists.txt"),
-            include_str!("../../../../CMakeLists.txt"),
+            root_cmake.replacen(project, &fixture_project, 1),
         )?;
         fs::write(
             source_root.join("cmake/GameInput.cmake"),

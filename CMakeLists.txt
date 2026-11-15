@@ -22,7 +22,7 @@ if(NOT DEFINED CMAKE_C_COMPILER AND NOT DEFINED ENV{CC})
     endif()
 endif()
 
-project(InputNext VERSION 1.0.0 LANGUAGES C CXX)
+project(InputNext VERSION 1.1.0 LANGUAGES C CXX)
 
 if(NOT WIN32 OR NOT MSVC)
     message(FATAL_ERROR "InputNext requires Windows and an MSVC-compatible C++ toolchain.")

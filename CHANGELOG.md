@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.0]
+
+### Added
+
+- Remap buttons and analog triggers per game through `inputnext.toml`. Profiles accept Universal, PlayStation, and Xbox control names. Mapped input is available through XInput and the Core SDK.
+- On supported DualSense USB connections, mechanical touchpad clicks default to View on the left and Menu on the right. Both sides can be remapped or disabled.
+
+### Fixed
+
+- XInput delivers the required key releases when input history resets, preventing keys already reported to the game from getting stuck.
+
 ## [1.0.0]
 
 - GameInput-backed XInput replacements (`xinput1_3.dll`, `xinput1_4.dll`, `xinput9_1_0.dll`) sharing a single runtime.

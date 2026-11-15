@@ -40,7 +40,7 @@ The verifier checks ZIP contents and hashes without executing archive-supplied c
 
 ```powershell
 ./tools/verify_package.ps1 -Architecture x64 -BuildDirectory ./build/windows-x64-production `
-    -Package ./build/windows-x64-production/packages/InputNext-1.0.0-windows-x64.zip
+    -Package ./build/windows-x64-production/packages/InputNext-1.1.0-windows-x64.zip
 ```
 
 For trusted builds, enable the integration targets and pass `-RunTrustedChecks`. These checks execute packaged CMake and DLLs:
@@ -49,9 +49,9 @@ For trusted builds, enable the integration targets and pass `-RunTrustedChecks`.
 cmake --preset windows-x64-production -DBUILD_TESTING=ON -DINPUTNEXT_BUILD_SDK_EXAMPLES=ON
 cmake --build --preset windows-x64-production --target inputnext_distribution_checks --parallel
 ./tools/verify_package.ps1 -Architecture x64 -BuildDirectory ./build/windows-x64-production `
-    -Package ./build/windows-x64-production/packages/InputNext-1.0.0-windows-x64.zip -RunTrustedChecks
+    -Package ./build/windows-x64-production/packages/InputNext-1.1.0-windows-x64.zip -RunTrustedChecks
 ./tools/verify_package.ps1 -Architecture x64 -BuildDirectory ./build/windows-x64-production `
-    -Package ./build/windows-x64-production/packages/InputNext-1.0.0-windows-x64-symbols.zip -Symbols
+    -Package ./build/windows-x64-production/packages/InputNext-1.1.0-windows-x64-symbols.zip -Symbols
 ```
 
 Use matching x86 arguments and paths for that architecture. Trusted checks verify exact public exports and binary architecture, build the packaged C/C++ SDK examples, query both public tables and run a normally imported XInput call from a separate deployment copy. The verified extraction stays unchanged. Runtime checks use an independent working directory and a system-only `PATH`. Logs and extracted files remain under `build/<preset>/package-verification/`.
