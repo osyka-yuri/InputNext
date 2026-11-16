@@ -1,10 +1,13 @@
 #pragma once
 
-#include "dinput/native_types.hpp"
+#include <Windows.h>
 
+#include <chrono>
 #include <memory>
 
 namespace inputnext::dinput {
+
+class exclusive_input;
 
 class exclusive_lease final {
 public:
@@ -19,6 +22,8 @@ public:
     [[nodiscard]] HRESULT wait_prepared() noexcept;
     [[nodiscard]] bool try_activate() noexcept;
     [[nodiscard]] bool live() const noexcept;
+    [[nodiscard]] HRESULT authority_status() const noexcept;
+    [[nodiscard]] std::chrono::steady_clock::time_point authority_deadline() const noexcept;
     void cancel() noexcept;
     [[nodiscard]] bool closed() const noexcept;
     [[nodiscard]] HRESULT wait_closed() noexcept;

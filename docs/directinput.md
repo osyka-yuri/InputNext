@@ -5,8 +5,8 @@ normalized GameInput gamepad profile through DirectInput 8 A/W interfaces, using
 runtime, device connections and cached input as XInput and the Core SDK.
 
 This version supports immediate and buffered gamepad input, event notification and
-foreground exclusive acquisition. Background exclusive acquisition, action mapping and
-DirectInput force feedback are unsupported. Devices forwarded to Windows retain their
+foreground and background exclusive acquisition. Action mapping and DirectInput
+force feedback are unsupported. Devices forwarded to Windows retain their
 native DirectInput behavior.
 
 ## Loading
@@ -114,16 +114,16 @@ settings affect this DI object and do not modify shared samples or XInput transl
 ## Acquisition and state
 
 Set a data format and a cooperative level before `Acquire`. Supply a valid top-level
-window belonging to the process. Nonexclusive mode accepts `DISCL_FOREGROUND` or
-`DISCL_BACKGROUND`. Exclusive mode accepts only `DISCL_FOREGROUND` and requires a
-qualified native match. Background exclusive requests return `DIERR_UNSUPPORTED`.
+window belonging to the process and keep it alive while acquired. Both cooperative
+modes accept `DISCL_FOREGROUND` or `DISCL_BACKGROUND`. Exclusive mode requires a
+qualified native match.
 
 Foreground acquisition requires fresh evidence for the associated window. Losing that
 window, including a switch to another window of the same process, or losing fresh
 evidence makes the acquisition lost. Foreground transition notifications preserve
 observed away-and-back changes between probes. Observation is asynchronous; no
 instantaneous Windows event-delivery guarantee is implied. Restoring focus requires an
-explicit `Acquire`. Background nonexclusive input omits that delivery qualification.
+explicit `Acquire`. Background input remains eligible across focus changes.
 
 Repeated `Acquire` on an eligible acquired device returns `S_FALSE`. `Unacquire` is
 idempotent. `GetDeviceState` requires the exact selected format size and copies a
@@ -135,7 +135,7 @@ returns `DIERR_NOTACQUIRED`; lost acquisition or a retired connection returns
 The profile does not require polling. `Poll` checks acquisition eligibility and returns
 `DI_NOEFFECT`.
 
-## Foreground exclusive ownership
+## Exclusive ownership
 
 Exclusive acquisition uses a private Windows DirectInput device for the exact matched
 controller. `Acquire` rechecks the full PnP interface path and one-to-one correspondence;
@@ -145,6 +145,18 @@ Windows receives the cooperative level and acquisition request. Its failures are
 reported to the caller. State and buffered events still come from the shared InputNext
 cache and history. This mode does not exclude XInput, GameInput or all nonexclusive
 DirectInput access.
+
+For background exclusive mode, the native ownership worker checks that the window
+and system acquisition remain valid. It discards the native state it reads for this
+check. Checks start at least 25 ms apart and a successful check qualifies ownership for
+at most 250 ms from its start. Loss or expiry stops state and buffered input delivery.
+If the selected native data format requires polling, the worker calls native
+`Poll` before reading its state. Time spent polling counts toward proof age.
+An initial `E_PENDING` permits retries within 250 ms of that first pending
+checkpoint's start. Further pending results keep the same deadline. Expiry returns
+`E_PENDING` from `Acquire` and establishes no input authority.
+If Windows reports `DIERR_NOTACQUIRED`, call `Unacquire` before trying `Acquire` again.
+Other ownership losses return `DIERR_INPUTLOST` after acquisition.
 
 `Unacquire` first closes local input delivery. For an active exclusive acquisition it
 normally waits for native release and returns its result. Cancellation of an unfinished
@@ -201,7 +213,7 @@ Objects for the same connection share a worker through reader handoffs. Session 
 is 16 resident workers and 64 resident subscriptions, including resources awaiting cleanup.
 The capped queues keep their combined event payload below 8 MiB.
 
-Games that require background exclusive mode, action mapping or force feedback may be
+Games that require action mapping or force feedback may be
 unable to use the normalized device. Force-feedback capabilities are absent and effect
 enumeration is empty. XInput rumble and the Effects SDK remain available through their
 own contracts. Sony Bluetooth remains input-only.

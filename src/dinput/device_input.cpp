@@ -6,6 +6,7 @@
 #include "dinput/buffered/event_registration.hpp"
 #include "dinput/buffered/service.hpp"
 #include "dinput/buffered/subscription.hpp"
+#include "dinput/exclusive/lease.hpp"
 #include "dinput/exclusive/ownership.hpp"
 #include "format.hpp"
 #include "input_access.hpp"
@@ -138,6 +139,7 @@ HRESULT device_input::unacquire() noexcept {
         retire_exclusive();
         const auto closing = retiring_;
         acquisition_ = acquisition::unacquired;
+        loss_ = DIERR_INPUTLOST;
         acquired_window_.reset();
         discard_buffered_subscription(lock);
         lock.unlock();
@@ -288,8 +290,11 @@ HRESULT device_input::set_cooperative(HWND window, DWORD flags) noexcept {
         return DIERR_INVALIDPARAM;
     }
     DWORD process{};
-    if (window == nullptr || IsWindow(window) == FALSE || GetAncestor(window, GA_ROOT) != window ||
-        GetWindowThreadProcessId(window, &process) == 0U || process != GetCurrentProcessId()) {
+    if (window == nullptr || IsWindow(window) == FALSE || GetAncestor(window, GA_ROOT) != window) {
+        return E_HANDLE;
+    }
+    const auto thread = GetWindowThreadProcessId(window, &process);
+    if (thread == 0U || process != GetCurrentProcessId()) {
         return E_HANDLE;
     }
     return guarded([&] -> HRESULT {
@@ -299,14 +304,14 @@ HRESULT device_input::set_cooperative(HWND window, DWORD flags) noexcept {
             return allowed;
         }
         if ((flags & DISCL_EXCLUSIVE) != 0U &&
-            ((flags & DISCL_BACKGROUND) != 0U || !identity_.path.has_value() ||
-                !factory_.supported())) {
+            (!identity_.path.has_value() || !factory_.supported())) {
             return DIERR_UNSUPPORTED;
         }
         if (!advance_generation()) {
             return DIERR_GENERIC;
         }
         window_ = window;
+        window_thread_ = thread;
         cooperation_ = flags;
         return DI_OK;
     });
@@ -344,6 +349,9 @@ HRESULT device_input::acquire_impl() {
         return DIERR_INPUTLOST;
     }
     observe_acquisition_loss();
+    if (acquisition_ == acquisition::lost && loss_ == DIERR_NOTACQUIRED) {
+        return loss_;
+    }
     std::optional<focus::window_epoch> epoch;
     if (foreground) {
         const auto guard = call.focus().lock_presentation();
@@ -365,10 +373,7 @@ HRESULT device_input::acquire_impl() {
         mark_lost();
     }
     if ((cooperation_ & DISCL_EXCLUSIVE) != 0U) {
-        if (!epoch.has_value()) {
-            return DIERR_UNSUPPORTED;
-        }
-        return acquire_exclusive(call, *epoch, std::move(lock));
+        return acquire_exclusive(call, epoch, std::move(lock));
     }
     if (requested_buffer_size_ != 0U || notification_ != nullptr) {
         return acquire_buffered(call, epoch, std::move(lock));
@@ -458,7 +463,7 @@ struct device_input::exclusive_attempt final {
 };
 
 HRESULT device_input::acquire_exclusive(const input_access::call& call,
-    const focus::window_epoch& epoch,
+    const std::optional<focus::window_epoch>& epoch,
     std::unique_lock<std::mutex> lock) {
     if (native_control_reentrant() || (retiring_ != nullptr && !retiring_->closed())) {
         return HRESULT_FROM_WIN32(ERROR_BUSY);
@@ -475,19 +480,27 @@ HRESULT device_input::acquire_exclusive(const input_access::call& call,
     const exclusive_request request{.target = identity_.target,
         .native_instance = identity_.instance.guidInstance,
         .native_path = *identity_.path,
-        .window = epoch,
-        .factory = factory_};
+        .window = epoch.value_or(focus::window_epoch{}),
+        .factory = factory_,
+        .background_window = epoch.has_value() ? background_exclusive_window{}
+                                               : background_exclusive_window{.handle = window_,
+                                                     .owner_thread = window_thread_}};
     const bool buffered = requested_buffer_size_ != 0U || notification_ != nullptr;
     lock.unlock();
     exclusive_attempt attempt;
-    const auto completed =
+    auto completed =
         guarded([&] { return complete_exclusive(call, request, expected, buffered, attempt); });
     if (FAILED(completed)) {
-        attempt.cancel();
         std::scoped_lock rollback_lock{gate_};
         if (generation_ == expected) {
             retire_exclusive();
             acquiring_ = false;
+            if (attempt.native != nullptr && retiring_ == attempt.native &&
+                retiring_->authority_status() == DIERR_NOTACQUIRED) {
+                loss_ = DIERR_NOTACQUIRED;
+                mark_lost();
+                completed = loss_;
+            }
         }
         if (buffered_ == attempt.buffer) {
             buffered_.reset();
@@ -501,7 +514,8 @@ HRESULT device_input::complete_exclusive(const input_access::call& call,
     std::uint64_t expected,
     bool buffered,
     exclusive_attempt& attempt) {
-    const auto& epoch = request.window;
+    const auto epoch =
+        request.background_window.handle == nullptr ? std::optional{request.window} : std::nullopt;
     const auto reserved = call.exclusives().reserve(request);
     if (!reserved.has_value()) {
         return reserved.error();
@@ -535,6 +549,7 @@ HRESULT device_input::complete_exclusive(const input_access::call& call,
             !attempt.native->try_activate() || (buffered && !attempt.buffer->activate())) {
             if (generation_ == expected) {
                 mark_lost();
+                return loss_;
             }
             return DIERR_INPUTLOST;
         }
@@ -550,22 +565,26 @@ HRESULT device_input::complete_exclusive(const input_access::call& call,
 }
 
 HRESULT device_input::prepare_exclusive_buffer(const input_access::call& call,
-    const focus::window_epoch& epoch,
+    const std::optional<focus::window_epoch>& epoch,
     std::uint64_t expected,
     exclusive_attempt& attempt) {
     buffer_configuration configuration{};
     {
         std::scoped_lock lock{gate_};
-        if (generation_ != expected || !access_->open() || exclusive_ != attempt.native ||
-            WaitForSingleObject(attempt.native->cancellation_event(), 0U) == WAIT_OBJECT_0) {
+        if (generation_ != expected || !access_->open() || exclusive_ != attempt.native) {
             return DIERR_INPUTLOST;
+        }
+        const auto authority = attempt.native->authority_status();
+        if (FAILED(authority)) {
+            return authority;
         }
         configuration = buffer_configuration{.target = identity_.target,
             .format = format_,
             .axes = axes_,
             .requested_size = requested_buffer_size_,
             .notification = notification_,
-            .window = epoch};
+            .window = epoch,
+            .authority = epoch.has_value() ? nullptr : attempt.native};
     }
     const auto subscription = call.buffers().subscribe(std::move(configuration));
     if (!subscription.has_value()) {
@@ -579,7 +598,9 @@ HRESULT device_input::prepare_exclusive_buffer(const input_access::call& call,
         }
         buffered_ = attempt.buffer;
     }
-    return attempt.buffer->wait_ready(attempt.native->cancellation_event());
+    const auto ready = attempt.buffer->wait_ready(attempt.native->cancellation_event());
+    const auto authority = attempt.native->authority_status();
+    return FAILED(authority) ? authority : ready;
 }
 
 void device_input::retire_exclusive() noexcept {
@@ -682,8 +703,12 @@ bool device_input::advance_generation() noexcept {
 }
 
 void device_input::mark_lost() noexcept {
-    acquisition_ = acquisition::lost;
+    const auto lost = exclusive_;
     retire_exclusive();
+    if (lost != nullptr && lost->authority_status() == DIERR_NOTACQUIRED) {
+        loss_ = DIERR_NOTACQUIRED;
+    }
+    acquisition_ = acquisition::lost;
     if (buffered_ != nullptr) {
         buffered_->lose();
     }
@@ -691,10 +716,17 @@ void device_input::mark_lost() noexcept {
     acquired_window_.reset();
 }
 
+HRESULT device_input::acquisition_error() const noexcept {
+    if (acquisition_ == acquisition::unacquired) {
+        return DIERR_NOTACQUIRED;
+    }
+    return acquisition_ == acquisition::lost ? loss_ : DIERR_INPUTLOST;
+}
+
 void device_input::observe_acquisition_loss() noexcept {
     if (acquisition_ == acquisition::acquired &&
-        ((buffered_ != nullptr && !buffered_->active()) ||
-            (exclusive_ != nullptr && !exclusive_->live()))) {
+        ((exclusive_ != nullptr && !exclusive_->live()) ||
+            (buffered_ != nullptr && !buffered_->active()))) {
         mark_lost();
     }
 }
@@ -703,8 +735,9 @@ HRESULT device_input::lose(std::uint64_t expected) {
     std::scoped_lock lock{gate_};
     if (generation_ == expected) {
         mark_lost();
+        return loss_;
     }
-    return DIERR_INPUTLOST;
+    return acquisition_ == acquisition::lost ? loss_ : DIERR_INPUTLOST;
 }
 
 HRESULT device_input::configure_allowed() noexcept {
@@ -718,7 +751,7 @@ HRESULT device_input::configure_allowed() noexcept {
 HRESULT device_input::check_acquisition(const input_access::call& call) {
     observe_acquisition_loss();
     if (acquisition_ != acquisition::acquired) {
-        return acquisition_ == acquisition::lost ? DIERR_INPUTLOST : DIERR_NOTACQUIRED;
+        return acquisition_error();
     }
     if (!window_matches(call, acquired_window_)) {
         mark_lost();
@@ -750,7 +783,7 @@ HRESULT device_input::revalidate(const input_access::call& call, std::uint64_t g
 
 HRESULT device_input::revalidate_locked(const input_access::call& call, std::uint64_t generation) {
     if (!access_->open() || generation_ != generation) {
-        return acquisition_ == acquisition::unacquired ? DIERR_NOTACQUIRED : DIERR_INPUTLOST;
+        return acquisition_error();
     }
     return check_acquisition(call);
 }

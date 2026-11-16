@@ -7,6 +7,7 @@
 #include <inputnext/device_identity.hpp>
 #include <inputnext/focus.hpp>
 
+#include <chrono>
 #include <expected>
 #include <memory>
 
@@ -24,12 +25,18 @@ struct native_input_factory final {
     [[nodiscard]] bool supported() const noexcept;
 };
 
+struct background_exclusive_window final {
+    HWND handle{};
+    DWORD owner_thread{};
+};
+
 struct exclusive_request final {
     connection_target target{};
     GUID native_instance{};
     DIPROPGUIDANDPATH native_path{};
     focus::window_epoch window{};
     native_input_factory factory{};
+    background_exclusive_window background_window{};
 };
 
 class exclusive_input final {
@@ -49,6 +56,13 @@ public:
     void drain() noexcept;
 
 private:
+    friend struct exclusive_input_test_access;
+    using proof_clock = std::chrono::steady_clock::time_point (*)(const void*) noexcept;
+    [[nodiscard]] std::expected<std::shared_ptr<exclusive_lease>, HRESULT> reserve(
+        exclusive_request request,
+        proof_clock now,
+        std::shared_ptr<const void> context) noexcept;
+
     struct implementation;
     std::unique_ptr<implementation> implementation_;
 };

@@ -34,7 +34,22 @@ void native_control_script::set_result(const native_operation operation,
         return;
     }
     std::scoped_lock lock{gate_};
-    operations_[slot].result = result;
+    auto& state = operations_[slot];
+    state.result = result;
+    state.result_sequence.clear();
+    state.next_result = 0U;
+}
+
+void native_control_script::set_result_sequence(const native_operation operation,
+    std::vector<HRESULT> results) noexcept {
+    const auto slot = index(operation);
+    if (slot >= operations_.size()) {
+        return;
+    }
+    std::scoped_lock lock{gate_};
+    auto& state = operations_[slot];
+    state.result_sequence = std::move(results);
+    state.next_result = 0U;
 }
 
 void native_control_script::block_next(const native_operation operation,
@@ -64,12 +79,14 @@ bool native_control_script::wait_for_entry(const native_operation operation,
     });
 }
 
-void native_control_script::release_block(const native_operation operation) noexcept {
+void native_control_script::release_block(const native_operation operation,
+    const bool block_next) noexcept {
     const auto slot = index(operation);
     if (slot >= operations_.size()) {
         return;
     }
     std::scoped_lock lock{gate_};
+    operations_[slot].block_next = block_next;
     operations_[slot].released = true;
     changed_.notify_all();
 }
@@ -142,7 +159,9 @@ HRESULT native_control_script::observe(const native_operation operation,
         auto& state = operations_[slot];
         ++state.calls;
         state.last_thread = std::this_thread::get_id();
-        result = state.result;
+        result = state.next_result < state.result_sequence.size()
+                     ? state.result_sequence[state.next_result++]
+                     : state.result;
         try {
             observations_.push_back(native_observation{.operation = operation,
                 .thread = state.last_thread,
@@ -254,9 +273,26 @@ public:
         if (capabilities == nullptr || capabilities->dwSize != sizeof(*capabilities)) {
             return DIERR_INVALIDPARAM;
         }
-        capabilities->dwFlags = record_.force_feedback ? DIDC_FORCEFEEDBACK : 0U;
+        DWORD flags = record_.force_feedback ? DIDC_FORCEFEEDBACK : 0U;
+        if (record_.polled) {
+            flags |= DIDC_POLLEDDEVICE;
+            if (selected_) {
+                flags |= DIDC_POLLEDDATAFORMAT;
+            }
+        }
+        const HRESULT status = record_.controls == nullptr
+                                   ? DI_OK
+                                   : record_.controls->observe(native_operation::get_capabilities,
+                                         nullptr,
+                                         nullptr,
+                                         flags,
+                                         selected_);
+        if (FAILED(status)) {
+            return status;
+        }
+        capabilities->dwFlags = flags;
         capabilities->dwDevType = record_.instance.dwDevType;
-        return DI_OK;
+        return status;
     }
 
     HRESULT STDMETHODCALLTYPE EnumObjects([[maybe_unused]] LPDIENUMDEVICEOBJECTSCALLBACKW callback,
@@ -323,6 +359,7 @@ public:
     }
 
     HRESULT STDMETHODCALLTYPE Acquire() noexcept override {
+        poll_ready_ = false;
         const HRESULT status = record_.controls == nullptr
                                    ? DI_OK
                                    : record_.controls->observe(native_operation::acquire,
@@ -344,13 +381,37 @@ public:
                                          selected_);
         if (SUCCEEDED(status)) {
             acquired_ = false;
+            poll_ready_ = false;
         }
         return status;
     }
 
-    HRESULT STDMETHODCALLTYPE GetDeviceState([[maybe_unused]] DWORD size,
-        [[maybe_unused]] LPVOID state) noexcept override {
-        return DIERR_UNSUPPORTED;
+    HRESULT STDMETHODCALLTYPE GetDeviceState(DWORD size, LPVOID state) noexcept override {
+        if (size != sizeof(DIJOYSTATE) || state == nullptr || !selected_) {
+            return DIERR_INVALIDPARAM;
+        }
+        if (!acquired_) {
+            return DIERR_NOTACQUIRED;
+        }
+        const bool poll_authorized = !record_.polled || std::exchange(poll_ready_, false);
+        const auto status = record_.controls == nullptr
+                                ? DI_OK
+                                : record_.controls->observe(native_operation::get_device_state,
+                                      nullptr,
+                                      nullptr,
+                                      size,
+                                      selected_);
+        if (!poll_authorized) {
+            return E_PENDING;
+        }
+        if (FAILED(status)) {
+            return status;
+        }
+        if (status == DI_OK) {
+            const DIJOYSTATE snapshot{};
+            std::memcpy(state, &snapshot, sizeof(snapshot));
+        }
+        return status;
     }
 
     HRESULT STDMETHODCALLTYPE GetDeviceData([[maybe_unused]] DWORD object_size,
@@ -453,7 +514,30 @@ public:
         return DIERR_UNSUPPORTED;
     }
 
-    HRESULT STDMETHODCALLTYPE Poll() noexcept override { return DIERR_UNSUPPORTED; }
+    HRESULT STDMETHODCALLTYPE Poll() noexcept override {
+        if (!selected_) {
+            return DIERR_INVALIDPARAM;
+        }
+        if (!acquired_) {
+            return DIERR_NOTACQUIRED;
+        }
+        poll_ready_ = false;
+        const HRESULT status = record_.controls == nullptr
+                                   ? DI_OK
+                                   : record_.controls->observe(native_operation::poll,
+                                         nullptr,
+                                         nullptr,
+                                         0U,
+                                         selected_);
+        if (FAILED(status)) {
+            return status;
+        }
+        if (!record_.polled) {
+            return DI_NOEFFECT;
+        }
+        poll_ready_ = true;
+        return status;
+    }
 
     HRESULT STDMETHODCALLTYPE SendDeviceData([[maybe_unused]] DWORD object_size,
         [[maybe_unused]] LPCDIDEVICEOBJECTDATA data,
@@ -498,6 +582,7 @@ private:
     const system_device_record record_;
     bool selected_{};
     bool acquired_{};
+    bool poll_ready_{};
 };
 
 class system_input final : public IDirectInput8W {

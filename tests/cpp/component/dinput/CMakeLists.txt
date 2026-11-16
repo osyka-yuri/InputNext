@@ -1,5 +1,7 @@
 add_executable(inputnext_dinput_root_tests
-    root_tests.cpp buffered_events_tests.cpp discovery_tests.cpp)
+    root_tests.cpp
+    buffered_events_tests.cpp
+    discovery_tests.cpp)
 target_include_directories(inputnext_dinput_root_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/src" "${PROJECT_SOURCE_DIR}/tests")
 target_link_libraries(inputnext_dinput_root_tests PRIVATE

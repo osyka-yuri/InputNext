@@ -40,6 +40,9 @@ enum class native_operation : std::uint8_t {
     set_data_format,
     set_cooperative_level,
     acquire,
+    get_capabilities,
+    poll,
+    get_device_state,
     unacquire,
     release_device,
     release_root,
@@ -74,11 +77,12 @@ public:
     native_control_script& operator=(native_control_script&&) = delete;
 
     void set_result(native_operation operation, HRESULT result) noexcept;
+    void set_result_sequence(native_operation operation, std::vector<HRESULT> results) noexcept;
     void block_next(native_operation operation, bool selected_device_only = false) noexcept;
     [[nodiscard]] bool wait_for_entry(native_operation operation,
         std::size_t entry_count = 1U,
         std::chrono::milliseconds timeout = 2s) const;
-    void release_block(native_operation operation) noexcept;
+    void release_block(native_operation operation, bool block_next = false) noexcept;
     void send_message_on(native_operation operation, native_message message) noexcept;
     void clear_send_message() noexcept;
     void set_opened_path_after_acquire(std::wstring path);
@@ -97,6 +101,8 @@ public:
 private:
     struct operation_state final {
         HRESULT result{DI_OK};
+        std::vector<HRESULT> result_sequence;
+        std::size_t next_result{};
         std::size_t calls{};
         std::size_t entries{};
         std::thread::id last_thread{};
@@ -126,6 +132,7 @@ struct system_device_record final {
     std::wstring path;
     DWORD vendor_product{0x0CE6054CU};
     bool force_feedback{};
+    bool polled{};
     bool attached{true};
     HRESULT create_device_result{DI_OK};
     HRESULT guid_path_result{DI_OK};

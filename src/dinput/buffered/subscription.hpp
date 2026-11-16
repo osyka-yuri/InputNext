@@ -17,9 +17,10 @@
 
 namespace inputnext::dinput {
 
-inline constexpr DWORD maximum_buffer_size = 4096U;
-
+class exclusive_lease;
 class event_registration;
+
+inline constexpr DWORD maximum_buffer_size = 4096U;
 
 struct buffer_configuration final {
     connection_target target{};
@@ -28,6 +29,7 @@ struct buffer_configuration final {
     DWORD requested_size{};
     std::shared_ptr<event_registration> notification{nullptr};
     std::optional<focus::window_epoch> window{std::nullopt};
+    std::shared_ptr<exclusive_lease> authority{nullptr};
 };
 
 class buffered_subscription final {

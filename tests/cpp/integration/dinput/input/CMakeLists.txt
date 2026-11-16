@@ -16,6 +16,8 @@ add_executable(inputnext_dinput_input_tests
     exclusive_wait_tests.cpp
     exclusive_device_tests.cpp
     exclusive_native_tests.cpp
+    exclusive_background_tests.cpp
+    background_exclusive_tests.cpp
 )
 target_link_libraries(inputnext_dinput_input_tests PRIVATE
     inputnext_dinput inputnext_core Catch2::Catch2WithMain dinput8

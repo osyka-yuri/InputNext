@@ -14,6 +14,7 @@
 #include <array>
 #include <atomic>
 #include <bit>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -37,6 +38,19 @@ namespace {
 
 inline constexpr std::size_t actor_capacity = 16U;
 inline constexpr DWORD shutdown_warning_ms = 5'000U;
+using std::chrono::steady_clock;
+inline constexpr auto probe_period = std::chrono::milliseconds{25};
+
+[[nodiscard]] bool background(const exclusive_request& request) noexcept {
+    return request.background_window.handle != nullptr;
+}
+
+[[nodiscard]] bool background_window_valid(const background_exclusive_window& window) noexcept {
+    DWORD process{};
+    const DWORD thread = GetWindowThreadProcessId(window.handle, &process);
+    return thread != 0U && thread == window.owner_thread && process == GetCurrentProcessId() &&
+           GetAncestor(window.handle, GA_ROOT) == window.handle;
+}
 
 void join_worker_for_shutdown(std::thread& worker) noexcept {
     if (!worker.joinable()) {
@@ -91,11 +105,16 @@ void join_worker_for_shutdown(std::thread& worker) noexcept {
 }
 
 [[nodiscard]] HRESULT validate_request(const exclusive_request& request) noexcept {
+    const bool window_valid =
+        background(request)
+            ? request.window == focus::window_epoch{} &&
+                  request.background_window.owner_thread != 0U
+            : request.background_window.owner_thread == 0U && request.window.window != 0U &&
+                  request.window.revision != 0U && request.window.process.revision != 0U &&
+                  request.window.process.observer_incarnation.valid() &&
+                  request.window.process.process.pid != 0U;
     if (!request.target.valid() || IsEqualGUID(request.native_instance, GUID_NULL) != 0 ||
-        request.window.window == 0U || request.window.revision == 0U ||
-        request.window.process.revision == 0U ||
-        !request.window.process.observer_incarnation.valid() ||
-        request.window.process.process.pid == 0U) {
+        !window_valid) {
         return DIERR_INPUTLOST;
     }
     const bool path_valid =
@@ -134,24 +153,37 @@ void join_worker_for_shutdown(std::thread& worker) noexcept {
     return DI_OK;
 }
 
-void pump_actor_messages(bool& quit) noexcept {
+[[nodiscard]] bool pump_actor_messages() noexcept {
     MSG message{};
-    while (PeekMessageW(&message, nullptr, 0U, 0U, PM_REMOVE) != FALSE) {
+    // Recheck cancellation and deadlines even when messages arrive continuously.
+    for (unsigned count = 0U;
+        count < 32U && PeekMessageW(&message, nullptr, 0U, 0U, PM_REMOVE) != FALSE;
+        ++count) {
         if (message.message == WM_QUIT) {
-            quit = true;
-            return;
+            return false;
         }
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
+    return true;
 }
 
-[[nodiscard]] DWORD actor_wait(std::span<const HANDLE> events) noexcept {
+[[nodiscard]] DWORD actor_wait(std::span<const HANDLE> events,
+    const std::optional<steady_clock::time_point> deadline = std::nullopt) noexcept {
     const auto count = static_cast<DWORD>(events.size());
     for (;;) {
+        DWORD timeout = INFINITE;
+        if (deadline.has_value()) {
+            const auto remaining = *deadline - steady_clock::now();
+            if (remaining <= steady_clock::duration::zero()) {
+                return WAIT_TIMEOUT;
+            }
+            timeout =
+                static_cast<DWORD>(std::chrono::ceil<std::chrono::milliseconds>(remaining).count());
+        }
         const DWORD result = MsgWaitForMultipleObjectsEx(count,
             events.data(),
-            INFINITE,
+            timeout,
             QS_ALLINPUT,
             MWMO_INPUTAVAILABLE);
         if (result == WAIT_FAILED) {
@@ -161,11 +193,12 @@ void pump_actor_messages(bool& quit) noexcept {
             return result;
         }
         if (result == WAIT_OBJECT_0 + count) {
-            bool quit{};
-            pump_actor_messages(quit);
-            if (quit) {
+            if (!pump_actor_messages()) {
                 return WAIT_FAILED;
             }
+            continue;
+        }
+        if (result == WAIT_TIMEOUT && deadline.has_value()) {
             continue;
         }
         return WAIT_FAILED;
@@ -184,6 +217,9 @@ void pump_actor_messages(bool& quit) noexcept {
     }
     if (latest.has_value() && latest->target != target) {
         return false;
+    }
+    if (window == focus::window_epoch{}) {
+        return true;
     }
     const auto presentation = call.focus().lock_presentation();
     return presentation.matches_foreground_window_epoch(window);
@@ -224,10 +260,13 @@ struct exclusive_input::implementation final {
     explicit implementation(input_access& access_value) noexcept : access(access_value) {}
 
     [[nodiscard]] std::expected<std::shared_ptr<exclusive_lease>, HRESULT> reserve(
-        exclusive_request request) noexcept;
+        exclusive_request request,
+        proof_clock now,
+        std::shared_ptr<const void> context) noexcept;
     [[nodiscard]] HRESULT reserve_slot(exclusive_request&& request,
         std::size_t& reserved_index) noexcept;
-    [[nodiscard]] static std::expected<receipt_bundle, HRESULT> make_receipt() noexcept;
+    [[nodiscard]] static std::expected<receipt_bundle, HRESULT> make_receipt(proof_clock now,
+        std::shared_ptr<const void> context) noexcept;
     [[nodiscard]] HRESULT launch_actor(std::size_t reserved_index,
         const std::shared_ptr<exclusive_lease::state>& receipt) noexcept;
     void dispose_slot(std::size_t index) noexcept;
@@ -241,10 +280,31 @@ struct exclusive_input::implementation final {
         IDirectInput8W*& system,
         IDirectInputDevice8W*& device,
         bool& acquire_attempted);
+    [[nodiscard]] HRESULT configure_actor_device(const exclusive_request& request,
+        const exclusive_lease::state& receipt,
+        IDirectInputDevice8W& device) const noexcept;
+    void hold_actor_lease(const exclusive_request& request,
+        exclusive_lease::state& receipt,
+        IDirectInputDevice8W* device,
+        HRESULT preparation) const noexcept;
+    void hold_background_lease(const exclusive_request& request,
+        exclusive_lease::state& receipt,
+        IDirectInputDevice8W& device) const noexcept;
     void reap_completed() noexcept;
     [[nodiscard]] bool can_continue(const exclusive_request& request,
         const exclusive_lease::state& receipt) const noexcept;
     [[nodiscard]] bool exact_target_eligible(const exclusive_request& request) const noexcept;
+    [[nodiscard]] HRESULT probe_authority(const exclusive_request& request,
+        exclusive_lease::state& receipt,
+        IDirectInputDevice8W& device,
+        bool initial,
+        bool requires_poll,
+        steady_clock::time_point& next_probe) const noexcept;
+    void monitor_authority(const exclusive_request& request,
+        exclusive_lease::state& receipt,
+        IDirectInputDevice8W& device,
+        bool requires_poll,
+        steady_clock::time_point next_probe) const noexcept;
 
     input_access& access;
     std::mutex gate;
@@ -257,7 +317,9 @@ struct exclusive_input::implementation final {
 };
 
 std::expected<std::shared_ptr<exclusive_lease>, HRESULT> exclusive_input::implementation::reserve(
-    exclusive_request request) noexcept {
+    exclusive_request request,
+    const proof_clock now,
+    std::shared_ptr<const void> context) noexcept {
     if (admission_closed.load(std::memory_order_acquire)) {
         return std::unexpected{DIERR_INPUTLOST};
     }
@@ -276,7 +338,7 @@ std::expected<std::shared_ptr<exclusive_lease>, HRESULT> exclusive_input::implem
         return std::unexpected{status};
     }
 
-    auto created = make_receipt();
+    auto created = make_receipt(now, std::move(context));
     if (!created.has_value()) {
         dispose_slot(reserved_index);
         return std::unexpected{created.error()};
@@ -313,9 +375,10 @@ HRESULT exclusive_input::implementation::reserve_slot(exclusive_request&& reques
 }
 
 std::expected<exclusive_input::implementation::receipt_bundle, HRESULT>
-exclusive_input::implementation::make_receipt() noexcept {
+exclusive_input::implementation::make_receipt(const proof_clock now,
+    std::shared_ptr<const void> context) noexcept {
     try {
-        auto receipt = std::make_shared<exclusive_lease::state>();
+        auto receipt = std::make_shared<exclusive_lease::state>(now, std::move(context));
         receipt->start_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (receipt->start_event == nullptr) {
             return std::unexpected{last_error_result()};
@@ -406,11 +469,122 @@ bool exclusive_input::implementation::exact_target_eligible(
 bool exclusive_input::implementation::can_continue(const exclusive_request& request,
     const exclusive_lease::state& receipt) const noexcept {
     if (admission_closed.load(std::memory_order_acquire) || receipt.cancelled() ||
+        (background(request) && !background_window_valid(request.background_window)) ||
         !exact_target_eligible(request)) {
         return false;
     }
     return !receipt.cancelled() && !admission_closed.load(std::memory_order_acquire) &&
            access.open();
+}
+
+HRESULT exclusive_input::implementation::probe_authority(const exclusive_request& request,
+    exclusive_lease::state& receipt,
+    IDirectInputDevice8W& device,
+    const bool initial,
+    const bool requires_poll,
+    steady_clock::time_point& next_probe) const noexcept {
+    if (!can_continue(request, receipt)) {
+        receipt.request_cancel();
+        return DIERR_INPUTLOST;
+    }
+    const auto started = receipt.now();
+    next_probe = steady_clock::now() + probe_period;
+    HRESULT result = DI_OK;
+    if (requires_poll) {
+        result = device.Poll();
+        if (!can_continue(request, receipt)) {
+            receipt.request_cancel();
+            return DIERR_INPUTLOST;
+        }
+    }
+    if (result == DI_OK || result == DI_NOEFFECT) {
+        DIJOYSTATE scratch{};
+        result = device.GetDeviceState(static_cast<DWORD>(sizeof(scratch)), &scratch);
+    }
+    if (!can_continue(request, receipt)) {
+        receipt.request_cancel();
+        return DIERR_INPUTLOST;
+    }
+    return receipt.record_probe(result, started, initial, admission_closed, access);
+}
+
+void exclusive_input::implementation::monitor_authority(const exclusive_request& request,
+    exclusive_lease::state& receipt,
+    IDirectInputDevice8W& device,
+    const bool requires_poll,
+    steady_clock::time_point next_probe) const noexcept {
+    const std::array events{receipt.cancellation_event};
+    while (!receipt.cancelled()) {
+        const auto wake = (std::min)(next_probe, receipt.authority_deadline());
+        if (actor_wait(events, wake) != WAIT_TIMEOUT) {
+            break;
+        }
+        if (steady_clock::now() >= next_probe) {
+            const HRESULT result =
+                probe_authority(request, receipt, device, false, requires_poll, next_probe);
+            if (result != DI_OK && result != E_PENDING) {
+                break;
+            }
+        }
+    }
+    receipt.request_cancel();
+}
+
+void exclusive_input::implementation::hold_actor_lease(const exclusive_request& request,
+    exclusive_lease::state& receipt,
+    IDirectInputDevice8W* const device,
+    const HRESULT preparation) const noexcept {
+    if (preparation == DI_OK && background(request)) {
+        if (device == nullptr) {
+            receipt.publish_prepared(E_NOINTERFACE);
+            return;
+        }
+        hold_background_lease(request, receipt, *device);
+        return;
+    }
+    receipt.publish_prepared(preparation);
+    const std::array cancellation_events{receipt.cancellation_event};
+    if (receipt.authority() == DI_OK && actor_wait(cancellation_events) == WAIT_FAILED) {
+        receipt.request_cancel();
+    }
+}
+
+void exclusive_input::implementation::hold_background_lease(const exclusive_request& request,
+    exclusive_lease::state& receipt,
+    IDirectInputDevice8W& device) const noexcept {
+    if (!can_continue(request, receipt)) {
+        receipt.request_cancel();
+        return;
+    }
+    DIDEVCAPS capabilities{};
+    capabilities.dwSize = static_cast<DWORD>(sizeof(capabilities));
+    const HRESULT inspected = device.GetCapabilities(&capabilities);
+    if (!can_continue(request, receipt)) {
+        receipt.request_cancel();
+        return;
+    }
+    if (FAILED(inspected)) {
+        receipt.publish_prepared(inspected);
+        return;
+    }
+    const bool requires_poll = (capabilities.dwFlags & DIDC_POLLEDDATAFORMAT) != 0U;
+    steady_clock::time_point next_probe{};
+    const std::array events{receipt.cancellation_event};
+    while (!receipt.cancelled()) {
+        const HRESULT result =
+            probe_authority(request, receipt, device, true, requires_poll, next_probe);
+        if (result == DI_OK) {
+            monitor_authority(request, receipt, device, requires_poll, next_probe);
+            return;
+        }
+        if (result != E_PENDING || receipt.cancelled()) {
+            return;
+        }
+        if (actor_wait(events, next_probe) != WAIT_TIMEOUT) {
+            receipt.request_cancel();
+            return;
+        }
+    }
 }
 
 void exclusive_input::implementation::run_actor(const std::size_t index,
@@ -445,13 +619,7 @@ void exclusive_input::implementation::run_actor(const std::size_t index,
         preparation = E_UNEXPECTED;
     }
 
-    receipt->publish_prepared(preparation);
-    if (SUCCEEDED(receipt->preparation_result()) && !receipt->cancelled()) {
-        const std::array cancellation_events{receipt->cancellation_event};
-        if (actor_wait(cancellation_events) == WAIT_FAILED) {
-            receipt->request_cancel();
-        }
-    }
+    hold_actor_lease(request, *receipt, device, preparation);
     if (device != nullptr) {
         if (acquire_attempted) {
             close_result = device->Unacquire();
@@ -528,23 +696,7 @@ HRESULT exclusive_input::implementation::prepare_actor(const exclusive_request& 
         return DIERR_INPUTLOST;
     }
 
-    const auto* const format = system_joystick_format();
-    if (format == nullptr) {
-        return DIERR_UNSUPPORTED;
-    }
-    status = device->SetDataFormat(format);
-    if (FAILED(status)) {
-        return status;
-    }
-    static_assert(sizeof(HWND) == sizeof(focus::window_id));
-    auto* const window = std::bit_cast<HWND>(request.window.window);
-    if (IsWindow(window) == FALSE) {
-        return DIERR_INPUTLOST;
-    }
-    if (!can_continue(request, receipt)) {
-        return DIERR_INPUTLOST;
-    }
-    status = device->SetCooperativeLevel(window, DISCL_FOREGROUND | DISCL_EXCLUSIVE);
+    status = configure_actor_device(request, receipt, *device);
     if (FAILED(status)) {
         return status;
     }
@@ -581,6 +733,29 @@ HRESULT exclusive_input::implementation::prepare_actor(const exclusive_request& 
     return can_continue(request, receipt) ? DI_OK : DIERR_INPUTLOST;
 }
 
+HRESULT exclusive_input::implementation::configure_actor_device(const exclusive_request& request,
+    const exclusive_lease::state& receipt,
+    IDirectInputDevice8W& device) const noexcept {
+    const auto* const format = system_joystick_format();
+    const bool is_background = background(request);
+    if (format == nullptr ||
+        (is_background && format->dwDataSize != static_cast<DWORD>(sizeof(DIJOYSTATE)))) {
+        return DIERR_UNSUPPORTED;
+    }
+    const HRESULT status = device.SetDataFormat(format);
+    if (FAILED(status)) {
+        return status;
+    }
+    static_assert(sizeof(HWND) == sizeof(focus::window_id));
+    auto* const window = is_background ? request.background_window.handle
+                                       : std::bit_cast<HWND>(request.window.window);
+    if ((!is_background && IsWindow(window) == FALSE) || !can_continue(request, receipt)) {
+        return DIERR_INPUTLOST;
+    }
+    const auto scope = static_cast<DWORD>(is_background ? DISCL_BACKGROUND : DISCL_FOREGROUND);
+    return device.SetCooperativeLevel(window, scope | static_cast<DWORD>(DISCL_EXCLUSIVE));
+}
+
 void exclusive_input::implementation::refresh_eligibility(const input_access::call& call) noexcept {
     std::array<std::shared_ptr<exclusive_lease::state>, actor_capacity> receipts{};
     std::array<connection_target, actor_capacity> targets{};
@@ -598,7 +773,8 @@ void exclusive_input::implementation::refresh_eligibility(const input_access::ca
         }
     }
     for (std::size_t index = 0U; index < count; ++index) {
-        if (!request_eligible(call, targets[index], windows[index])) {
+        if (receipts[index]->cancelled() ||
+            !request_eligible(call, targets[index], windows[index])) {
             receipts[index]->request_cancel();
         }
     }
@@ -707,7 +883,14 @@ exclusive_input::~exclusive_input() {
 
 std::expected<std::shared_ptr<exclusive_lease>, HRESULT> exclusive_input::reserve(
     exclusive_request request) noexcept {
-    return implementation_->reserve(std::move(request));
+    return reserve(std::move(request), nullptr, nullptr);
+}
+
+std::expected<std::shared_ptr<exclusive_lease>, HRESULT> exclusive_input::reserve(
+    exclusive_request request,
+    const proof_clock now,
+    std::shared_ptr<const void> context) noexcept {
+    return implementation_->reserve(std::move(request), now, std::move(context));
 }
 
 void exclusive_input::refresh_eligibility(const input_access::call& call) noexcept {

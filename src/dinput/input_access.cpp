@@ -121,8 +121,8 @@ void input_access::drain() noexcept {
 void input_access::refresh_eligibility() noexcept {
     const auto admitted = enter();
     if (admitted) {
-        buffers_->refresh_eligibility();
         exclusives_->refresh_eligibility(admitted);
+        buffers_->refresh_eligibility();
     }
 }
 

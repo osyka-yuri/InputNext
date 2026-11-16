@@ -5,7 +5,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/osyka-yuri/InputNext?display_name=tag)](https://github.com/osyka-yuri/InputNext/releases/latest)
 [![Attestations](https://img.shields.io/badge/attestations-Sigstore-blue)](https://github.com/osyka-yuri/InputNext/attestations)
 
-InputNext brings Microsoft GameInput controller support to Windows games that use XInput or DirectInput 8. It provides replacement DLLs for x86 and x64 games, plus C SDKs for input, history and feedback. The DirectInput facade supports immediate and buffered gamepad input with foreground exclusive ownership for qualified devices. [DirectInput compatibility](docs/directinput.md)
+InputNext brings Microsoft GameInput controller support to Windows games that use XInput or DirectInput 8. It provides replacement DLLs for x86 and x64 games, plus C SDKs for input, history and feedback. The DirectInput facade supports immediate and buffered gamepad input with foreground and background exclusive ownership for qualified devices. [DirectInput compatibility](docs/directinput.md)
 
 DualSense and DualSense Edge support USB rumble, adaptive triggers, LEDs and HD haptics. Game rumble works through XInput. Per-game profiles apply persistent trigger effects; game-driven trigger, LED and HD effects require an Effects SDK integration. Bluetooth support for these controllers is input-only.
 

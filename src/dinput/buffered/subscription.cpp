@@ -2,6 +2,7 @@
 
 #include "dinput/control_wait.hpp"
 #include "dinput/device_properties.hpp"
+#include "dinput/exclusive/lease.hpp"
 #include "dinput/format.hpp"
 #include "dinput/native_types.hpp"
 #include "dinput/profile.hpp"
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -138,6 +140,53 @@ struct buffered_subscription::implementation final {
             resync_candidate = false;
         }
         notification_dirty = true;
+    }
+
+    void observe_authority_locked() noexcept {
+        if (terminal || configuration.authority == nullptr) {
+            return;
+        }
+        const auto status = configuration.authority->authority_status();
+        if (FAILED(status)) {
+            terminal = true;
+            terminal_result = status;
+            set_loss(true);
+            notification_dirty = acquired;
+            notify_ready_locked();
+        }
+    }
+
+    HRESULT wait_for_boundary(std::unique_lock<std::mutex>& lock, HANDLE cancellation) {
+        const std::array events{cancellation, control_ready};
+        constexpr auto timeout = HRESULT_FROM_WIN32(ERROR_TIMEOUT);
+        for (;;) {
+            observe_authority_locked();
+            if (configuration.authority != nullptr && terminal) {
+                return terminal_result;
+            }
+            std::optional<std::chrono::steady_clock::time_point> deadline;
+            if (configuration.authority != nullptr) {
+                deadline = configuration.authority->authority_deadline();
+            }
+            lock.unlock();
+            std::size_t signalled{};
+            const auto waited = wait_for_native_control(events, signalled, deadline);
+            lock.lock();
+            if (waited == timeout) {
+                continue;
+            }
+            if (FAILED(waited)) {
+                return waited;
+            }
+            observe_authority_locked();
+            if (configuration.authority != nullptr && terminal) {
+                return terminal_result;
+            }
+            if (signalled == 0U || WaitForSingleObject(cancellation, 0U) == WAIT_OBJECT_0) {
+                return DIERR_INPUTLOST;
+            }
+            return prepared && !terminal ? DI_OK : terminal_result;
+        }
     }
 
     void append_event(const DIDEVICEOBJECTDATA& event) noexcept {
@@ -359,23 +408,33 @@ std::optional<focus::window_epoch> buffered_subscription::window() const noexcep
 }
 
 bool buffered_subscription::pending() const noexcept {
-    std::scoped_lock lock{implementation_->gate};
-    return !implementation_->prepared && !implementation_->terminal;
+    auto& state = *implementation_;
+    std::scoped_lock lock{state.gate};
+    state.observe_authority_locked();
+    return !state.prepared && !state.terminal;
 }
 
 bool buffered_subscription::active() const noexcept {
-    std::scoped_lock lock{implementation_->gate};
-    return implementation_->acquired && !implementation_->terminal;
+    auto& state = *implementation_;
+    std::scoped_lock lock{state.gate};
+    state.observe_authority_locked();
+    return state.acquired && !state.terminal;
 }
 
 bool buffered_subscription::finished() const noexcept {
-    std::scoped_lock lock{implementation_->gate};
-    return implementation_->terminal;
+    auto& state = *implementation_;
+    std::scoped_lock lock{state.gate};
+    state.observe_authority_locked();
+    return state.terminal;
 }
 
 HRESULT buffered_subscription::wait_ready(HANDLE cancellation) {
     auto& state = *implementation_;
     std::unique_lock lock{state.gate};
+    state.observe_authority_locked();
+    if (state.configuration.authority != nullptr && state.terminal) {
+        return state.terminal_result;
+    }
     if (cancellation != nullptr) {
         if (state.control_ready == nullptr) {
             state.control_ready = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -384,18 +443,7 @@ HRESULT buffered_subscription::wait_ready(HANDLE cancellation) {
             }
         }
         state.notify_ready_locked();
-        const std::array<HANDLE, 2U> events{cancellation, state.control_ready};
-        lock.unlock();
-        std::size_t signalled{};
-        const auto waited = wait_for_native_control(events, signalled);
-        if (FAILED(waited)) {
-            return waited;
-        }
-        if (signalled == 0U || WaitForSingleObject(cancellation, 0U) == WAIT_OBJECT_0) {
-            return DIERR_INPUTLOST;
-        }
-        lock.lock();
-        return state.prepared && !state.terminal ? DI_OK : state.terminal_result;
+        return state.wait_for_boundary(lock, cancellation);
     }
     state.ready.wait(lock, [&state] { return state.prepared || state.terminal; });
     if (state.prepared && !state.terminal) {
@@ -409,6 +457,7 @@ void buffered_subscription::prepare(const history_detail::reader_boundary& bound
     auto& state = *implementation_;
     {
         std::scoped_lock lock{state.gate};
+        state.observe_authority_locked();
         if (state.terminal || state.prepared) {
             return;
         }
@@ -449,6 +498,7 @@ void buffered_subscription::prepare(const history_detail::reader_boundary& bound
 bool buffered_subscription::activate() noexcept {
     auto& state = *implementation_;
     std::scoped_lock lock{state.gate};
+    state.observe_authority_locked();
     if (!state.prepared || state.terminal || state.canceled) {
         return false;
     }
@@ -466,6 +516,7 @@ void buffered_subscription::accept(const history_detail::observed_read& read,
     const std::array<DWORD, history_batch_capacity>& sequences) noexcept {
     auto& state = *implementation_;
     std::scoped_lock lock{state.gate};
+    state.observe_authority_locked();
     if (!state.prepared || state.terminal || state.canceled) {
         return;
     }
@@ -531,6 +582,7 @@ HRESULT buffered_subscription::read(DWORD stride,
 
     auto& state = *implementation_;
     std::scoped_lock lock{state.gate};
+    state.observe_authority_locked();
     if (!state.acquired) {
         return DIERR_NOTACQUIRED;
     }
@@ -584,7 +636,8 @@ void buffered_subscription::lose() noexcept {
     auto& state = *implementation_;
     {
         std::scoped_lock lock{state.gate};
-        if (state.canceled) {
+        state.observe_authority_locked();
+        if (state.canceled || (state.configuration.authority != nullptr && state.terminal)) {
             return;
         }
         state.terminal = true;
@@ -599,7 +652,8 @@ void buffered_subscription::fail(HRESULT error) noexcept {
     auto& state = *implementation_;
     {
         std::scoped_lock lock{state.gate};
-        if (state.canceled) {
+        state.observe_authority_locked();
+        if (state.canceled || (state.configuration.authority != nullptr && state.terminal)) {
             return;
         }
         state.terminal = true;
@@ -618,9 +672,11 @@ void buffered_subscription::signal_pending() noexcept {
     std::shared_ptr<event_registration> notification;
     {
         std::scoped_lock lock{state.gate};
+        state.observe_authority_locked();
         if (state.canceled || !state.acquired || !state.notification_dirty) {
             return;
         }
+        // Revocation may overlap an already admitted signal.
         state.notification_dirty = false;
         notification = state.configuration.notification;
     }

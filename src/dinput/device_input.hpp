@@ -60,10 +60,10 @@ private:
     std::expected<std::uint64_t, HRESULT> begin_acquisition(std::unique_lock<std::mutex>& lock);
     void discard_buffered_subscription(std::unique_lock<std::mutex>& lock);
     HRESULT acquire_exclusive(const input_access::call& call,
-        const focus::window_epoch& epoch,
+        const std::optional<focus::window_epoch>& epoch,
         std::unique_lock<std::mutex> lock);
     HRESULT prepare_exclusive_buffer(const input_access::call& call,
-        const focus::window_epoch& epoch,
+        const std::optional<focus::window_epoch>& epoch,
         std::uint64_t expected,
         exclusive_attempt& attempt);
     HRESULT complete_exclusive(const input_access::call& call,
@@ -80,6 +80,7 @@ private:
         std::unique_lock<std::mutex> lock);
     bool advance_generation() noexcept;
     void mark_lost() noexcept;
+    HRESULT acquisition_error() const noexcept;
     void observe_acquisition_loss() noexcept;
     HRESULT lose(std::uint64_t expected);
     HRESULT configure_allowed() noexcept;
@@ -101,10 +102,12 @@ private:
     std::shared_ptr<exclusive_lease> exclusive_;
     std::shared_ptr<exclusive_lease> retiring_;
     HWND window_{};
+    DWORD window_thread_{};
     DWORD cooperation_{};
     DWORD requested_buffer_size_{};
     std::uint64_t generation_{1U};
     acquisition acquisition_{acquisition::unacquired};
+    HRESULT loss_{DIERR_INPUTLOST};
     std::optional<focus::window_epoch> acquired_window_;
     bool has_format_{};
     bool acquiring_{};
