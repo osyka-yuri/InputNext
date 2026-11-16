@@ -40,6 +40,7 @@ struct system_device final {
 struct gameinput_device final {
     core::device_record record{};
     std::wstring path;
+    std::uint64_t metadata_generation{};
     std::size_t system_index{std::numeric_limits<std::size_t>::max()};
     GUID generated_instance{};
 };
@@ -47,6 +48,11 @@ struct gameinput_device final {
 struct system_capture final {
     std::vector<DIDEVICEINSTANCEW>* instances{};
     HRESULT failure{S_OK};
+};
+
+struct strict_inspection final {
+    const input_access& access;
+    HANDLE cancellation;
 };
 
 [[nodiscard]] HRESULT map_core_status(const core::status status) noexcept {
@@ -71,6 +77,26 @@ struct system_capture final {
         return DIERR_GENERIC;
     }
     return DIERR_GENERIC;
+}
+
+[[nodiscard]] HRESULT inspection_status(const strict_inspection* inspection) noexcept {
+    if (inspection == nullptr) {
+        return DI_OK;
+    }
+    if (inspection->cancellation != nullptr) {
+        const DWORD status = WaitForSingleObject(inspection->cancellation, 0U);
+        if (status == WAIT_OBJECT_0) {
+            return DIERR_INPUTLOST;
+        }
+        if (status == WAIT_FAILED) {
+            const DWORD error = GetLastError();
+            return HRESULT_FROM_WIN32(error == ERROR_SUCCESS ? ERROR_GEN_FAILURE : error);
+        }
+        if (status != WAIT_TIMEOUT) {
+            return E_UNEXPECTED;
+        }
+    }
+    return inspection->access.open() ? DI_OK : DIERR_INPUTLOST;
 }
 
 [[nodiscard]] std::size_t bounded_length(const wchar_t* value,
@@ -137,42 +163,77 @@ struct system_capture final {
     return DIENUM_STOP;
 }
 
-[[nodiscard]] std::vector<system_device> read_system_devices(IDirectInput8W& system) {
+[[nodiscard]] std::expected<DIPROPGUIDANDPATH, HRESULT>
+read_system_path(IDirectInput8W& system, REFGUID instance, const strict_inspection* inspection) {
+    if (const auto stopped = inspection_status(inspection); FAILED(stopped)) {
+        return std::unexpected{stopped};
+    }
+    IDirectInputDevice8W* device{};
+    const auto created = system.CreateDevice(instance, &device, nullptr);
+    const auto release_device = [](IDirectInputDevice8W* value) noexcept {
+        value->Release();
+    };
+    const std::unique_ptr<IDirectInputDevice8W, decltype(release_device)> owned{device,
+        release_device};
+    if (const auto stopped = inspection_status(inspection); FAILED(stopped)) {
+        return std::unexpected{stopped};
+    }
+    if (FAILED(created) || owned == nullptr) {
+        return std::unexpected{FAILED(created) ? created : DIERR_GENERIC};
+    }
+    DIPROPGUIDANDPATH property{};
+    property.diph.dwSize = static_cast<DWORD>(sizeof(property));
+    property.diph.dwHeaderSize = static_cast<DWORD>(sizeof(property.diph));
+    property.diph.dwHow = DIPH_DEVICE;
+    const auto queried =
+        inputnext_dinput_get_property_w(device, &DIPROP_GUIDANDPATH, &property.diph);
+    if (const auto stopped = inspection_status(inspection); FAILED(stopped)) {
+        return std::unexpected{stopped};
+    }
+    if (FAILED(queried)) {
+        return std::unexpected{queried};
+    }
+    const auto length = bounded_length(property.wszPath, std::size(property.wszPath));
+    if (length == 0U || length == std::size(property.wszPath)) {
+        return std::unexpected{DIERR_UNSUPPORTED};
+    }
+    return property;
+}
+
+[[nodiscard]] std::expected<std::vector<system_device>, HRESULT>
+read_system_devices(IDirectInput8W& system, const strict_inspection* inspection = nullptr) {
+    if (const auto stopped = inspection_status(inspection); FAILED(stopped)) {
+        return std::unexpected{stopped};
+    }
+    const bool strict = inspection != nullptr;
     std::vector<DIDEVICEINSTANCEW> instances;
     system_capture capture{.instances = &instances};
-    constexpr DWORD flags =
-        DIEDFL_ALLDEVICES | DIEDFL_INCLUDEALIASES | DIEDFL_INCLUDEPHANTOMS | DIEDFL_INCLUDEHIDDEN;
+    const auto flags = static_cast<DWORD>(
+        DIEDFL_INCLUDEALIASES | DIEDFL_INCLUDEHIDDEN |
+        (strict ? DIEDFL_ATTACHEDONLY : DIEDFL_ALLDEVICES | DIEDFL_INCLUDEPHANTOMS));
     const auto status =
         system.EnumDevices(DI8DEVCLASS_GAMECTRL, &capture_system_instance, &capture, flags);
 
+    if (const auto stopped = inspection_status(inspection); FAILED(stopped)) {
+        return std::unexpected{stopped};
+    }
+
     std::vector<system_device> result;
     if (FAILED(capture.failure) || FAILED(status)) {
+        if (strict) {
+            return std::unexpected{FAILED(capture.failure) ? capture.failure : status};
+        }
         return result;
     }
     result.reserve(instances.size());
-    const auto release_device = [](IDirectInputDevice8W* device) noexcept {
-        device->Release();
-    };
     for (const auto& instance : instances) {
         system_device entry{.instance = instance, .property = std::nullopt, .path = {}};
-        IDirectInputDevice8W* device{};
-        const auto created = system.CreateDevice(instance.guidInstance, &device, nullptr);
-        const std::unique_ptr<IDirectInputDevice8W, decltype(release_device)> owned{device,
-            release_device};
-        if (SUCCEEDED(created) && owned != nullptr) {
-            DIPROPGUIDANDPATH property{};
-            property.diph.dwSize = static_cast<DWORD>(sizeof(property));
-            property.diph.dwHeaderSize = static_cast<DWORD>(sizeof(property.diph));
-            property.diph.dwObj = 0U;
-            property.diph.dwHow = DIPH_DEVICE;
-            if (SUCCEEDED(
-                    inputnext_dinput_get_property_w(device, &DIPROP_GUIDANDPATH, &property.diph))) {
-                const auto length = bounded_length(property.wszPath, std::size(property.wszPath));
-                if (length > 0U && length < std::size(property.wszPath)) {
-                    entry.path.assign(property.wszPath, length);
-                    entry.property = property;
-                }
-            }
+        const auto property = read_system_path(system, instance.guidInstance, inspection);
+        if (property.has_value()) {
+            entry.path = property->wszPath;
+            entry.property = *property;
+        } else if (strict) {
+            return std::unexpected{property.error()};
         }
         result.push_back(std::move(entry));
     }
@@ -214,10 +275,14 @@ struct system_capture final {
 }
 
 [[nodiscard]] HRESULT validate_live_targets(input_access::call& access,
-    std::vector<gameinput_device>& devices) {
+    std::vector<gameinput_device>& devices,
+    bool strict) {
     for (auto entry = devices.begin(); entry != devices.end();) {
         const auto latest = access.core().read_latest(entry->record.target);
         if (!latest.has_value() && latest.error() == core::status::stale_target) {
+            if (strict) {
+                return DIERR_INPUTLOST;
+            }
             entry = devices.erase(entry);
             continue;
         }
@@ -225,6 +290,9 @@ struct system_capture final {
             return map_core_status(latest.error());
         }
         if (latest.has_value() && latest->target != entry->record.target) {
+            if (strict) {
+                return DIERR_INPUTLOST;
+            }
             entry = devices.erase(entry);
             continue;
         }
@@ -234,13 +302,18 @@ struct system_capture final {
 }
 
 [[nodiscard]] std::expected<std::vector<gameinput_device>, HRESULT> read_connection_facts(
-    input_access::call& access) {
+    input_access::call& access,
+    bool strict = false,
+    std::uint64_t* revision = nullptr) {
     const auto observed = access.core().enumerate();
     if (!observed.has_value()) {
         return std::unexpected{map_core_status(observed.error())};
     }
     if (observed->count > observed->entries.size()) {
         return std::unexpected{DIERR_GENERIC};
+    }
+    if (revision != nullptr) {
+        *revision = observed->revision;
     }
     std::vector<gameinput_device> result;
     result.reserve(observed->count);
@@ -250,16 +323,33 @@ struct system_capture final {
             .system_index = std::numeric_limits<std::size_t>::max(),
             .generated_instance = {}};
         const auto metadata = access.runtime().query_metadata(entry.record.target);
-        if (metadata.has_value() && metadata->target == entry.record.target &&
-            metadata->native.pnp_path_utf8.has_value()) {
-            auto path = utf8_to_wide(metadata->native.pnp_path_utf8.value);
-            if (path.has_value()) {
-                entry.path = std::move(*path);
+        if (strict && !metadata.has_value()) {
+            switch (metadata.error()) {
+            case metadata_error::resource_exhausted:
+                return std::unexpected{DIERR_OUTOFMEMORY};
+            case metadata_error::busy:
+                return std::unexpected{HRESULT_FROM_WIN32(ERROR_BUSY)};
+            case metadata_error::closed:
+            case metadata_error::not_connected:
+            case metadata_error::stale:
+                return std::unexpected{DIERR_INPUTLOST};
             }
+        }
+        if (metadata.has_value() && metadata->target == entry.record.target) {
+            entry.metadata_generation = metadata->catalogue_generation;
+            if (metadata->native.pnp_path_utf8.has_value()) {
+                auto path = utf8_to_wide(metadata->native.pnp_path_utf8.value);
+                if (path.has_value()) {
+                    entry.path = std::move(*path);
+                }
+            }
+        }
+        if (strict && entry.path.empty()) {
+            return std::unexpected{DIERR_UNSUPPORTED};
         }
         result.push_back(std::move(entry));
     }
-    const auto valid = validate_live_targets(access, result);
+    const auto valid = validate_live_targets(access, result, strict);
     if (FAILED(valid)) {
         return std::unexpected{valid};
     }
@@ -344,8 +434,11 @@ enum class discovery_probe : std::uint8_t { pending, found, stop };
 [[nodiscard]] std::expected<std::wstring, HRESULT> unique_native_path(IDirectInput8W& system,
     REFGUID instance) {
     const auto devices = read_system_devices(system);
+    if (!devices.has_value()) {
+        return std::unexpected{devices.error()};
+    }
     const system_device* match{};
-    for (const auto& device : devices) {
+    for (const auto& device : *devices) {
         if (IsEqualGUID(device.instance.guidInstance, instance) == 0) {
             continue;
         }
@@ -355,8 +448,8 @@ enum class discovery_probe : std::uint8_t { pending, found, stop };
         match = &device;
     }
     if (match == nullptr || match->path.empty() ||
-        !guid_appears_once(match->instance.guidInstance, devices) ||
-        std::ranges::count_if(devices,
+        !guid_appears_once(match->instance.guidInstance, *devices) ||
+        std::ranges::count_if(*devices,
             [match](const auto& device) { return same_path(match->path, device.path); }) != 1) {
         return std::unexpected{DIERR_UNSUPPORTED};
     }
@@ -465,15 +558,18 @@ HRESULT project_catalogue(input_access::call access,
         }
         access = input_access::call{};
         const auto system_devices = read_system_devices(system);
-        correlate_paths(*facts, system_devices);
-        const auto generated = generate_identities(*facts, system_devices);
+        if (!system_devices.has_value()) {
+            return system_devices.error();
+        }
+        correlate_paths(*facts, *system_devices);
+        const auto generated = generate_identities(*facts, *system_devices);
         if (FAILED(generated)) {
             return generated;
         }
         out.devices.reserve(facts->size());
         out.suppressed_system_guids.reserve(facts->size());
         for (const auto& device : *facts) {
-            append_projection(device, system_devices, out);
+            append_projection(device, *system_devices, out);
         }
         return S_OK;
     } catch (const std::bad_alloc&) {
@@ -481,6 +577,97 @@ HRESULT project_catalogue(input_access::call access,
         return DIERR_OUTOFMEMORY;
     } catch (...) {
         out = {};
+        return DIERR_GENERIC;
+    }
+}
+
+HRESULT qualify_exclusive_device(input_access& access,
+    IDirectInput8W& system,
+    connection_target target,
+    REFGUID native_instance,
+    const DIPROPGUIDANDPATH& path,
+    const HANDLE cancellation) noexcept {
+    try {
+        const auto length = bounded_length(path.wszPath, std::size(path.wszPath));
+        if (!target.valid() || length == 0U || length == std::size(path.wszPath)) {
+            return DIERR_UNSUPPORTED;
+        }
+        const strict_inspection inspection{.access = access, .cancellation = cancellation};
+        if (const auto stopped = inspection_status(&inspection); FAILED(stopped)) {
+            return stopped;
+        }
+        const std::wstring expected_path{path.wszPath, length};
+        std::uint64_t revision{};
+        auto call = access.enter();
+        if (!call) {
+            return DIERR_INPUTLOST;
+        }
+        const auto initial = call.core().read_latest(target);
+        if (!initial.has_value() && initial.error() != core::status::no_data) {
+            return DIERR_INPUTLOST;
+        }
+        auto facts = read_connection_facts(call, true, &revision);
+        call = input_access::call{};
+        if (!facts.has_value()) {
+            return facts.error();
+        }
+        const auto system_devices = read_system_devices(system, &inspection);
+        if (!system_devices.has_value()) {
+            return system_devices.error();
+        }
+        if (const auto stopped = inspection_status(&inspection); FAILED(stopped)) {
+            return stopped;
+        }
+        correlate_paths(*facts, *system_devices);
+        const auto found = std::ranges::find_if(*facts,
+            [&target](const auto& item) { return item.record.target == target; });
+        if (found == facts->end()) {
+            return DIERR_INPUTLOST;
+        }
+        if (found->system_index >= system_devices->size() ||
+            !same_path(found->path, expected_path)) {
+            return DIERR_UNSUPPORTED;
+        }
+        const auto& native = (*system_devices)[found->system_index];
+        if (native.instance.guidInstance != native_instance || !native.property.has_value() ||
+            native.property->guidClass != path.guidClass ||
+            !same_path(native.path, expected_path)) {
+            return DIERR_UNSUPPORTED;
+        }
+        call = access.enter();
+        if (!call) {
+            return DIERR_INPUTLOST;
+        }
+        const auto latest = call.core().read_latest(target);
+        if (!latest.has_value() && latest.error() != core::status::no_data) {
+            return DIERR_INPUTLOST;
+        }
+        std::uint64_t current_revision{};
+        const auto current_facts = read_connection_facts(call, true, &current_revision);
+        if (!current_facts.has_value()) {
+            return current_facts.error();
+        }
+        // Core's revision describes its public projection, which omits PnP paths.
+        // Every runtime facts generation must also survive native inspection.
+        if (current_revision != revision ||
+            !std::ranges::equal(*facts, *current_facts, [](const auto& before, const auto& after) {
+                return before.record.target == after.record.target &&
+                       before.metadata_generation == after.metadata_generation &&
+                       same_path(before.path, after.path);
+            })) {
+            return HRESULT_FROM_WIN32(ERROR_BUSY);
+        }
+        const auto current = call.core().enumerate();
+        if (!current.has_value()) {
+            return map_core_status(current.error());
+        }
+        if (current->revision != revision) {
+            return HRESULT_FROM_WIN32(ERROR_BUSY);
+        }
+        return inspection_status(&inspection);
+    } catch (const std::bad_alloc&) {
+        return DIERR_OUTOFMEMORY;
+    } catch (...) {
         return DIERR_GENERIC;
     }
 }

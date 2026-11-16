@@ -15,8 +15,11 @@ add_library(inputnext_dinput STATIC
     com/device.cpp
     com/factory.cpp
     com/root.cpp
+    exclusive/lease.cpp
+    exclusive/ownership.cpp
     input_access.cpp
     control_wait.cpp
+    device_input.cpp
     device_info.cpp
     device_properties.cpp
     property_abi.c

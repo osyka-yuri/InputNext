@@ -359,10 +359,11 @@ TEST_CASE("dinput.buffered_equal_cut_timestamp_latches_loss_until_a_consuming_re
           DI_BUFFEROVERFLOW);
     CHECK(query_count == 0U);
 
-    enqueue_pad_reading(script,
-        {.timestamp = buffered_cut_timestamp + 1U, .buttons = buffered_button});
+    // Advance the checkpoint with the state at the cut before sending a new transition.
+    enqueue_pad_reading(script, {.timestamp = buffered_cut_timestamp + 1U, .buttons = 0U});
     enqueue_checkpoint(script, buffered_cut_timestamp + 1U);
-    enqueue_pad_reading(script, {.timestamp = buffered_cut_timestamp + 2U, .buttons = 0U});
+    enqueue_pad_reading(script,
+        {.timestamp = buffered_cut_timestamp + 2U, .buttons = buffered_button});
     enqueue_checkpoint(script, buffered_cut_timestamp + 2U);
     REQUIRE(wait_for_buffer_count(*device.get(), 1U));
 
@@ -370,25 +371,21 @@ TEST_CASE("dinput.buffered_equal_cut_timestamp_latches_loss_until_a_consuming_re
     auto count = static_cast<DWORD>(events.size());
     CHECK(device->GetDeviceData(data_size<DIDEVICEOBJECTDATA>(), events.data(), &count, 0U) ==
           DI_BUFFEROVERFLOW);
-    REQUIRE(count > 0U);
-    CHECK(count <= events.size());
-    for (DWORD index = 0U; index < count; ++index) {
-        CHECK(events[index].dwOfs == offsetof(compact_state, buttons));
-        CHECK(((events[index].dwData == 0U) || (events[index].dwData == 0x80U)));
-        if (index > 0U) {
-            CHECK(events[index - 1U].dwSequence < events[index].dwSequence);
-        }
-    }
+    REQUIRE(count == 1U);
+    CHECK(events.front().dwOfs == offsetof(compact_state, buttons));
+    CHECK(events.front().dwData == 0x80U);
+    const auto first_sequence = events.front().dwSequence;
 
-    enqueue_pad_reading(script,
-        {.timestamp = buffered_cut_timestamp + 3U, .buttons = buffered_button});
+    enqueue_pad_reading(script, {.timestamp = buffered_cut_timestamp + 3U, .buttons = 0U});
     enqueue_checkpoint(script, buffered_cut_timestamp + 3U);
     REQUIRE(wait_for_buffer_count(*device.get(), 1U));
     count = static_cast<DWORD>(events.size());
     CHECK(
         device->GetDeviceData(data_size<DIDEVICEOBJECTDATA>(), events.data(), &count, 0U) == DI_OK);
-    CHECK(count == 1U);
-    CHECK(((events[0U].dwData == 0x80U) || (events[0U].dwData == 0U)));
+    REQUIRE(count == 1U);
+    CHECK(events.front().dwOfs == offsetof(compact_state, buttons));
+    CHECK(events.front().dwData == 0U);
+    CHECK(events.front().dwSequence > first_sequence);
 }
 
 TEST_CASE("dinput.buffered_late_pre_cut_guide_is_loss_without_a_synthetic_transition",

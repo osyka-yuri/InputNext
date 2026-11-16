@@ -14,6 +14,8 @@ struct host final {
     void* context{};
     HRESULT (*create_system)(void*, HINSTANCE, DWORD, REFIID, void**, IUnknown*) noexcept {
         &create_system_input};
+    // Custom providers retain their context/code through asynchronous ownership work.
+    std::shared_ptr<void> system_lifetime{nullptr};
     bool (*is_runtime_provider)(void*, HINSTANCE) noexcept {};
 };
 

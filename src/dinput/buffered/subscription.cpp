@@ -1,5 +1,6 @@
 #include "subscription.hpp"
 
+#include "dinput/control_wait.hpp"
 #include "dinput/device_properties.hpp"
 #include "dinput/format.hpp"
 #include "dinput/native_types.hpp"
@@ -27,6 +28,11 @@
 
 namespace inputnext::dinput {
 namespace {
+
+[[nodiscard]] HRESULT last_error_result() noexcept {
+    const auto error = GetLastError();
+    return HRESULT_FROM_WIN32(error == ERROR_SUCCESS ? ERROR_INVALID_HANDLE : error);
+}
 
 [[nodiscard]] bool is_supported_stride(DWORD stride) noexcept {
     return stride == sizeof(DIDEVICEOBJECTDATA) || stride == sizeof(DIDEVICEOBJECTDATA_DX3);
@@ -100,6 +106,29 @@ struct buffered_subscription::implementation final {
                   ? 0U
                   : std::min(configuration.requested_size, maximum_buffer_size) - 1U)),
           queue(capacity) {}
+
+    implementation(const implementation&) = delete;
+    implementation& operator=(const implementation&) = delete;
+    implementation(implementation&&) = delete;
+    implementation& operator=(implementation&&) = delete;
+
+    ~implementation() {
+        if (control_ready != nullptr) {
+            static_cast<void>(CloseHandle(control_ready));
+        }
+    }
+
+    void notify_ready_locked() noexcept {
+        ready.notify_all();
+        if (control_ready != nullptr && (prepared || terminal)) {
+            static_cast<void>(SetEvent(control_ready));
+        }
+    }
+
+    void notify_ready() noexcept {
+        std::scoped_lock lock{gate};
+        notify_ready_locked();
+    }
 
     void set_loss(bool continuity_unknown) noexcept {
         overflow_latched = true;
@@ -286,6 +315,7 @@ struct buffered_subscription::implementation final {
 
     mutable std::mutex gate;
     std::condition_variable ready;
+    HANDLE control_ready{};
     std::mutex signal_gate;
     buffer_configuration configuration;
     std::size_t capacity{};
@@ -343,9 +373,30 @@ bool buffered_subscription::finished() const noexcept {
     return implementation_->terminal;
 }
 
-HRESULT buffered_subscription::wait_ready() {
+HRESULT buffered_subscription::wait_ready(HANDLE cancellation) {
     auto& state = *implementation_;
     std::unique_lock lock{state.gate};
+    if (cancellation != nullptr) {
+        if (state.control_ready == nullptr) {
+            state.control_ready = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            if (state.control_ready == nullptr) {
+                return last_error_result();
+            }
+        }
+        state.notify_ready_locked();
+        const std::array<HANDLE, 2U> events{cancellation, state.control_ready};
+        lock.unlock();
+        std::size_t signalled{};
+        const auto waited = wait_for_native_control(events, signalled);
+        if (FAILED(waited)) {
+            return waited;
+        }
+        if (signalled == 0U || WaitForSingleObject(cancellation, 0U) == WAIT_OBJECT_0) {
+            return DIERR_INPUTLOST;
+        }
+        lock.lock();
+        return state.prepared && !state.terminal ? DI_OK : state.terminal_result;
+    }
     state.ready.wait(lock, [&state] { return state.prepared || state.terminal; });
     if (state.prepared && !state.terminal) {
         return DI_OK;
@@ -370,7 +421,7 @@ void buffered_subscription::prepare(const history_detail::reader_boundary& bound
             state.terminal = true;
             state.terminal_result = DIERR_INPUTLOST;
             state.set_loss(true);
-            state.ready.notify_all();
+            state.notify_ready_locked();
             return;
         }
         if (boundary.checkpoint_qpc == 0U) {
@@ -392,7 +443,7 @@ void buffered_subscription::prepare(const history_detail::reader_boundary& bound
             state.set_loss(true);
         }
     }
-    state.ready.notify_all();
+    state.notify_ready();
 }
 
 bool buffered_subscription::activate() noexcept {
@@ -429,12 +480,12 @@ void buffered_subscription::accept(const history_detail::observed_read& read,
         state.terminal = true;
         state.terminal_result = DIERR_INPUTLOST;
         state.set_loss(true);
-        state.ready.notify_all();
+        state.notify_ready_locked();
         return;
     }
     if (domain.stream == 0U) {
         state.set_loss(true);
-        state.ready.notify_all();
+        state.notify_ready_locked();
         return;
     }
     if (domain != state.current_domain) {
@@ -465,7 +516,7 @@ void buffered_subscription::accept(const history_detail::observed_read& read,
     }
 
     state.finish_read(read, busy);
-    state.ready.notify_all();
+    state.notify_ready_locked();
 }
 
 HRESULT buffered_subscription::read(DWORD stride,
@@ -526,7 +577,7 @@ void buffered_subscription::cancel() noexcept {
         state.terminal_result = DIERR_INPUTLOST;
         state.notification_dirty = false;
     }
-    state.ready.notify_all();
+    state.notify_ready();
 }
 
 void buffered_subscription::lose() noexcept {
@@ -541,7 +592,7 @@ void buffered_subscription::lose() noexcept {
         state.set_loss(true);
         state.notification_dirty = state.acquired;
     }
-    state.ready.notify_all();
+    state.notify_ready();
 }
 
 void buffered_subscription::fail(HRESULT error) noexcept {
@@ -558,7 +609,7 @@ void buffered_subscription::fail(HRESULT error) noexcept {
             state.notification_dirty = state.acquired;
         }
     }
-    state.ready.notify_all();
+    state.notify_ready();
 }
 
 void buffered_subscription::signal_pending() noexcept {

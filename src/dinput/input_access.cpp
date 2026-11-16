@@ -1,6 +1,7 @@
 #include "input_access.hpp"
 
 #include "dinput/buffered/service.hpp"
+#include "dinput/exclusive/ownership.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -17,7 +18,8 @@ input_access::input_access(core::service& core,
       runtime_(runtime),
       focus_(focus),
       discovery_(discovery_budget),
-      buffers_(std::make_unique<buffered_input>(core, runtime, focus)) {
+      buffers_(std::make_unique<buffered_input>(core, runtime, focus)),
+      exclusives_(std::make_unique<exclusive_input>(*this)) {
 }
 
 input_access::~input_access() {
@@ -67,6 +69,10 @@ buffered_input& input_access::call::buffers() const noexcept {
     return *owner_->buffers_;
 }
 
+exclusive_input& input_access::call::exclusives() const noexcept {
+    return *owner_->exclusives_;
+}
+
 input_access::call input_access::enter() noexcept {
     auto observed = admission_.load(std::memory_order_acquire);
     while ((observed & closed_bit) == 0U && observed < closed_bit - 1U) {
@@ -97,6 +103,8 @@ void input_access::leave() noexcept {
 void input_access::close_admission() noexcept {
     admission_.fetch_or(closed_bit, std::memory_order_acq_rel);
     discovery_.close();
+    // Cancel native ownership before buffered notification synchronization.
+    exclusives_->close_admission();
     buffers_->close_admission();
 }
 
@@ -106,13 +114,15 @@ void input_access::drain() noexcept {
         admission_.wait(observed, std::memory_order_acquire);
         observed = admission_.load(std::memory_order_acquire);
     }
+    exclusives_->drain();
     buffers_->drain();
 }
 
-void input_access::refresh_buffered_eligibility() noexcept {
+void input_access::refresh_eligibility() noexcept {
     const auto admitted = enter();
     if (admitted) {
         buffers_->refresh_eligibility();
+        exclusives_->refresh_eligibility(admitted);
     }
 }
 

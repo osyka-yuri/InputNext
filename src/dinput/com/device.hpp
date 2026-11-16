@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dinput/exclusive/ownership.hpp"
 #include "dinput/native_types.hpp"
 
 #include <memory>
@@ -14,6 +15,7 @@ struct device_identity;
     std::shared_ptr<input_access> access,
     IUnknown& parent,
     bool unicode,
-    void** out) noexcept;
+    void** out,
+    native_input_factory factory = {}) noexcept;
 
 } // namespace inputnext::dinput

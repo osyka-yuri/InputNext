@@ -4,9 +4,10 @@ InputNext provides an app-local `dinput8.dll` for x86 and x64 processes. It pres
 normalized GameInput gamepad profile through DirectInput 8 A/W interfaces, using the same
 runtime, device connections and cached input as XInput and the Core SDK.
 
-This version supports nonexclusive gamepad input with immediate and buffered reads and
-event notification. Exclusive acquisition, action mapping and DirectInput force feedback
-are unsupported. Devices forwarded to Windows retain their native DirectInput behavior.
+This version supports immediate and buffered gamepad input, event notification and
+foreground exclusive acquisition. Background exclusive acquisition, action mapping and
+DirectInput force feedback are unsupported. Devices forwarded to Windows retain their
+native DirectInput behavior.
 
 ## Loading
 
@@ -113,8 +114,9 @@ settings affect this DI object and do not modify shared samples or XInput transl
 ## Acquisition and state
 
 Set a data format and a cooperative level before `Acquire`. Supply a valid top-level
-window belonging to the process, with either `DISCL_FOREGROUND` or `DISCL_BACKGROUND`
-and `DISCL_NONEXCLUSIVE`. Valid exclusive requests return `DIERR_UNSUPPORTED`.
+window belonging to the process. Nonexclusive mode accepts `DISCL_FOREGROUND` or
+`DISCL_BACKGROUND`. Exclusive mode accepts only `DISCL_FOREGROUND` and requires a
+qualified native match. Background exclusive requests return `DIERR_UNSUPPORTED`.
 
 Foreground acquisition requires fresh evidence for the associated window. Losing that
 window, including a switch to another window of the same process, or losing fresh
@@ -132,6 +134,36 @@ returns `DIERR_NOTACQUIRED`; lost acquisition or a retired connection returns
 
 The profile does not require polling. `Poll` checks acquisition eligibility and returns
 `DI_NOEFFECT`.
+
+## Foreground exclusive ownership
+
+Exclusive acquisition uses a private Windows DirectInput device for the exact matched
+controller. `Acquire` rechecks the full PnP interface path and one-to-one correspondence;
+missing or incomplete evidence returns an error. An attached controller whose path
+cannot be inspected can make the match ambiguous. VID/PID and names are insufficient.
+Windows receives the cooperative level and acquisition request. Its failures are
+reported to the caller. State and buffered events still come from the shared InputNext
+cache and history. This mode does not exclude XInput, GameInput or all nonexclusive
+DirectInput access.
+
+`Unacquire` first closes local input delivery. For an active exclusive acquisition it
+normally waits for native release and returns its result. Cancellation of an unfinished
+`Acquire` returns promptly; a late native success is released without enabling input.
+Cleanup still occupies its resource slot. A new exclusive attempt conflicting with
+pending cleanup returns `HRESULT_FROM_WIN32(ERROR_BUSY)`.
+
+Control waits dispatch sent window messages without consuming queued application input.
+New exclusive attempts from sent-message callbacks return busy; an already pending
+`Acquire` returns `DIERR_ACQUIRED`. If a sent-message callback cannot safely
+wait for native cleanup, `Unacquire` returns `E_PENDING`; call it again outside that
+callback to observe completion. These rules cover InputNext input controls. Forwarded
+system COM operations and native provider destruction retain their existing behavior.
+
+The session permits 16 resident native ownership attempts, including closing attempts,
+independently of buffered history lanes. Exhaustion returns `DIERR_OUTOFMEMORY`.
+Unresponsive native calls can delay release and shutdown. If shutdown waits five
+seconds for a native ownership worker, it reports the thread ID in Windows debug
+output and continues waiting for the worker to finish.
 
 ## Buffered input and notifications
 
@@ -169,7 +201,7 @@ Objects for the same connection share a worker through reader handoffs. Session 
 is 16 resident workers and 64 resident subscriptions, including resources awaiting cleanup.
 The capped queues keep their combined event payload below 8 MiB.
 
-Games that require exclusive mode, action mapping or force feedback may be unable to
-use the normalized device. Force-feedback capabilities are absent and effect
+Games that require background exclusive mode, action mapping or force feedback may be
+unable to use the normalized device. Force-feedback capabilities are absent and effect
 enumeration is empty. XInput rumble and the Effects SDK remain available through their
 own contracts. Sony Bluetooth remains input-only.

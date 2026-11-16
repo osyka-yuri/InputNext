@@ -12,8 +12,10 @@
 #include <inputnext/device_identity.hpp>
 #include <inputnext/device_metadata.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -21,6 +23,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -29,23 +32,122 @@ namespace inputnext::dinput_catalogue_test {
 
 using namespace std::chrono_literals;
 
+enum class native_operation : std::uint8_t {
+    factory_create,
+    enum_devices,
+    create_device,
+    guid_and_path,
+    set_data_format,
+    set_cooperative_level,
+    acquire,
+    unacquire,
+    release_device,
+    release_root,
+    count,
+};
+
+struct native_observation final {
+    native_operation operation{};
+    std::thread::id thread{};
+    HRESULT result{DI_OK};
+    const DIDATAFORMAT* format{};
+    HWND window{};
+    DWORD flags{};
+    bool selected_device{};
+    bool single_threaded_apartment{};
+};
+
+struct native_message final {
+    HWND window{};
+    UINT message{};
+    WPARAM wparam{};
+    LPARAM lparam{};
+};
+
+class native_control_script final {
+public:
+    native_control_script() = default;
+    ~native_control_script() = default;
+    native_control_script(const native_control_script&) = delete;
+    native_control_script& operator=(const native_control_script&) = delete;
+    native_control_script(native_control_script&&) = delete;
+    native_control_script& operator=(native_control_script&&) = delete;
+
+    void set_result(native_operation operation, HRESULT result) noexcept;
+    void block_next(native_operation operation, bool selected_device_only = false) noexcept;
+    [[nodiscard]] bool wait_for_entry(native_operation operation,
+        std::size_t entry_count = 1U,
+        std::chrono::milliseconds timeout = 2s) const;
+    void release_block(native_operation operation) noexcept;
+    void send_message_on(native_operation operation, native_message message) noexcept;
+    void clear_send_message() noexcept;
+    void set_opened_path_after_acquire(std::wstring path);
+    [[nodiscard]] bool copy_opened_path_after_acquire(bool acquired,
+        wchar_t* destination,
+        std::size_t capacity) const noexcept;
+    [[nodiscard]] HRESULT observe(native_operation operation,
+        const DIDATAFORMAT* format = nullptr,
+        HWND window = nullptr,
+        DWORD flags = 0U,
+        bool selected_device = false) noexcept;
+    [[nodiscard]] std::size_t count(native_operation operation) const noexcept;
+    [[nodiscard]] std::thread::id last_thread(native_operation operation) const noexcept;
+    [[nodiscard]] std::vector<native_observation> observations() const;
+
+private:
+    struct operation_state final {
+        HRESULT result{DI_OK};
+        std::size_t calls{};
+        std::size_t entries{};
+        std::thread::id last_thread{};
+        bool block_next{};
+        bool selected_device_only{};
+        bool blocked{};
+        bool released{};
+    };
+
+    [[nodiscard]] static std::size_t index(native_operation operation) noexcept;
+
+    mutable std::mutex gate_;
+    mutable std::condition_variable changed_;
+    std::array<operation_state, static_cast<std::size_t>(native_operation::count)> operations_{};
+    std::vector<native_observation> observations_;
+    native_operation send_operation_{native_operation::count};
+    HWND send_window_{};
+    UINT send_message_{};
+    WPARAM send_wparam_{};
+    LPARAM send_lparam_{};
+    bool send_once_{};
+    std::wstring opened_path_after_acquire_;
+};
+
 struct system_device_record final {
     DIDEVICEINSTANCEW instance{};
     std::wstring path;
     DWORD vendor_product{0x0CE6054CU};
     bool force_feedback{};
     bool attached{true};
+    HRESULT create_device_result{DI_OK};
+    HRESULT guid_path_result{DI_OK};
+    std::shared_ptr<native_control_script> controls{nullptr};
 };
 
 struct system_input_state final {
     mutable std::mutex gate;
     std::vector<system_device_record> devices;
+    HRESULT enum_devices_result{DI_OK};
+    std::shared_ptr<native_control_script> controls{std::make_shared<native_control_script>()};
 };
 
 struct host_context final {
     std::shared_ptr<dinput::input_access> access;
     std::shared_ptr<system_input_state> system;
     mutable std::atomic<std::uint32_t> session_requests;
+};
+
+// A native factory test context retains only fake native state, never input_access.
+struct native_factory_context final {
+    std::shared_ptr<system_input_state> system;
 };
 
 [[nodiscard]] inline std::shared_ptr<dinput::input_access> session(void* value) noexcept {
@@ -55,6 +157,12 @@ struct host_context final {
 }
 
 [[nodiscard]] HRESULT create_system(void* value,
+    HINSTANCE instance,
+    DWORD version,
+    REFIID iid,
+    void** out,
+    IUnknown* outer) noexcept;
+[[nodiscard]] HRESULT create_native_system(void* value,
     HINSTANCE instance,
     DWORD version,
     REFIID iid,

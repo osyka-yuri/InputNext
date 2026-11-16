@@ -120,6 +120,32 @@ private:
     std::shared_ptr<dinput::input_access> access_;
 };
 
+class release_native_block final {
+public:
+    release_native_block(std::shared_ptr<native_control_script> controls,
+        native_operation operation) noexcept
+        : controls_(std::move(controls)),
+          operation_(operation) {}
+
+    ~release_native_block() { release(); }
+
+    release_native_block(const release_native_block&) = delete;
+    release_native_block& operator=(const release_native_block&) = delete;
+    release_native_block(release_native_block&&) = delete;
+    release_native_block& operator=(release_native_block&&) = delete;
+
+    void release() noexcept {
+        if (controls_ != nullptr) {
+            controls_->release_block(operation_);
+            controls_.reset();
+        }
+    }
+
+private:
+    std::shared_ptr<native_control_script> controls_;
+    native_operation operation_{};
+};
+
 struct releasing_host final {
     host_context* context{};
     root_owner caller;
@@ -318,6 +344,27 @@ TEST_CASE("dinput.discovery.capacity_forwards_excess_creations_and_recovers",
     const auto forwarded = next_wave.get();
     REQUIRE(forwarded.status == DI_OK);
     CHECK(axes(forwarded.device) == 0U);
+}
+
+TEST_CASE("dinput.discovery.shutdown_during_native_inspection_does_not_reenter_session_ports",
+    "[integration][dinput][input][discovery][lifecycle][concurrency]") {
+    environment fixture;
+    const auto instance = guid(704U);
+    fixture.add_system_gamepad(instance, native_startup_path);
+    const auto root = fixture.create_root();
+    const auto controls = fixture.system->controls;
+    controls->block_next(native_operation::enum_devices);
+
+    auto pending = std::async(std::launch::async, [&] { return create(*root, instance); });
+    release_native_block release{controls, native_operation::enum_devices};
+    REQUIRE(controls->wait_for_entry(native_operation::enum_devices));
+    fixture.shutdown();
+    release.release();
+
+    const auto result = pending.get();
+    REQUIRE(result.status == DI_OK);
+    CHECK(axes(result.device) == 0U);
+    CHECK_FALSE(fixture.context.access->open());
 }
 
 TEST_CASE("dinput.discovery.exhausted_budget_keeps_old_native_objects_and_allows_new_warm_creation",

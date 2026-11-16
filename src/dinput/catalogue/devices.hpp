@@ -27,6 +27,15 @@ struct catalogue_projection final {
     REFGUID instance,
     device_identity& out) noexcept;
 
+// Exclusive ownership requires complete evidence, including every possible
+// competitor. Public discovery intentionally keeps its permissive fallback.
+[[nodiscard]] HRESULT qualify_exclusive_device(input_access& access,
+    IDirectInput8W& system,
+    connection_target target,
+    REFGUID native_instance,
+    const DIPROPGUIDANDPATH& path,
+    HANDLE cancellation = nullptr) noexcept;
+
 [[nodiscard]] bool is_game_controller_type(DWORD device_type) noexcept;
 [[nodiscard]] bool is_game_controller_request(DWORD device_type) noexcept;
 [[nodiscard]] bool instance_matches_type(const DIDEVICEINSTANCEW& instance,

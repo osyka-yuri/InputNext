@@ -22,6 +22,7 @@ class observer;
 namespace inputnext::dinput {
 
 class buffered_input;
+class exclusive_input;
 
 // COM objects retain this control block, not the borrowed session dependencies.
 // Close admission and drain admitted calls before destroying those dependencies.
@@ -51,6 +52,7 @@ public:
         [[nodiscard]] gameinput_runtime& runtime() const noexcept;
         [[nodiscard]] focus::observer& focus() const noexcept;
         [[nodiscard]] buffered_input& buffers() const noexcept;
+        [[nodiscard]] exclusive_input& exclusives() const noexcept;
 
     private:
         friend class input_access;
@@ -63,7 +65,7 @@ public:
     void notify_discovery() noexcept;
     void close_admission() noexcept;
     void drain() noexcept;
-    void refresh_buffered_eligibility() noexcept;
+    void refresh_eligibility() noexcept;
     [[nodiscard]] bool open() const noexcept;
 
 private:
@@ -75,6 +77,7 @@ private:
     focus::observer& focus_;
     catalogue_discovery discovery_;
     std::unique_ptr<buffered_input> buffers_;
+    std::unique_ptr<exclusive_input> exclusives_;
 };
 
 } // namespace inputnext::dinput

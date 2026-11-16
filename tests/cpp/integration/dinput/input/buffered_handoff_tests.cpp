@@ -140,7 +140,7 @@ TEST_CASE("dinput.failed_reacquire_retires_prior_notification_before_unacquire",
     REQUIRE(ResetEvent(event.get()) != FALSE);
 
     // Retained history snapshots must not deliver the previous acquisition's loss later.
-    access->refresh_buffered_eligibility();
+    access->refresh_eligibility();
     CHECK(WaitForSingleObject(event.get(), 0U) == WAIT_TIMEOUT);
     for (const auto& subscription : pending) {
         subscription->cancel();

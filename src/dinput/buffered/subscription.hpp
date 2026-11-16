@@ -45,7 +45,7 @@ public:
     [[nodiscard]] bool pending() const noexcept;
     [[nodiscard]] bool active() const noexcept;
     [[nodiscard]] bool finished() const noexcept;
-    [[nodiscard]] HRESULT wait_ready();
+    [[nodiscard]] HRESULT wait_ready(HANDLE cancellation = nullptr);
 
     void prepare(const history_detail::reader_boundary& boundary,
         std::optional<history_sample> baseline) noexcept;

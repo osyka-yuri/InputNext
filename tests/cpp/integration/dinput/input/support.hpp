@@ -366,13 +366,19 @@ private:
 
 class focus_window_fixture final {
 public:
-    focus_window_fixture() {
+    using clock_callback = std::chrono::steady_clock::time_point (*)(const void*) noexcept;
+
+    explicit focus_window_fixture(const clock_callback now = nullptr,
+        const void* clock_context = nullptr) {
         auto source = std::make_unique<switchable_window_source>(process_);
         source_ = source.get();
+        if (now != nullptr && clock_context == nullptr) {
+            throw std::invalid_argument{"custom focus clock requires a context"};
+        }
         observer_ = focus::detail::observer_test_access::make_with_clock(focus_identity(),
             std::move(source),
-            &test::focus::manual_clock::read,
-            &clock_);
+            now == nullptr ? &test::focus::manual_clock::read : now,
+            now == nullptr ? static_cast<const void*>(&clock_) : clock_context);
         if (!wait_until([this] {
                 const auto published = observer_->published();
                 return published.window_available && published.foreground_window == 1U;

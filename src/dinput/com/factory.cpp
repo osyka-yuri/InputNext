@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 #include <new>
+#include <utility>
 
 namespace inputnext::dinput {
 namespace {
@@ -20,7 +21,8 @@ public:
     direct_input_class_factory(direct_input_class_factory&&) = delete;
     direct_input_class_factory& operator=(direct_input_class_factory&&) = delete;
 
-    explicit direct_input_class_factory(const host& supplied_host) noexcept : host_(supplied_host) {
+    explicit direct_input_class_factory(host supplied_host) noexcept
+        : host_(std::move(supplied_host)) {
         object_created();
     }
 

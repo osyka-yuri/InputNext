@@ -3,6 +3,7 @@
 #include "device.hpp"
 #include "dinput/catalogue/devices.hpp"
 #include "dinput/device_info.hpp"
+#include "dinput/exclusive/ownership.hpp"
 #include "dinput/input_access.hpp"
 #include "dinput/native_types.hpp"
 
@@ -139,7 +140,7 @@ public:
     direct_input_root(direct_input_root&&) = delete;
     direct_input_root& operator=(direct_input_root&&) = delete;
 
-    explicit direct_input_root(const host& supplied_host) noexcept : host_(supplied_host) {
+    explicit direct_input_root(host supplied_host) noexcept : host_(std::move(supplied_host)) {
         object_created();
     }
 
@@ -281,6 +282,7 @@ public:
         }
 
         system_ = system;
+        instance_ = instance;
         if (host_.is_runtime_provider != nullptr &&
             host_.is_runtime_provider(host_.context, instance)) {
             // The provider must finish its own enumeration before normalized discovery can succeed.
@@ -509,7 +511,16 @@ private:
             return S_FALSE;
         }
         auto& canonical_parent = static_cast<IUnknown&>(*static_cast<IDirectInput8A*>(this));
-        return make_device(identity, std::move(shared_access), canonical_parent, unicode, out);
+        native_input_factory factory{.create = host_.create_system,
+            .context = host_.create_system == &create_system_input ? nullptr : host_.context,
+            .instance = instance_,
+            .lifetime = host_.system_lifetime};
+        return make_device(identity,
+            std::move(shared_access),
+            canonical_parent,
+            unicode,
+            out,
+            std::move(factory));
     }
 
     [[nodiscard]] HRESULT
@@ -710,6 +721,7 @@ private:
     std::atomic<std::uint32_t> initialization_;
     host host_{};
     IDirectInput8W* system_{};
+    HINSTANCE instance_{};
 };
 
 } // namespace

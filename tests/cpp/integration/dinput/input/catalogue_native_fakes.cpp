@@ -1,20 +1,217 @@
 #include "catalogue_test_support.hpp"
 
+#include <objbase.h>
+
 #include <Windows.h>
 #include <dinput.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <memory>
 #include <mutex>
 #include <new>
 #include <optional>
+#include <string>
+#include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
 namespace inputnext::dinput_catalogue_test {
+
+std::size_t native_control_script::index(const native_operation operation) noexcept {
+    return static_cast<std::size_t>(operation);
+}
+
+void native_control_script::set_result(const native_operation operation,
+    const HRESULT result) noexcept {
+    const auto slot = index(operation);
+    if (slot >= operations_.size()) {
+        return;
+    }
+    std::scoped_lock lock{gate_};
+    operations_[slot].result = result;
+}
+
+void native_control_script::block_next(const native_operation operation,
+    const bool selected_device_only) noexcept {
+    const auto slot = index(operation);
+    if (slot >= operations_.size()) {
+        return;
+    }
+    std::scoped_lock lock{gate_};
+    auto& state = operations_[slot];
+    state.block_next = true;
+    state.selected_device_only = selected_device_only;
+    state.blocked = false;
+    state.released = false;
+}
+
+bool native_control_script::wait_for_entry(const native_operation operation,
+    const std::size_t entry_count,
+    const std::chrono::milliseconds timeout) const {
+    const auto slot = index(operation);
+    if (slot >= operations_.size()) {
+        return false;
+    }
+    std::unique_lock lock{gate_};
+    return changed_.wait_for(lock, timeout, [this, slot, entry_count] {
+        return operations_[slot].entries >= entry_count;
+    });
+}
+
+void native_control_script::release_block(const native_operation operation) noexcept {
+    const auto slot = index(operation);
+    if (slot >= operations_.size()) {
+        return;
+    }
+    std::scoped_lock lock{gate_};
+    operations_[slot].released = true;
+    changed_.notify_all();
+}
+
+void native_control_script::send_message_on(const native_operation operation,
+    const native_message message) noexcept {
+    std::scoped_lock lock{gate_};
+    send_operation_ = operation;
+    send_window_ = message.window;
+    send_message_ = message.message;
+    send_wparam_ = message.wparam;
+    send_lparam_ = message.lparam;
+    send_once_ = true;
+}
+
+void native_control_script::clear_send_message() noexcept {
+    std::scoped_lock lock{gate_};
+    send_operation_ = native_operation::count;
+    send_window_ = nullptr;
+    send_message_ = 0U;
+    send_wparam_ = 0U;
+    send_lparam_ = 0L;
+    send_once_ = false;
+}
+
+void native_control_script::set_opened_path_after_acquire(std::wstring path) {
+    std::scoped_lock lock{gate_};
+    opened_path_after_acquire_ = std::move(path);
+}
+
+bool native_control_script::copy_opened_path_after_acquire(const bool acquired,
+    wchar_t* const destination,
+    const std::size_t capacity) const noexcept {
+    if (!acquired || destination == nullptr || capacity == 0U) {
+        return false;
+    }
+    std::scoped_lock lock{gate_};
+    if (opened_path_after_acquire_.empty() || opened_path_after_acquire_.size() >= capacity) {
+        return false;
+    }
+    std::ranges::copy(opened_path_after_acquire_, destination);
+    destination[opened_path_after_acquire_.size()] = L'\0';
+    return true;
+}
+
+HRESULT native_control_script::observe(const native_operation operation,
+    const DIDATAFORMAT* const format,
+    const HWND window,
+    const DWORD flags,
+    const bool selected_device) noexcept {
+    const auto slot = index(operation);
+    if (slot >= operations_.size()) {
+        return DIERR_INVALIDPARAM;
+    }
+
+    HRESULT result{};
+    bool should_block{};
+    bool should_send{};
+    HWND send_window{};
+    UINT send_message{};
+    WPARAM send_wparam{};
+    LPARAM send_lparam{};
+    APTTYPE apartment = APTTYPE_CURRENT;
+    APTTYPEQUALIFIER qualifier = APTTYPEQUALIFIER_NONE;
+    const bool single_threaded_apartment =
+        SUCCEEDED(CoGetApartmentType(&apartment, &qualifier)) &&
+        (apartment == APTTYPE_STA || apartment == APTTYPE_MAINSTA);
+    {
+        std::scoped_lock lock{gate_};
+        auto& state = operations_[slot];
+        ++state.calls;
+        state.last_thread = std::this_thread::get_id();
+        result = state.result;
+        try {
+            observations_.push_back(native_observation{.operation = operation,
+                .thread = state.last_thread,
+                .result = result,
+                .format = format,
+                .window = window,
+                .flags = flags,
+                .selected_device = selected_device,
+                .single_threaded_apartment = single_threaded_apartment});
+        } catch (const std::bad_alloc&) {
+            return DIERR_OUTOFMEMORY;
+        } catch (...) {
+            return DIERR_GENERIC;
+        }
+
+        should_block = state.block_next && (!state.selected_device_only || selected_device);
+        if (should_block) {
+            state.block_next = false;
+            state.blocked = true;
+            state.released = false;
+            ++state.entries;
+            changed_.notify_all();
+        }
+        should_send = send_once_ && send_operation_ == operation && send_window_ != nullptr;
+        if (should_send) {
+            send_window = send_window_;
+            send_message = send_message_;
+            send_wparam = send_wparam_;
+            send_lparam = send_lparam_;
+            send_once_ = false;
+        }
+    }
+
+    if (should_send) {
+        static_cast<void>(SendMessageW(send_window, send_message, send_wparam, send_lparam));
+    }
+    if (should_block) {
+        std::unique_lock lock{gate_};
+        changed_.wait(lock, [this, slot] { return operations_[slot].released; });
+        operations_[slot].blocked = false;
+        operations_[slot].released = false;
+    }
+    return result;
+}
+
+std::size_t native_control_script::count(const native_operation operation) const noexcept {
+    const auto slot = index(operation);
+    if (slot >= operations_.size()) {
+        return 0U;
+    }
+    std::scoped_lock lock{gate_};
+    return operations_[slot].calls;
+}
+
+std::thread::id native_control_script::last_thread(
+    const native_operation operation) const noexcept {
+    const auto slot = index(operation);
+    if (slot >= operations_.size()) {
+        return {};
+    }
+    std::scoped_lock lock{gate_};
+    return operations_[slot].last_thread;
+}
+
+std::vector<native_observation> native_control_script::observations() const {
+    std::scoped_lock lock{gate_};
+    return observations_;
+}
+
 namespace {
 
 class system_device final : public IDirectInputDevice8W {
@@ -41,6 +238,13 @@ public:
     ULONG STDMETHODCALLTYPE Release() noexcept override {
         const auto remaining = references_.fetch_sub(1U, std::memory_order_acq_rel) - 1U;
         if (remaining == 0U) {
+            if (record_.controls != nullptr) {
+                static_cast<void>(record_.controls->observe(native_operation::release_device,
+                    nullptr,
+                    nullptr,
+                    0U,
+                    selected_));
+            }
             delete this;
         }
         return remaining;
@@ -81,14 +285,34 @@ public:
             header->dwSize != static_cast<DWORD>(sizeof(DIPROPGUIDANDPATH))) {
             return DIERR_UNSUPPORTED;
         }
-        if (record_.path.empty() || record_.path.size() >= MAX_PATH) {
+        if (record_.controls != nullptr) {
+            const HRESULT scripted = record_.controls->observe(native_operation::guid_and_path,
+                nullptr,
+                nullptr,
+                0U,
+                selected_);
+            if (FAILED(scripted)) {
+                return scripted;
+            }
+        }
+        if (FAILED(record_.guid_path_result)) {
+            return record_.guid_path_result;
+        }
+        std::array<wchar_t, MAX_PATH> opened_path{};
+        const bool overridden = record_.controls != nullptr &&
+                                record_.controls->copy_opened_path_after_acquire(acquired_,
+                                    opened_path.data(),
+                                    opened_path.size());
+        const std::wstring_view path =
+            overridden ? std::wstring_view{opened_path.data()} : std::wstring_view{record_.path};
+        if (path.empty() || path.size() >= MAX_PATH) {
             return DIERR_UNSUPPORTED;
         }
         DIPROPGUIDANDPATH result{};
         result.diph = *header;
         result.guidClass = GUID_Joystick;
-        std::ranges::copy(record_.path, result.wszPath);
-        result.wszPath[record_.path.size()] = L'\0';
+        std::ranges::copy(path, result.wszPath);
+        result.wszPath[path.size()] = L'\0';
         std::memcpy(header, &result, sizeof(result));
         return DI_OK;
     }
@@ -98,9 +322,31 @@ public:
         return DIERR_UNSUPPORTED;
     }
 
-    HRESULT STDMETHODCALLTYPE Acquire() noexcept override { return DIERR_UNSUPPORTED; }
+    HRESULT STDMETHODCALLTYPE Acquire() noexcept override {
+        const HRESULT status = record_.controls == nullptr
+                                   ? DI_OK
+                                   : record_.controls->observe(native_operation::acquire,
+                                         nullptr,
+                                         nullptr,
+                                         0U,
+                                         selected_);
+        acquired_ = SUCCEEDED(status);
+        return status;
+    }
 
-    HRESULT STDMETHODCALLTYPE Unacquire() noexcept override { return DIERR_UNSUPPORTED; }
+    HRESULT STDMETHODCALLTYPE Unacquire() noexcept override {
+        const HRESULT status = record_.controls == nullptr
+                                   ? DI_OK
+                                   : record_.controls->observe(native_operation::unacquire,
+                                         nullptr,
+                                         nullptr,
+                                         0U,
+                                         selected_);
+        if (SUCCEEDED(status)) {
+            acquired_ = false;
+        }
+        return status;
+    }
 
     HRESULT STDMETHODCALLTYPE GetDeviceState([[maybe_unused]] DWORD size,
         [[maybe_unused]] LPVOID state) noexcept override {
@@ -114,9 +360,15 @@ public:
         return DIERR_UNSUPPORTED;
     }
 
-    HRESULT STDMETHODCALLTYPE SetDataFormat(
-        [[maybe_unused]] LPCDIDATAFORMAT format) noexcept override {
-        return DIERR_UNSUPPORTED;
+    HRESULT STDMETHODCALLTYPE SetDataFormat(LPCDIDATAFORMAT format) noexcept override {
+        selected_ = true;
+        return record_.controls == nullptr
+                   ? DI_OK
+                   : record_.controls->observe(native_operation::set_data_format,
+                         format,
+                         nullptr,
+                         0U,
+                         selected_);
     }
 
     HRESULT STDMETHODCALLTYPE SetEventNotification(
@@ -124,9 +376,14 @@ public:
         return DIERR_UNSUPPORTED;
     }
 
-    HRESULT STDMETHODCALLTYPE SetCooperativeLevel([[maybe_unused]] HWND window,
-        [[maybe_unused]] DWORD flags) noexcept override {
-        return DIERR_UNSUPPORTED;
+    HRESULT STDMETHODCALLTYPE SetCooperativeLevel(HWND window, DWORD flags) noexcept override {
+        return record_.controls == nullptr
+                   ? DI_OK
+                   : record_.controls->observe(native_operation::set_cooperative_level,
+                         nullptr,
+                         window,
+                         flags,
+                         selected_);
     }
 
     HRESULT STDMETHODCALLTYPE GetObjectInfo([[maybe_unused]] LPDIDEVICEOBJECTINSTANCEW info,
@@ -239,6 +496,8 @@ public:
 private:
     std::atomic<ULONG> references_{1U};
     const system_device_record record_;
+    bool selected_{};
+    bool acquired_{};
 };
 
 class system_input final : public IDirectInput8W {
@@ -266,6 +525,9 @@ public:
     ULONG STDMETHODCALLTYPE Release() noexcept override {
         const auto remaining = references_.fetch_sub(1U, std::memory_order_acq_rel) - 1U;
         if (remaining == 0U) {
+            if (state_->controls != nullptr) {
+                static_cast<void>(state_->controls->observe(native_operation::release_root));
+            }
             delete this;
         }
         return remaining;
@@ -281,11 +543,21 @@ public:
         if (outer != nullptr) {
             return CLASS_E_NOAGGREGATION;
         }
+        if (state_->controls != nullptr) {
+            const HRESULT scripted = state_->controls->observe(native_operation::create_device);
+            if (FAILED(scripted)) {
+                return scripted;
+            }
+        }
         try {
-            const auto record = find(instance);
+            auto record = find(instance);
             if (!record.has_value()) {
                 return DIERR_NOTFOUND;
             }
+            if (FAILED(record->create_device_result)) {
+                return record->create_device_result;
+            }
+            record->controls = state_->controls;
             auto* created = new (std::nothrow) system_device{*record};
             if (created == nullptr) {
                 return DIERR_OUTOFMEMORY;
@@ -306,11 +578,22 @@ public:
         if (callback == nullptr) {
             return DIERR_INVALIDPARAM;
         }
+        if (state_->controls != nullptr) {
+            const HRESULT scripted = state_->controls->observe(native_operation::enum_devices);
+            if (FAILED(scripted)) {
+                return scripted;
+            }
+        }
         try {
             std::vector<system_device_record> snapshot;
+            HRESULT enumeration_status{};
             {
                 std::scoped_lock lock{state_->gate};
+                enumeration_status = state_->enum_devices_result;
                 snapshot = state_->devices;
+            }
+            if (FAILED(enumeration_status)) {
+                return enumeration_status;
             }
             for (const auto& record : snapshot) {
                 if (!matches_type(record.instance.dwDevType, device_type) ||
@@ -424,6 +707,16 @@ HRESULT create_system(void* value,
         return CLASS_E_NOAGGREGATION;
     }
     const auto& context = *static_cast<host_context*>(value);
+    if (context.system == nullptr) {
+        return E_INVALIDARG;
+    }
+    if (context.system->controls != nullptr) {
+        const HRESULT scripted =
+            context.system->controls->observe(native_operation::factory_create);
+        if (FAILED(scripted)) {
+            return scripted;
+        }
+    }
     auto* created = new (std::nothrow) system_input{context.system};
     if (created == nullptr) {
         return E_OUTOFMEMORY;
@@ -431,6 +724,24 @@ HRESULT create_system(void* value,
     const auto status = created->QueryInterface(iid, out);
     created->Release();
     return status;
+}
+
+HRESULT create_native_system(void* value,
+    HINSTANCE instance,
+    DWORD version,
+    REFIID iid,
+    void** out,
+    IUnknown* outer) noexcept {
+    if (value == nullptr) {
+        if (out != nullptr) {
+            *out = nullptr;
+        }
+        return E_INVALIDARG;
+    }
+    const auto& context = *static_cast<native_factory_context*>(value);
+    host_context adapter{};
+    adapter.system = context.system;
+    return create_system(&adapter, instance, version, iid, out, outer);
 }
 
 } // namespace inputnext::dinput_catalogue_test

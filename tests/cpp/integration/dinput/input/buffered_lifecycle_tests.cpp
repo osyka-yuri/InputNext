@@ -334,7 +334,7 @@ TEST_CASE("dinput.foreground_sweep_signals_loss_while_native_history_is_blocked"
 
     foreground.set_foreground(false, window.id(), 3U);
     REQUIRE(foreground.wait_for_evidence(focus::evidence::background));
-    access->refresh_buffered_eligibility();
+    access->refresh_eligibility();
     CHECK(WaitForSingleObject(event.get(), 2'000U) == WAIT_OBJECT_0);
 
     auto state = sentinel_state(0x7CU);

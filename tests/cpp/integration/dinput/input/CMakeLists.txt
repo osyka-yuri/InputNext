@@ -11,6 +11,11 @@ add_executable(inputnext_dinput_input_tests
     lifecycle_tests.cpp
     catalogue_tests.cpp
     discovery_tests.cpp
+    exclusive_catalogue_tests.cpp
+    exclusive_policy_tests.cpp
+    exclusive_wait_tests.cpp
+    exclusive_device_tests.cpp
+    exclusive_native_tests.cpp
 )
 target_link_libraries(inputnext_dinput_input_tests PRIVATE
     inputnext_dinput inputnext_core Catch2::Catch2WithMain dinput8
