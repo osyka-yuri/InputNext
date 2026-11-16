@@ -29,7 +29,8 @@ struct compiled_format final {
 static_assert(std::is_trivially_copyable_v<compiled_format>);
 
 [[nodiscard]] HRESULT compile_format(const DIDATAFORMAT& source,
-    compiled_format& destination) noexcept;
+    compiled_format& destination,
+    bool force_feedback = false) noexcept;
 [[nodiscard]] HRESULT write_state(const compiled_format& format,
     const profile_values& values,
     std::span<std::byte> destination) noexcept;

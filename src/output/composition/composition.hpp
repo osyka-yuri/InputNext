@@ -8,8 +8,10 @@
 #include <inputnext/focus.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
+#include <inputnext/output_execution.hpp>
 
 #include <memory>
+#include <optional>
 
 namespace inputnext::output::detail {
 
@@ -32,6 +34,9 @@ public:
     [[nodiscard]] audio_route_control audio_routes() & noexcept;
     [[nodiscard]] result<internal_producer> make_producer(
         const internal_context_options& options) & noexcept;
+    [[nodiscard]] result<internal_producer> make_window_rumble(
+        std::shared_ptr<const window_acquisition> window,
+        std::optional<backend_handle> backend = std::nullopt) & noexcept;
     [[nodiscard]] result<std::unique_ptr<xinput_rumble>> make_xinput_rumble() & noexcept;
 
 private:

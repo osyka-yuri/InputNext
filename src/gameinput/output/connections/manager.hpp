@@ -23,6 +23,15 @@ struct managed_backend_observation final {
     output::backend_observation execution{};
 };
 
+struct managed_rumble_capabilities final {
+    bool low_frequency{};
+    bool high_frequency{};
+    output::backend_handle backend{};
+
+    friend constexpr bool operator==(const managed_rumble_capabilities&,
+        const managed_rumble_capabilities&) noexcept = default;
+};
+
 enum class connection_control_phase : std::uint8_t {
     accepting,
     admission_closed,
@@ -92,6 +101,9 @@ public:
         connection_target target) const noexcept;
     [[nodiscard]] output::execution_result<std::optional<managed_backend_observation>>
     observe_backend(connection_target target) const;
+    // Returns only capabilities backed by an exact, current managed rumble backend.
+    [[nodiscard]] std::optional<managed_rumble_capabilities> rumble_support(
+        connection_target target) const noexcept;
     void shutdown() noexcept;
 
 private:

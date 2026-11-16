@@ -1,5 +1,6 @@
 #pragma once
 
+#include "internal_grant.hpp"
 #include "output/playback/body_playback_bank.hpp"
 #include "output/policy/body.hpp"
 #include "output/policy/policy.hpp"
@@ -19,6 +20,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -51,6 +53,8 @@ struct authority::implementation final {
         ttl_permission ttl{ttl_permission::finite_only};
         foreground_policy foreground{foreground_policy::foreground_bound};
         std::optional<focus::foreground_epoch> opening_epoch;
+        std::shared_ptr<const detail::window_acquisition> window_binding;
+        std::optional<backend_handle> backend_binding;
         std::optional<detail::xinput_rumble_key> xinput_rumble;
         std::uint64_t accepted_sequence{};
         channel_values accepted_values{};
@@ -102,9 +106,10 @@ struct authority::implementation final {
     [[nodiscard]] bool valid_context_identity(context_identity identity,
         owner_class expected_class) const noexcept;
     [[nodiscard]] static bool matches_grant(const record& entry,
-        const internal_context_options& options) noexcept;
-    [[nodiscard]] bool existing_internal_grant_conflicts(connection_target target,
-        const internal_context_options& options) const noexcept;
+        const detail::internal_grant& grant) noexcept;
+    [[nodiscard]] result<std::optional<internal_context>> find_internal_context(
+        connection_target target,
+        const detail::internal_grant& grant) const noexcept;
     [[nodiscard]] record* find_open(context_identity identity) noexcept;
     [[nodiscard]] record* find_retained(context_identity identity) noexcept;
     [[nodiscard]] record* find_free(owner_class kind) noexcept;
@@ -128,6 +133,13 @@ struct authority::implementation final {
     void retire_playback_audio_locked(audio_instance audio) noexcept;
     void mark_started_playback_retired_locked(record& entry) noexcept;
     [[nodiscard]] std::optional<focus::foreground_epoch> fresh_epoch() const;
+    [[nodiscard]] bool window_qualifies(
+        const std::shared_ptr<const detail::window_acquisition>& window) const noexcept;
+    [[nodiscard]] result<std::optional<focus::foreground_epoch>>
+    prepare_internal_open(connection_target target, const detail::internal_grant& grant);
+    [[nodiscard]] result<void> revalidate_internal_open(connection_target target,
+        const detail::internal_grant& grant,
+        std::optional<focus::foreground_epoch> before);
     [[nodiscard]] inputnext::result<read_pin> capture(connection_target target) const;
     [[nodiscard]] std::size_t retire(connection_target target) noexcept;
     void advance_cleanup_version() noexcept;
@@ -136,11 +148,13 @@ struct authority::implementation final {
     [[nodiscard]] result<close_receipt> close_with_retry(context_identity identity,
         owner_class expected_class,
         std::uint64_t close_request_id,
-        const internal_context_options* options = nullptr);
+        const detail::internal_grant* grant = nullptr);
     [[nodiscard]] std::size_t expire_target(connection_target target,
         policy_detail::deadline evaluation_time) noexcept;
     [[nodiscard]] std::size_t close_bound_mismatches(connection_target target,
         std::optional<focus::foreground_epoch> observed,
+        close_reason reason) noexcept;
+    [[nodiscard]] std::size_t close_window_mismatches(connection_target target,
         close_reason reason) noexcept;
     [[nodiscard]] bool close_record(record& entry, close_reason reason) noexcept;
     [[nodiscard]] result<void> qualify_mutation(record& entry,
@@ -200,6 +214,10 @@ struct authority::implementation final {
     using test_clock_callback = policy_detail::deadline (*)(const void*) noexcept;
     test_clock_callback test_clock{};
     const void* test_clock_context{};
+    std::optional<error> test_internal_close_error;
+    std::optional<error> test_internal_acknowledge_error;
+    std::optional<error> test_internal_submit_error;
+    std::optional<error> test_internal_clear_error;
 };
 
 } // namespace inputnext::output

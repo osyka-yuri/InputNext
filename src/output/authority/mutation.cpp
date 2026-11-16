@@ -86,7 +86,7 @@ template <typename State>
 [[nodiscard]] auto prepare_submission_timing(State& state,
     const submit_request& request,
     owner_class kind,
-    const internal_context_options* options,
+    const detail::internal_grant* grant,
     const finite_submission_window* window)
     -> result<std::pair<policy_detail::deadline, policy_detail::optional_deadline>> {
     if (window != nullptr && request.ttl != window->ttl()) {
@@ -94,7 +94,7 @@ template <typename State>
     }
     const auto entry_time = window == nullptr ? state.now() : window->entered_at();
     const bool trusted = kind == owner_class::trusted_internal;
-    const auto permission = trusted ? options->ttl : ttl_permission::finite_only;
+    const auto permission = trusted ? grant->options.ttl : ttl_permission::finite_only;
     const auto prevalidated =
         trusted ? policy_detail::validate_internal_submit_request(request, permission)
                 : policy_detail::validate_submit_request(request);
@@ -121,14 +121,18 @@ template <typename State>
     context_identity identity,
     const submit_request& request,
     owner_class kind,
-    const internal_context_options* options = nullptr,
+    const detail::internal_grant* grant = nullptr,
     const finite_submission_window* window = nullptr) {
     if (!state.valid_context_identity(identity, kind) ||
         (kind == owner_class::trusted_internal &&
-            (options == nullptr || identity.internal_owner != options->owner))) {
+            (grant == nullptr || identity.internal_owner != grant->options.owner))) {
         return std::unexpected{error::stale_context};
     }
-    const auto timing = prepare_submission_timing(state, request, kind, options, window);
+    if (grant != nullptr && grant->window &&
+        (window == nullptr || request.selected_channels != rumble_mask)) {
+        return std::unexpected{error::invalid_argument};
+    }
+    const auto timing = prepare_submission_timing(state, request, kind, grant, window);
     if (!timing.has_value()) {
         return std::unexpected{timing.error()};
     }
@@ -143,7 +147,7 @@ template <typename State>
         if (entry == nullptr) {
             entry = state.find_retained(identity);
         }
-        if (entry == nullptr || !state.matches_grant(*entry, *options)) {
+        if (entry == nullptr || !state.matches_grant(*entry, *grant)) {
             return std::unexpected{error::stale_context};
         }
         const auto evaluation_time = state.effective_time(entry_time);
@@ -154,6 +158,9 @@ template <typename State>
         const auto qualified = qualify_mutation(state, *entry);
         if (!qualified.has_value()) {
             return std::unexpected{qualified.error()};
+        }
+        if (grant->window && grant->backend && state.test_internal_submit_error.has_value()) {
+            return std::unexpected{*state.test_internal_submit_error};
         }
         return state.commit_submit_locked(*entry, request, deadline_value, entry_time, window);
     }
@@ -195,6 +202,10 @@ commit_clear(State& state, Record& entry, const clear_request& request) {
     if (!state.ordinary_headroom(reservations_after)) {
         return std::unexpected{error::logical_version_exhausted};
     }
+    if (entry.window_binding && !state.window_qualifies(entry.window_binding)) {
+        static_cast<void>(state.close_record(entry, close_reason::foreground_revocation));
+        return std::unexpected{error::revoked};
+    }
 
     const auto commit_order = state.logical_version + 1U;
     for (std::size_t index = 0U; index < channel_count; ++index) {
@@ -218,11 +229,15 @@ template <typename State>
     context_identity identity,
     const clear_request& request,
     owner_class kind,
-    const internal_context_options* options = nullptr) {
+    const detail::internal_grant* grant = nullptr) {
     if (!state.valid_context_identity(identity, kind) ||
         (kind == owner_class::trusted_internal &&
-            (options == nullptr || identity.internal_owner != options->owner))) {
+            (grant == nullptr || identity.internal_owner != grant->options.owner))) {
         return std::unexpected{error::stale_context};
+    }
+
+    if (grant != nullptr && grant->window && request.selected_channels != rumble_mask) {
+        return std::unexpected{error::invalid_argument};
     }
 
     const auto prevalidated = policy_detail::validate_clear_request(request);
@@ -237,7 +252,7 @@ template <typename State>
         if (entry == nullptr) {
             entry = state.find_retained(identity);
         }
-        if (entry == nullptr || options == nullptr || !state.matches_grant(*entry, *options)) {
+        if (entry == nullptr || grant == nullptr || !state.matches_grant(*entry, *grant)) {
             return std::unexpected{error::stale_context};
         }
         const auto evaluation_time = state.effective_time(entry_time);
@@ -248,6 +263,9 @@ template <typename State>
         const auto qualified = qualify_mutation(state, *entry);
         if (!qualified.has_value()) {
             return std::unexpected{qualified.error()};
+        }
+        if (grant->window && grant->backend && state.test_internal_clear_error.has_value()) {
+            return std::unexpected{*state.test_internal_clear_error};
         }
         return commit_clear(state, *entry, request);
     }
@@ -305,11 +323,14 @@ result<mutation_receipt> authority::implementation::commit_submit_locked(record&
     if (!ordinary_headroom(reservations_after)) {
         return std::unexpected{error::logical_version_exhausted};
     }
-
     if (window != nullptr &&
         policy_detail::is_expired(policy_detail::optional_deadline{window->expires_at()},
             effective_time())) {
         return std::unexpected{error::expired};
+    }
+    if (entry.window_binding && !window_qualifies(entry.window_binding)) {
+        static_cast<void>(close_record(entry, close_reason::foreground_revocation));
+        return std::unexpected{error::revoked};
     }
 
     const auto commit_order = logical_version + 1U;
@@ -355,22 +376,24 @@ result<mutation_receipt> authority::clear(public_context context, const clear_re
 
 result<mutation_receipt> authority::submit_internal(internal_context context,
     const submit_request& request,
-    const internal_context_options& options) {
+    const detail::internal_grant& grant,
+    const finite_submission_window* window) {
     return submit_common(*implementation_,
         context.identity,
         request,
         owner_class::trusted_internal,
-        &options);
+        &grant,
+        window);
 }
 
 result<mutation_receipt> authority::clear_internal(internal_context context,
     const clear_request& request,
-    const internal_context_options& options) {
+    const detail::internal_grant& grant) {
     return clear_common(*implementation_,
         context.identity,
         request,
         owner_class::trusted_internal,
-        &options);
+        &grant);
 }
 
 } // namespace inputnext::output

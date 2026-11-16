@@ -115,23 +115,30 @@ bool authority::implementation::valid_context_identity(context_identity identity
 }
 
 bool authority::implementation::matches_grant(const record& entry,
-    const internal_context_options& options) noexcept {
+    const detail::internal_grant& grant) noexcept {
+    const auto& options = grant.options;
     return !entry.xinput_rumble.has_value() &&
            entry.identity.kind == owner_class::trusted_internal &&
            entry.identity.internal_owner == options.owner && entry.priority == options.priority &&
-           entry.ttl == options.ttl && entry.foreground == options.foreground;
+           entry.ttl == options.ttl && entry.foreground == options.foreground &&
+           entry.window_binding == grant.window && entry.backend_binding == grant.backend;
 }
 
-bool authority::implementation::existing_internal_grant_conflicts(connection_target target,
-    const internal_context_options& options) const noexcept {
+result<std::optional<internal_context>> authority::implementation::find_internal_context(
+    connection_target target,
+    const detail::internal_grant& grant) const noexcept {
     for (const auto& entry : records) {
         if (entry.state == phase::open && entry.identity.kind == owner_class::trusted_internal &&
             !entry.xinput_rumble.has_value() && entry.identity.target == target &&
-            entry.identity.internal_owner == options.owner) {
-            return !matches_grant(entry, options);
+            entry.identity.internal_owner == grant.options.owner &&
+            static_cast<bool>(entry.window_binding) == static_cast<bool>(grant.window)) {
+            if (!matches_grant(entry, grant)) {
+                return std::unexpected{error::invalid_argument};
+            }
+            return std::optional<internal_context>{internal_context{entry.identity}};
         }
     }
-    return false;
+    return std::optional<internal_context>{};
 }
 
 authority::implementation::record* authority::implementation::find_open(

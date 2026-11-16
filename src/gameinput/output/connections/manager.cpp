@@ -1,15 +1,19 @@
 #include "manager.hpp"
 
 #include "backend_selection.hpp"
+#include "gameinput/output/usb/qualification.hpp"
 #include "gameinput/runtime/output_access.hpp"
 #include "state.hpp"
+#include <inputnext/device_metadata.hpp>
 #include <inputnext/gameinput_runtime.hpp>
+#include <inputnext/output.hpp>
 #include <inputnext/output_execution.hpp>
 #include <inputnext/output_executor.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <mutex>
@@ -40,6 +44,136 @@ namespace {
     return std::ranges::any_of(targets, [&](const connection_target target) {
         return same_device(target, candidate) && target != candidate;
     });
+}
+
+struct rumble_support_snapshot final {
+    output::backend_handle backend{};
+    output_backend_kind kind{output_backend_kind::none};
+    managed_rumble_capabilities capabilities{};
+    std::optional<rumble_capabilities> described_capabilities;
+    std::optional<metadata_device_model> model;
+    std::uint64_t catalogue_generation{};
+    std::shared_ptr<usb_output_qualification> qualification;
+};
+
+[[nodiscard]] std::optional<managed_rumble_capabilities> select_rumble_capabilities(
+    const connection_target target,
+    const output_backend_kind kind,
+    const std::optional<metadata_device_model> model,
+    const std::optional<rumble_capabilities> described,
+    const std::uint64_t catalogue_generation,
+    const std::shared_ptr<usb_output_qualification>& qualification,
+    const usb_output_qualification::clock::time_point now) noexcept {
+    if (kind == output_backend_kind::dualsense_usb) {
+        if (!needs_usb_qualification(model) || qualification == nullptr ||
+            qualification->target() != target ||
+            qualification->catalogue_generation() != catalogue_generation ||
+            !qualification->admits(target, now)) {
+            return std::nullopt;
+        }
+        return managed_rumble_capabilities{.low_frequency = true, .high_frequency = true};
+    }
+
+    if (kind != output_backend_kind::gameinput_rumble || needs_usb_qualification(model) ||
+        !described.has_value()) {
+        return std::nullopt;
+    }
+    const managed_rumble_capabilities capabilities{.low_frequency = described->low_frequency,
+        .high_frequency = described->high_frequency};
+    if (!capabilities.low_frequency && !capabilities.high_frequency) {
+        return std::nullopt;
+    }
+    return capabilities;
+}
+
+template <typename State>
+[[nodiscard]] std::optional<rumble_support_snapshot> capture_rumble_support(const State& state,
+    const connection_target target) noexcept {
+    using state_clock = State::clock;
+    std::scoped_lock lock{state.gate};
+    if (state.phase != connection_control_phase::accepting || state.fallback ||
+        state.admissions_frozen) {
+        return std::nullopt;
+    }
+
+    const auto* const desired = state.find_desired_locked(target);
+    if (desired == nullptr || !desired->description_known || !desired->selection.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto kind = *desired->selection;
+    const auto capabilities = select_rumble_capabilities(target,
+        kind,
+        desired->model,
+        desired->capabilities,
+        desired->catalogue_generation,
+        desired->qualification,
+        state_clock::now());
+    if (!capabilities.has_value()) {
+        return std::nullopt;
+    }
+
+    using backend_state = State::backend_state;
+    const auto backend = std::ranges::find_if(state.backends,
+        [target, kind, qualification = desired->qualification](const auto& record) {
+            return record.state == backend_state::current && record.target == target &&
+                   record.kind == kind && record.qualification == qualification;
+        });
+    if (backend == state.backends.end()) {
+        return std::nullopt;
+    }
+
+    const auto handle = backend->handle.value_or(output::backend_handle{});
+    if (!handle.valid() || handle.target != target) {
+        return std::nullopt;
+    }
+
+    return rumble_support_snapshot{.backend = handle,
+        .kind = kind,
+        .capabilities = *capabilities,
+        .described_capabilities = desired->capabilities,
+        .model = desired->model,
+        .catalogue_generation = desired->catalogue_generation,
+        .qualification = desired->qualification};
+}
+
+template <typename State>
+[[nodiscard]] bool rumble_support_snapshot_is_current(const State& state,
+    const connection_target target,
+    const rumble_support_snapshot& snapshot) noexcept {
+    using state_clock = State::clock;
+    std::scoped_lock lock{state.gate};
+    if (state.phase != connection_control_phase::accepting || state.fallback ||
+        state.admissions_frozen) {
+        return false;
+    }
+
+    const auto* const desired = state.find_desired_locked(target);
+    if (desired == nullptr || !desired->description_known || desired->model != snapshot.model ||
+        desired->catalogue_generation != snapshot.catalogue_generation ||
+        desired->selection != snapshot.kind ||
+        desired->capabilities != snapshot.described_capabilities ||
+        desired->qualification != snapshot.qualification ||
+        (snapshot.qualification != nullptr &&
+            !snapshot.qualification->admits(target, state_clock::now()))) {
+        return false;
+    }
+
+    using backend_state = State::backend_state;
+    const auto backend =
+        std::ranges::find_if(state.backends, [target, &snapshot](const auto& record) {
+            return record.state == backend_state::current && record.target == target &&
+                   record.kind == snapshot.kind && record.qualification == snapshot.qualification &&
+                   record.handle == snapshot.backend;
+        });
+    return backend != state.backends.end();
+}
+
+[[nodiscard]] bool rumble_progress_matches(const output::backend_progress& progress,
+    const rumble_support_snapshot& snapshot) noexcept {
+    return progress.backend == snapshot.backend &&
+           progress.phase == output::backend_phase::current &&
+           (progress.represented_channels & output::rumble_mask) == output::rumble_mask;
 }
 
 } // namespace
@@ -278,6 +412,32 @@ gameinput_output_connections::observe_backend(const connection_target target) co
         .kind = kind,
         .execution = *observed,
     }};
+}
+
+std::optional<managed_rumble_capabilities> gameinput_output_connections::rumble_support(
+    const connection_target target) const noexcept {
+    const auto snapshot = capture_rumble_support(*implementation_, target);
+    if (!snapshot.has_value()) {
+        return std::nullopt;
+    }
+
+    output::execution_result<output::backend_progress> progress =
+        std::unexpected{output::execution_error::busy};
+    try {
+        progress = implementation_->executor.progress(snapshot->backend);
+    } catch (...) {
+        return std::nullopt;
+    }
+    if (!progress.has_value() || !rumble_progress_matches(*progress, *snapshot)) {
+        return std::nullopt;
+    }
+    if (!rumble_support_snapshot_is_current(*implementation_, target, *snapshot)) {
+        return std::nullopt;
+    }
+
+    return managed_rumble_capabilities{.low_frequency = snapshot->capabilities.low_frequency,
+        .high_frequency = snapshot->capabilities.high_frequency,
+        .backend = snapshot->backend};
 }
 
 void gameinput_output_connections::shutdown() noexcept {

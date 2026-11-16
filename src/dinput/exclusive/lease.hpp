@@ -3,7 +3,14 @@
 #include <Windows.h>
 
 #include <chrono>
+#include <expected>
+#include <inputnext/device_identity.hpp>
+#include <inputnext/focus.hpp>
 #include <memory>
+
+namespace inputnext::output::detail {
+class window_acquisition;
+}
 
 namespace inputnext::dinput {
 
@@ -28,6 +35,8 @@ public:
     [[nodiscard]] bool closed() const noexcept;
     [[nodiscard]] HRESULT wait_closed() noexcept;
     [[nodiscard]] HANDLE cancellation_event() const noexcept;
+    [[nodiscard]] std::expected<std::shared_ptr<const output::detail::window_acquisition>, HRESULT>
+    rumble_window(connection_target target, const focus::window_epoch& epoch) noexcept;
 
 private:
     friend class exclusive_input;

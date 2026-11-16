@@ -5,8 +5,9 @@ normalized GameInput gamepad profile through DirectInput 8 A/W interfaces, using
 runtime, device connections and cached input as XInput and the Core SDK.
 
 This version supports immediate and buffered gamepad input, event notification and
-foreground and background exclusive acquisition. Action mapping and DirectInput
-force feedback are unsupported. Devices forwarded to Windows retain their
+foreground and background exclusive acquisition. Supported gamepads also expose
+software force feedback during foreground exclusive acquisition. Action mapping
+is unsupported. Devices forwarded to Windows retain their
 native DirectInput behavior.
 
 ## Loading
@@ -213,7 +214,66 @@ Objects for the same connection share a worker through reader handoffs. Session 
 is 16 resident workers and 64 resident subscriptions, including resources awaiting cleanup.
 The capped queues keep their combined event payload below 8 MiB.
 
-Games that require action mapping or force feedback may be
-unable to use the normalized device. Force-feedback capabilities are absent and effect
-enumeration is empty. XInput rumble and the Effects SDK remain available through their
-own contracts. Sony Bluetooth remains input-only.
+## Force feedback
+
+Normalized devices with an exact native match and a current managed rumble backend
+advertise software force feedback. The actuator axes are X and Y. `CreateEffect`
+supports constant force, ramp, square, sine, triangle, sawtooth up and sawtooth down.
+Force intensity is rendered through the available low- and high-frequency gamepad
+motors. Direction parameters are retained for readback. These motors cannot reproduce
+directional forces. Condition effects, custom forces, trigger-button effects, effect
+files and hardware escape commands are unsupported.
+
+Download and playback require the device's current foreground exclusive acquisition.
+Background exclusive input remains available. Each force-feedback acquisition has its
+own output context and window qualification. Losing the window, freshness, connection
+or acquisition discards downloaded playback. Reacquisition requires an explicit
+download or start. Sony Bluetooth remains input-only.
+Loss or replacement of the rumble backend, or a change in its motor capabilities,
+also discards downloaded playback. Input acquisition remains valid; output recovery
+requires an explicit download or start. An old contribution cannot execute on a
+replacement backend.
+
+Effect parameters are copied, including axis selectors, force payload and optional
+envelope. Both DirectX 5 and current `DIEFFECT` sizes are accepted. Partial
+`SetParameters` updates preserve unselected values. `DIEP_NODOWNLOAD` updates the
+staged parameters without changing the downloaded effect and returns
+`DI_DOWNLOADSKIPPED`. A repeated `Download` without staged changes returns `S_FALSE`.
+Dynamic updates preserve elapsed playback time. Static updates restart a playing
+effect and report `DI_EFFECTRESTARTED`; `DIEP_NORESTART` rejects those updates with
+`DIERR_EFFECTPLAYING` before changing the parameters. Ramp effects do not support
+envelopes. Object-offset selectors
+refer to the selected data format. `GetParameters` reports required array and payload
+capacities with `DIERR_MOREDATA`.
+Actuator axes can be replaced. Changing the axis count requires compatible direction
+data in the same update. `DIES_SOLO` commits the replacement mix before stopping the
+device's other effects; a rejected output update preserves their logical playback
+and contribution.
+Dynamic parameter downloads also publish before replacing the playing version.
+If publication fails, playback keeps the previous downloaded parameters; staged
+changes remain available for a later download.
+
+Effects retain their device and occupy bounded slots until final release. Limits are
+16 effect objects per device, 64 per session and 16 force-feedback acquisitions.
+Playback uses one session worker and the common output executor. `Start` reports
+logical playback admission. Output availability and physical completion remain subject
+to the shared executor and backend.
+
+The mixer applies effect and device gain and saturates summed intensity. Device gain
+can change while acquired and its stored setting is available on devices without
+force-feedback support. Publications use a finite lifetime of at most 100 ms.
+Waveforms at or above the sampling limit use mean intensity to avoid fixed-phase
+aliasing. The nominal scheduler interval is 4 ms.
+Nonzero sample periods below that interval use 4 ms during software rendering.
+Parameter readback retains the requested period.
+Sampling and renewal participate in the existing latest-write arbitration at game
+semantic priority, alongside XInput and SDK contributors. A zero mix withdraws its
+contribution. Stop, unload and actuator muting withdraw the published contribution
+before reporting success. A native write admitted before withdrawal may still finish.
+Cleanup affects only the corresponding DirectInput context.
+After stopping its worker, service shutdown retires each remaining context directly
+in authority, including retained receipts, without retrying ordinary cleanup errors.
+
+Device commands support stop all, actuator on/off and reset. Reset disables
+actuators and invalidates existing effects. Create replacement effects and enable
+actuators before resuming output. Pause and continue are unsupported.

@@ -89,7 +89,9 @@ struct maintenance_report final {
 
 namespace detail {
 class internal_producer;
+struct internal_grant;
 class xinput_rumble;
+class composition;
 class xinput_rumble_transaction;
 class authority_test_access;
 class authority_execution_access;
@@ -151,6 +153,7 @@ public:
 
 private:
     friend class detail::internal_producer;
+    friend class detail::composition;
     friend class detail::xinput_rumble;
     friend class detail::xinput_rumble_transaction;
     friend class detail::authority_test_access;
@@ -167,18 +170,21 @@ private:
     std::unique_ptr<implementation> implementation_;
 
     [[nodiscard]] result<internal_context> open_internal(connection_target target,
-        const internal_context_options& options);
+        const detail::internal_grant& grant);
     [[nodiscard]] result<mutation_receipt> submit_internal(internal_context context,
         const submit_request& request,
-        const internal_context_options& options);
+        const detail::internal_grant& grant,
+        const finite_submission_window* window = nullptr);
     [[nodiscard]] result<mutation_receipt> clear_internal(internal_context context,
         const clear_request& request,
-        const internal_context_options& options);
+        const detail::internal_grant& grant);
     [[nodiscard]] result<close_receipt> close_internal(internal_context context,
         std::uint64_t close_request_id,
-        const internal_context_options& options);
+        const detail::internal_grant& grant);
     [[nodiscard]] result<void> acknowledge_internal(const close_receipt& receipt,
-        const internal_context_options& options);
+        const detail::internal_grant& grant);
+    void retire_window_context(context_identity identity,
+        const detail::internal_grant& grant) noexcept;
     [[nodiscard]] result<body_playback_receipt> submit_body_impl(public_context context,
         const body_request& request,
         const body_playback_update& playback,

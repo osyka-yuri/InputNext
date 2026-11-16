@@ -3,6 +3,7 @@
 #include "audio/audio_service.hpp"
 #include "audio/native_port.hpp"
 #include "core/core.hpp"
+#include "dinput/force_feedback/service.hpp"
 #include "dinput/input_access.hpp"
 #include "effects/effects.hpp"
 #include "effects/identity.hpp"
@@ -74,6 +75,17 @@ launch_worker([[maybe_unused]] void* launcher_context, const worker_entry entry,
     return std::thread{entry, context};
 }
 
+[[nodiscard]] dinput::force_feedback::motors query_directinput_motors(void* context,
+    const connection_target target) noexcept {
+    const auto support =
+        static_cast<gameinput_detail::gameinput_output_connections*>(context)->rumble_support(
+            target);
+    return support.has_value() ? dinput::force_feedback::motors{.low = support->low_frequency,
+                                     .high = support->high_frequency,
+                                     .backend = support->backend}
+                               : dinput::force_feedback::motors{};
+}
+
 [[noreturn]] void throw_preparation_failure(const char* message) {
     throw std::runtime_error{message};
 }
@@ -140,10 +152,6 @@ std::unique_ptr<native_session> native_session::implementation::prepare(
         *state->focus_observer,
         state->presentation_service->presentation());
 
-    state->directinput_access = std::make_shared<dinput::input_access>(*state->core_service,
-        *state->runtime,
-        *state->focus_observer);
-
     const auto profile_producer = state->output_composition->make_producer({.owner = profile_owner,
         .priority = output::internal_priority::game_profile,
         .ttl = output::ttl_permission::finite_or_indefinite,
@@ -165,6 +173,15 @@ std::unique_ptr<native_session> native_session::implementation::prepare(
         throw_preparation_failure("native session output connections creation failed");
     }
     state->connections = std::move(*connections);
+
+    auto feedback = std::make_unique<dinput::force_feedback::service>(*state->output_composition,
+        *state->output_executor,
+        state->connections.get(),
+        &query_directinput_motors);
+    state->directinput_access = std::make_shared<dinput::input_access>(*state->core_service,
+        *state->runtime,
+        *state->focus_observer,
+        std::move(feedback));
 
     state->audio_routes = std::make_unique<output::detail::audio_route_control>(
         state->output_composition->audio_routes());

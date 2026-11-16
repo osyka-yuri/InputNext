@@ -58,7 +58,7 @@ template <typename State>
         }
         const bool eligible = entry.foreground == foreground_policy::background ||
                               (permit_bound && epoch.has_value() && entry.opening_epoch == epoch);
-        if (!eligible) {
+        if (!eligible || (entry.window_binding && !state.window_qualifies(entry.window_binding))) {
             continue;
         }
         for (std::size_t index = 0U; index < channel_count; ++index) {
@@ -173,6 +173,7 @@ result<logical_snapshot> authority::implementation::compose_snapshot(connection_
     std::optional<focus::foreground_epoch> epoch) noexcept {
     const auto final_evaluation_time = effective_time(evaluation_time);
     static_cast<void>(expire_target(target, final_evaluation_time));
+    static_cast<void>(close_window_mismatches(target, close_reason::foreground_revocation));
     logical_snapshot snapshot;
     snapshot.target = target;
     snapshot.incarnation = incarnation;
@@ -247,6 +248,7 @@ result<logical_snapshot> authority::implementation::qualify_snapshot_locked(
     static_cast<void>(expire_target(target, evaluation_time));
     const auto before = fresh_epoch();
     static_cast<void>(close_bound_mismatches(target, before, close_reason::foreground_revocation));
+    static_cast<void>(close_window_mismatches(target, close_reason::foreground_revocation));
 
     const auto has_bound = [this, target] {
         return std::ranges::any_of(records, [target](const auto& entry) {

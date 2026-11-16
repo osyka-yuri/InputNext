@@ -7,12 +7,14 @@
 #include <inputnext/output_authority.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <limits>
 #include <optional>
+#include <system_error>
 
 namespace inputnext::output {
 
@@ -142,6 +144,50 @@ std::size_t authority::implementation::close_bound_mismatches(connection_target 
     for (auto& entry : records) {
         if (needs_close(entry)) {
             install_close_receipt(entry, logical_version, reason);
+        }
+    }
+    return closed;
+}
+
+std::size_t authority::implementation::close_window_mismatches(connection_target target,
+    close_reason reason) noexcept {
+    const bool has_window_grant = std::ranges::any_of(records, [target](const record& entry) {
+        return entry.state == phase::open && entry.identity.target == target &&
+               static_cast<bool>(entry.window_binding);
+    });
+    if (!has_window_grant) {
+        return 0U;
+    }
+
+    std::array<bool, 64U> mismatched{};
+    try {
+        const auto guard = focus_observer.lock_presentation();
+        for (std::size_t index = 0U; index < records.size(); ++index) {
+            const auto& entry = records[index];
+            if (entry.state != phase::open || entry.identity.target != target ||
+                !entry.window_binding) {
+                continue;
+            }
+            const auto& window = entry.window_binding;
+            mismatched[index] = window->target() != target || !window->live() ||
+                                !guard.matches_foreground_window_epoch(window->epoch());
+        }
+    } catch (const std::system_error&) {
+        for (std::size_t index = 0U; index < records.size(); ++index) {
+            const auto& entry = records[index];
+            mismatched[index] = entry.state == phase::open && entry.identity.target == target &&
+                                static_cast<bool>(entry.window_binding);
+        }
+    }
+
+    const auto closed = static_cast<std::size_t>(std::ranges::count(mismatched, true));
+    if (closed == 0U) {
+        return 0U;
+    }
+    advance_cleanup_version();
+    for (std::size_t index = 0U; index < records.size(); ++index) {
+        if (mismatched[index] && records[index].state == phase::open) {
+            install_close_receipt(records[index], logical_version, reason);
         }
     }
     return closed;

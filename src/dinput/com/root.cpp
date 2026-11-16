@@ -6,6 +6,7 @@
 #include "dinput/exclusive/ownership.hpp"
 #include "dinput/input_access.hpp"
 #include "dinput/native_types.hpp"
+#include "enumeration.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -16,9 +17,7 @@
 #include <new>
 #include <optional>
 #include <string>
-#include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace inputnext::dinput {
 namespace {
@@ -84,51 +83,6 @@ namespace {
     }
     result.resize(static_cast<std::size_t>(required - 1));
     return result;
-}
-
-struct enumeration_capture final {
-    std::vector<DIDEVICEINSTANCEW>* instances{};
-    HRESULT failure{S_OK};
-};
-
-[[nodiscard]] BOOL CALLBACK capture_instance(LPCDIDEVICEINSTANCEW instance,
-    LPVOID context) noexcept {
-    auto& capture = *static_cast<enumeration_capture*>(context);
-    if (instance == nullptr || capture.instances == nullptr) {
-        capture.failure = DIERR_INVALIDPARAM;
-        return DIENUM_STOP;
-    }
-    try {
-        capture.instances->push_back(*instance);
-        return DIENUM_CONTINUE;
-    } catch (const std::bad_alloc&) {
-        capture.failure = DIERR_OUTOFMEMORY;
-    } catch (...) {
-        capture.failure = DIERR_GENERIC;
-    }
-    return DIENUM_STOP;
-}
-
-template <typename Callback>
-[[nodiscard]] HRESULT invoke_enum_callback(Callback callback,
-    const DIDEVICEINSTANCEW& instance,
-    LPVOID context,
-    BOOL& result) noexcept {
-    try {
-        if constexpr (std::is_same_v<Callback, LPDIENUMDEVICESCALLBACKW>) {
-            result = callback(&instance, context);
-        } else {
-            DIDEVICEINSTANCEA ansi{};
-            const auto status = copy_instance_ansi(instance, ansi);
-            if (FAILED(status)) {
-                return status;
-            }
-            result = callback(&ansi, context);
-        }
-    } catch (...) {
-        return DIERR_GENERIC;
-    }
-    return S_OK;
 }
 
 // Callers retain their COM reference through each call. Enumeration also retains
@@ -539,99 +493,6 @@ private:
         return find_projected_device(std::move(access), system, instance, out);
     }
 
-    [[nodiscard]] catalogue_projection normalized_projection(DWORD device_type,
-        IDirectInput8W& system) const {
-        catalogue_projection result{};
-        if (!is_game_controller_request(device_type) || host_.session == nullptr) {
-            return result;
-        }
-        const auto shared_access = host_.session(host_.context);
-        if (shared_access == nullptr) {
-            return result;
-        }
-        auto access = shared_access->enter();
-        if (access && FAILED(project_catalogue(std::move(access), system, result))) {
-            return {};
-        }
-        return result;
-    }
-
-    struct enumeration_filter final {
-        DWORD device_type{};
-        DWORD flags{};
-    };
-
-    [[nodiscard]] static std::vector<DIDEVICEINSTANCEW> merge_instances(
-        const std::vector<DIDEVICEINSTANCEW>& native,
-        const catalogue_projection& projected,
-        enumeration_filter filter) {
-        std::vector<DIDEVICEINSTANCEW> result;
-        result.reserve(native.size() + projected.devices.size());
-        for (const auto& instance : native) {
-            if (std::ranges::none_of(projected.suppressed_system_guids,
-                    [&instance](const GUID& guid) {
-                        return IsEqualGUID(guid, instance.guidInstance) != 0;
-                    })) {
-                result.push_back(instance);
-            }
-        }
-        if (instance_matches_flags(DIDEVICEINSTANCEW{}, filter.flags)) {
-            for (const auto& device : projected.devices) {
-                if (instance_matches_type(device.instance, filter.device_type)) {
-                    result.push_back(device.instance);
-                }
-            }
-        }
-        return result;
-    }
-
-    template <typename Callback>
-    [[nodiscard]] static HRESULT deliver_instances(Callback callback,
-        const std::vector<DIDEVICEINSTANCEW>& instances,
-        LPVOID context) noexcept {
-        for (const auto& instance : instances) {
-            BOOL keep_going{};
-            const auto status = invoke_enum_callback(callback, instance, context, keep_going);
-            if (FAILED(status)) {
-                return status;
-            }
-            if (keep_going == DIENUM_STOP) {
-                break;
-            }
-        }
-        return DI_OK;
-    }
-
-    template <typename Callback>
-    [[nodiscard]] static HRESULT forward_enumeration(IDirectInput8W& system,
-        DWORD device_type,
-        Callback callback,
-        LPVOID context,
-        DWORD flags) noexcept {
-        struct forwarding final {
-            Callback callback{};
-            LPVOID context{};
-            HRESULT status{DI_OK};
-        } bridge{.callback = callback, .context = context};
-
-        const auto status = system.EnumDevices(
-            device_type,
-            [](LPCDIDEVICEINSTANCEW instance, LPVOID context) noexcept -> BOOL {
-                auto& bridge = *static_cast<forwarding*>(context);
-                if (instance == nullptr) {
-                    bridge.status = DIERR_INVALIDPARAM;
-                    return DIENUM_STOP;
-                }
-                BOOL keep_going{};
-                bridge.status =
-                    invoke_enum_callback(bridge.callback, *instance, bridge.context, keep_going);
-                return FAILED(bridge.status) ? DIENUM_STOP : keep_going;
-            },
-            &bridge,
-            flags);
-        return FAILED(bridge.status) ? bridge.status : status;
-    }
-
     template <typename Callback>
     [[nodiscard]] HRESULT
     enum_devices(DWORD device_type, Callback callback, LPVOID context, DWORD flags) noexcept {
@@ -644,30 +505,13 @@ private:
             return DIERR_NOTINITIALIZED;
         }
         const com_reference system_reference{system};
-        if (host_.session == nullptr) {
-            return forward_enumeration(*system, device_type, callback, context, flags);
-        }
-        try {
-            std::vector<DIDEVICEINSTANCEW> native;
-            enumeration_capture capture{.instances = &native};
-            const auto status =
-                system->EnumDevices(device_type, &capture_instance, &capture, flags);
-            if (FAILED(capture.failure)) {
-                return capture.failure;
-            }
-            if (FAILED(status)) {
-                return status;
-            }
-            const auto projected = normalized_projection(device_type, *system);
-            const auto merged = merge_instances(native,
-                projected,
-                enumeration_filter{.device_type = device_type, .flags = flags});
-            return deliver_instances(callback, merged, context);
-        } catch (const std::bad_alloc&) {
-            return DIERR_OUTOFMEMORY;
-        } catch (...) {
-            return DIERR_GENERIC;
-        }
+        return detail::enumerate_devices(host_,
+            instance_,
+            *system,
+            device_type,
+            callback,
+            context,
+            flags);
     }
 
     [[nodiscard]] HRESULT

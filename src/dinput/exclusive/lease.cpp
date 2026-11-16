@@ -4,13 +4,19 @@
 #include "dinput/input_access.hpp"
 #include "dinput/native_types.hpp"
 #include "lease.hpp"
+#include "output/composition/window_acquisition.hpp"
+
+#include <inputnext/device_identity.hpp>
+#include <inputnext/focus.hpp>
 
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <expected>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <utility>
 
@@ -36,9 +42,13 @@ exclusive_lease::state::~state() {
 }
 
 exclusive_lease::state::state(const clock_callback now,
-    std::shared_ptr<const void> context) noexcept
+    std::shared_ptr<const void> context,
+    const connection_target target_value,
+    std::optional<focus::window_epoch> window_value) noexcept
     : clock(now),
-      clock_context(std::move(context)) {
+      clock_context(std::move(context)),
+      target(target_value),
+      window(window_value) {
 }
 
 void exclusive_lease::state::close_handle(const HANDLE value) noexcept {
@@ -160,6 +170,9 @@ void exclusive_lease::state::publish_prepared(const HRESULT result) noexcept {
 void exclusive_lease::state::publish_closed(const HRESULT result) noexcept {
     {
         std::scoped_lock lock{gate};
+        if (rumble != nullptr) {
+            rumble->revoke();
+        }
         close_status = result;
         current = phase::closed;
     }
@@ -248,7 +261,32 @@ void exclusive_lease::state::cancel_locked(const HRESULT reason) const noexcept 
     }
     terminal = reason;
     current = phase::closing;
+    if (rumble != nullptr) {
+        rumble->revoke();
+    }
     static_cast<void>(SetEvent(cancellation_event));
+}
+
+std::expected<std::shared_ptr<const output::detail::window_acquisition>, HRESULT>
+exclusive_lease::state::rumble_window(const connection_target requested,
+    const focus::window_epoch& epoch) noexcept {
+    std::scoped_lock lock{gate};
+    if (authority_locked() != DI_OK || current != phase::active) {
+        return std::unexpected{DIERR_INPUTLOST};
+    }
+    if (target != requested || !window.has_value() || *window != epoch) {
+        return std::unexpected{static_cast<HRESULT>(DIERR_NOTEXCLUSIVEACQUIRED)};
+    }
+    try {
+        if (rumble == nullptr) {
+            rumble = std::make_shared<output::detail::window_acquisition>(target, epoch);
+        }
+        return rumble;
+    } catch (const std::bad_alloc&) {
+        return std::unexpected{DIERR_OUTOFMEMORY};
+    } catch (...) {
+        return std::unexpected{DIERR_GENERIC};
+    }
 }
 
 exclusive_lease::exclusive_lease(std::shared_ptr<state> state_value) noexcept
@@ -317,6 +355,12 @@ HRESULT exclusive_lease::wait_closed() noexcept {
 
 HANDLE exclusive_lease::cancellation_event() const noexcept {
     return state_->cancellation_event;
+}
+
+std::expected<std::shared_ptr<const output::detail::window_acquisition>, HRESULT>
+exclusive_lease::rumble_window(const connection_target target,
+    const focus::window_epoch& epoch) noexcept {
+    return state_->rumble_window(target, epoch);
 }
 
 } // namespace inputnext::dinput

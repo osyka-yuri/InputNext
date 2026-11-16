@@ -11,11 +11,17 @@
 #include <inputnext/focus.hpp>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <optional>
+#include <utility>
 
 namespace inputnext::dinput {
 class buffered_subscription;
 class event_registration;
+
+[[nodiscard]] bool feedback_available(const input_access::call& call,
+    const device_identity& identity,
+    const native_input_factory& factory) noexcept;
 
 // Owns one device's mutable input configuration and acquisition transaction.
 // Native resources remain with the session's exclusive ownership service.
@@ -42,7 +48,28 @@ public:
     [[nodiscard]] HRESULT set_property(const GUID* property, const DIPROPHEADER* header) noexcept;
     [[nodiscard]] std::optional<std::size_t> select_object(DWORD object, DWORD how) const noexcept;
 
+    struct feedback_capture final {
+        compiled_format format{};
+        bool has_format{};
+        std::shared_ptr<const output::detail::window_acquisition> token;
+        HRESULT status{static_cast<HRESULT>(DIERR_NOTEXCLUSIVEACQUIRED)};
+    };
+
+    [[nodiscard]] feedback_capture capture_feedback(const input_access::call& call) noexcept;
+    [[nodiscard]] bool feedback_capable(const input_access::call& call) const noexcept;
+
 private:
+    template <typename Operation>
+    static HRESULT guarded(Operation&& operation) noexcept {
+        try {
+            return std::forward<Operation>(operation)();
+        } catch (const std::bad_alloc&) {
+            return DIERR_OUTOFMEMORY;
+        } catch (...) {
+            return DIERR_GENERIC;
+        }
+    }
+
     struct exclusive_attempt;
     enum class acquisition : std::uint8_t { unacquired, acquired, lost };
 

@@ -30,7 +30,10 @@ struct exclusive_lease::state final {
         std::optional<std::chrono::steady_clock::time_point> deadline;
     };
 
-    explicit state(clock_callback now, std::shared_ptr<const void> context) noexcept;
+    state(clock_callback now,
+        std::shared_ptr<const void> context,
+        connection_target target,
+        std::optional<focus::window_epoch> window) noexcept;
 
     static void close_handle(HANDLE value) noexcept;
 
@@ -52,6 +55,8 @@ struct exclusive_lease::state final {
     void request_cancel() noexcept;
     void publish_prepared(HRESULT result) noexcept;
     void publish_closed(HRESULT result) noexcept;
+    [[nodiscard]] std::expected<std::shared_ptr<const output::detail::window_acquisition>, HRESULT>
+    rumble_window(connection_target requested, const focus::window_epoch& epoch) noexcept;
 
     HANDLE start_event{};
     HANDLE prepared_event{};
@@ -73,6 +78,9 @@ private:
 
     const clock_callback clock;
     const std::shared_ptr<const void> clock_context;
+    const connection_target target;
+    const std::optional<focus::window_epoch> window;
+    std::shared_ptr<output::detail::window_acquisition> rumble;
     mutable std::mutex gate;
     mutable phase current{phase::reserved};
     mutable std::optional<HRESULT> terminal;

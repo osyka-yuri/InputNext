@@ -1,6 +1,7 @@
-add_executable(inputnext_dinput_unit_tests profile_tests.cpp format_tests.cpp)
+add_executable(inputnext_dinput_unit_tests profile_tests.cpp format_tests.cpp
+    effect_parameters_tests.cpp playback_tests.cpp)
 target_link_libraries(inputnext_dinput_unit_tests
-    PRIVATE inputnext_dinput_profile Catch2::Catch2WithMain dinput8 dxguid
+    PRIVATE inputnext_dinput Catch2::Catch2WithMain dinput8 dxguid
 )
 target_include_directories(inputnext_dinput_unit_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 inputnext_configure_target(inputnext_dinput_unit_tests)

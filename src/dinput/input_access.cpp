@@ -2,6 +2,7 @@
 
 #include "dinput/buffered/service.hpp"
 #include "dinput/exclusive/ownership.hpp"
+#include "dinput/force_feedback/service.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -14,12 +15,21 @@ input_access::input_access(core::service& core,
     gameinput_runtime& runtime,
     focus::observer& focus,
     const std::chrono::milliseconds discovery_budget)
+    : input_access(core, runtime, focus, nullptr, discovery_budget) {
+}
+
+input_access::input_access(core::service& core,
+    gameinput_runtime& runtime,
+    focus::observer& focus,
+    std::unique_ptr<force_feedback::service> feedback,
+    const std::chrono::milliseconds discovery_budget)
     : core_(core),
       runtime_(runtime),
       focus_(focus),
       discovery_(discovery_budget),
       buffers_(std::make_unique<buffered_input>(core, runtime, focus)),
-      exclusives_(std::make_unique<exclusive_input>(*this)) {
+      exclusives_(std::make_unique<exclusive_input>(*this)),
+      feedback_(std::move(feedback)) {
 }
 
 input_access::~input_access() {
@@ -73,6 +83,10 @@ exclusive_input& input_access::call::exclusives() const noexcept {
     return *owner_->exclusives_;
 }
 
+force_feedback::service* input_access::call::feedback() const noexcept {
+    return owner_->feedback_.get();
+}
+
 input_access::call input_access::enter() noexcept {
     auto observed = admission_.load(std::memory_order_acquire);
     while ((observed & closed_bit) == 0U && observed < closed_bit - 1U) {
@@ -113,6 +127,9 @@ void input_access::drain() noexcept {
     while ((observed & ~closed_bit) != 0U) {
         admission_.wait(observed, std::memory_order_acquire);
         observed = admission_.load(std::memory_order_acquire);
+    }
+    if (feedback_ != nullptr) {
+        feedback_->shutdown();
     }
     exclusives_->drain();
     buffers_->drain();

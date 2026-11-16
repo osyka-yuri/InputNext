@@ -1,5 +1,6 @@
 #pragma once
 
+#include "output/authority/internal_grant.hpp"
 #include <inputnext/device_identity.hpp>
 #include <inputnext/output.hpp>
 #include <inputnext/output_authority.hpp>
@@ -23,18 +24,24 @@ public:
     [[nodiscard]] result<internal_context> open(connection_target target);
     [[nodiscard]] result<mutation_receipt> submit(internal_context context,
         const submit_request& request);
+    [[nodiscard]] result<mutation_receipt> submit(internal_context context,
+        const submit_request& request,
+        const finite_submission_window& window);
     [[nodiscard]] result<mutation_receipt> clear(internal_context context,
         const clear_request& request);
     [[nodiscard]] result<close_receipt> close(internal_context context,
         std::uint64_t close_request_id);
     [[nodiscard]] result<void> acknowledge(const close_receipt& receipt);
+    // Terminal relinquishment after the window-rumble owner has quiesced publications.
+    // Removes only this exact context and grant, including its retained close receipt.
+    void retire_window_context(context_identity identity) noexcept;
 
 private:
     friend class composition;
-    internal_producer(authority& owner, internal_context_options options) noexcept;
+    internal_producer(authority& owner, internal_grant grant) noexcept;
 
     authority& owner_;
-    const internal_context_options options_;
+    const internal_grant grant_;
 };
 
 } // namespace inputnext::output::detail

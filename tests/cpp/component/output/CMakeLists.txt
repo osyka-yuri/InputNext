@@ -16,6 +16,7 @@ add_executable(inputnext_output_component_tests
     authority/internal_producer_tests.cpp
     authority/authority_timing_tests.cpp
     authority/xinput_rumble_tests.cpp
+    authority/window_rumble_tests.cpp
 )
 target_include_directories(inputnext_output_component_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/src"

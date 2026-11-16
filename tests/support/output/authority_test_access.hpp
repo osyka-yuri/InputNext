@@ -155,6 +155,22 @@ public:
         value.implementation_->logical_version = version;
     }
 
+    static void fail_internal_cleanup(authority& value,
+        std::optional<error> close_error,
+        std::optional<error> acknowledge_error) {
+        auto lock = lock_gate(value);
+        value.implementation_->test_internal_close_error = close_error;
+        value.implementation_->test_internal_acknowledge_error = acknowledge_error;
+    }
+
+    static void fail_internal_mutation(authority& value,
+        std::optional<error> submit_error,
+        std::optional<error> clear_error) {
+        auto lock = lock_gate(value);
+        value.implementation_->test_internal_submit_error = submit_error;
+        value.implementation_->test_internal_clear_error = clear_error;
+    }
+
     static void set_next_execution_id(authority& value, std::uint64_t next_id) {
         auto lock = lock_gate(value);
         value.implementation_->next_execution_id = next_id;

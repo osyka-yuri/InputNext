@@ -17,7 +17,7 @@ constexpr DWORD optional_object_flag = 0x80000000U;
 constexpr DWORD format_type_mask = 0x000000ffU;
 constexpr DWORD format_instance_mask = DIDFT_INSTANCEMASK;
 constexpr DWORD allowed_format_type_bits =
-    format_type_mask | format_instance_mask | optional_object_flag;
+    format_type_mask | format_instance_mask | optional_object_flag | DIDFT_FFACTUATOR;
 constexpr DWORD object_aspect_mask = static_cast<DWORD>(DIDOI_ASPECTMASK);
 
 struct staged_binding final {
@@ -30,11 +30,14 @@ struct staged_binding final {
     bool wildcard{};
     bool optional{};
     bool neutral_only{};
+    bool requires_actuator{};
 };
 
 [[nodiscard]] bool matches_profile_object(const staged_binding& binding,
     const object_descriptor& descriptor) noexcept {
     return descriptor.kind == binding.kind &&
+           (!binding.requires_actuator ||
+               (descriptor.kind == object_kind::axis && descriptor.source_index < 2U)) &&
            (!binding.has_guid || binding.guid == descriptor.guid);
 }
 
@@ -179,9 +182,11 @@ struct staged_binding final {
 [[nodiscard]] HRESULT stage_object(const DIOBJECTDATAFORMAT& source,
     DWORD data_size,
     staged_binding& destination,
-    std::array<bool, max_format_data_size>& occupied) noexcept {
+    std::array<bool, max_format_data_size>& occupied,
+    bool force_feedback) noexcept {
     destination.data_offset = source.dwOfs;
     destination.optional = (source.dwType & optional_object_flag) != 0U;
+    destination.requires_actuator = (source.dwType & DIDFT_FFACTUATOR) != 0U;
     if ((source.dwType & ~allowed_format_type_bits) != 0U) {
         return DIERR_UNSUPPORTED;
     }
@@ -189,6 +194,12 @@ struct staged_binding final {
     auto result = validate_aspect(source.dwFlags, destination.optional, destination.neutral_only);
     if (FAILED(result)) {
         return result;
+    }
+    if (destination.requires_actuator && !force_feedback) {
+        if (!destination.optional) {
+            return DIERR_UNSUPPORTED;
+        }
+        destination.neutral_only = true;
     }
     result = decode_object_type(source.dwType, destination.kind);
     if (FAILED(result)) {
@@ -202,8 +213,8 @@ struct staged_binding final {
     }
     // DIJOYSTATE2 can alias optional non-position axis placeholders with position
     // fields. An unbound POV still writes its neutral value and must own its bytes.
-    const bool reserves_storage =
-        !destination.neutral_only || destination.kind != object_kind::axis;
+    const bool reserves_storage = !destination.neutral_only || destination.requires_actuator ||
+                                  destination.kind != object_kind::axis;
     result = validate_object_storage(data_size,
         destination.data_offset,
         object_width(destination.kind),
@@ -224,11 +235,15 @@ struct staged_binding final {
 }
 
 [[nodiscard]] HRESULT stage_objects(const DIDATAFORMAT& source,
-    std::array<staged_binding, max_format_objects>& staged) noexcept {
+    std::array<staged_binding, max_format_objects>& staged,
+    bool force_feedback) noexcept {
     std::array<bool, max_format_data_size> occupied{};
     for (DWORD index = 0U; index < source.dwNumObjs; ++index) {
-        const auto result =
-            stage_object(source.rgodf[index], source.dwDataSize, staged[index], occupied);
+        const auto result = stage_object(source.rgodf[index],
+            source.dwDataSize,
+            staged[index],
+            occupied,
+            force_feedback);
         if (FAILED(result)) {
             return result;
         }
@@ -329,14 +344,16 @@ struct wildcard_match final {
 
 } // namespace
 
-HRESULT compile_format(const DIDATAFORMAT& source, compiled_format& destination) noexcept {
+HRESULT compile_format(const DIDATAFORMAT& source,
+    compiled_format& destination,
+    const bool force_feedback) noexcept {
     const auto header_result = validate_format_header(source);
     if (FAILED(header_result)) {
         return header_result;
     }
 
     std::array<staged_binding, max_format_objects> staged{};
-    auto result = stage_objects(source, staged);
+    auto result = stage_objects(source, staged, force_feedback);
     if (FAILED(result)) {
         return result;
     }
@@ -408,9 +425,13 @@ HRESULT write_state(const compiled_format& format,
 }
 
 [[nodiscard]] bool matches_object_id(const object_descriptor& descriptor, DWORD value) noexcept {
-    const auto known_type_bits = format_type_mask | format_instance_mask;
+    const auto known_type_bits = format_type_mask | format_instance_mask | DIDFT_FFACTUATOR;
     if ((value & ~known_type_bits) != 0U ||
         DIDFT_GETINSTANCE(value) != DIDFT_GETINSTANCE(descriptor.id)) {
+        return false;
+    }
+    if ((value & DIDFT_FFACTUATOR) != 0U &&
+        (descriptor.kind != object_kind::axis || descriptor.source_index > 1U)) {
         return false;
     }
     const auto type = value & format_type_mask;

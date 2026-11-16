@@ -540,10 +540,6 @@ bool instance_matches_type(const DIDEVICEINSTANCEW& instance, const DWORD device
            (requested_subtype == 0U || requested_subtype == actual_subtype);
 }
 
-bool instance_matches_flags(const DIDEVICEINSTANCEW& /*unused*/, const DWORD flags) noexcept {
-    return (flags & DIEDFL_FORCEFEEDBACK) == 0U;
-}
-
 HRESULT project_catalogue(input_access::call access,
     IDirectInput8W& system,
     catalogue_projection& out) noexcept {

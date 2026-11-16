@@ -102,6 +102,10 @@ TEST_CASE("dinput.format.copies_custom_descriptors_and_resolves_object_selectors
     format.rgodf = nullptr;
 
     CHECK(find_object(profile[0].id, DIPH_BYID, nullptr) == 0U);
+    CHECK(find_object(profile[0].id | DIDFT_FFACTUATOR, DIPH_BYID, nullptr) == 0U);
+    CHECK(find_object(profile[1].id | DIDFT_FFACTUATOR, DIPH_BYID, nullptr) == 1U);
+    CHECK_FALSE(find_object(profile[2].id | DIDFT_FFACTUATOR, DIPH_BYID, nullptr).has_value());
+    CHECK_FALSE(find_object(profile[6].id | DIDFT_FFACTUATOR, DIPH_BYID, nullptr).has_value());
     CHECK(find_object(DIDFT_PSHBUTTON | DIDFT_MAKEINSTANCE(0U), DIPH_BYID, nullptr) == 6U);
     CHECK(find_object(4U, DIPH_BYOFFSET, &compiled) == 6U);
     CHECK(find_object(DIMAKEUSAGEDWORD(0x09U, 1U), DIPH_BYUSAGE, nullptr) == 6U);
@@ -307,4 +311,41 @@ TEST_CASE("dinput.format.rejects_overlaps_and_enforces_fixed_capacities", "[unit
     format.dwDataSize = 4U;
     format.rgodf = nullptr;
     CHECK(compile_format(format, compiled) == DIERR_INVALIDPARAM);
+}
+
+TEST_CASE("dinput.format.actuator_selectors_accept_exact_and_wildcard_x_y_axes",
+    "[unit][dinput][force_feedback]") {
+    std::array<DIOBJECTDATAFORMAT, 2U> descriptors{
+        DIOBJECTDATAFORMAT{.pguid = &objects()[0U].guid,
+            .dwOfs = 0U,
+            .dwType = objects()[0U].id | DIDFT_FFACTUATOR,
+            .dwFlags = 0U},
+        DIOBJECTDATAFORMAT{.pguid = &objects()[1U].guid,
+            .dwOfs = 4U,
+            .dwType = objects()[1U].id | DIDFT_FFACTUATOR,
+            .dwFlags = 0U},
+    };
+    const auto format = data_format(8U, 2U, descriptors.data());
+    compiled_format compiled{};
+    REQUIRE(compile_format(format, compiled, true) == DI_OK);
+    CHECK(compiled.binding_count == 2U);
+    CHECK(compiled.bindings[0U].profile_object_index == 0U);
+    CHECK(compiled.bindings[1U].profile_object_index == 1U);
+    CHECK(compile_format(format, compiled) == DIERR_UNSUPPORTED);
+    for (auto& descriptor : descriptors) {
+        descriptor.pguid = nullptr;
+        descriptor.dwType = DIDFT_ABSAXIS | DIDFT_ANYINSTANCE | DIDFT_FFACTUATOR;
+    }
+    REQUIRE(compile_format(format, compiled, true) == DI_OK);
+    CHECK(compiled.bindings[0U].profile_object_index == 0U);
+    CHECK(compiled.bindings[1U].profile_object_index == 1U);
+    descriptors[0U].dwType = objects()[2U].id | DIDFT_FFACTUATOR;
+    CHECK(compile_format(format, compiled, true) == DIERR_UNSUPPORTED);
+    descriptors[0U].dwType |= optional_object_flag;
+    REQUIRE(compile_format(format, compiled, true) == DI_OK);
+    CHECK(compiled.binding_count == 1U);
+    CHECK(compiled.bindings[0U].profile_object_index == 0U);
+    descriptors[1U].dwType |= optional_object_flag;
+    REQUIRE(compile_format(format, compiled) == DI_OK);
+    CHECK(compiled.binding_count == 0U);
 }

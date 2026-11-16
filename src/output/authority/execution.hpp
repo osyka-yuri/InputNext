@@ -32,7 +32,8 @@ public:
     observe(authority& owner, execution_owner expected_owner, connection_target target);
     [[nodiscard]] static execution_result<bool> qualifies(authority& owner,
         execution_owner expected_owner,
-        const represented_projection& expected);
+        const represented_projection& expected,
+        std::optional<backend_handle> backend = std::nullopt);
     [[nodiscard]] static execution_result<bool> qualifies_route(authority& owner,
         execution_owner expected_owner,
         const body_route_intent& expected);
@@ -55,7 +56,7 @@ public:
         audio_instance expected_audio,
         std::atomic<bool>* engine_busy,
         std::size_t requested_frames) noexcept;
-    static void retire_body_backend(authority& owner, backend_handle backend) noexcept;
+    static void retire_backend(authority& owner, backend_handle backend) noexcept;
 };
 
 } // namespace inputnext::output::detail

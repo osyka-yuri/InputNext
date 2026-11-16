@@ -24,6 +24,10 @@ namespace inputnext::dinput {
 class buffered_input;
 class exclusive_input;
 
+namespace force_feedback {
+class service;
+}
+
 // COM objects retain this control block, not the borrowed session dependencies.
 // Close admission and drain admitted calls before destroying those dependencies.
 class input_access final {
@@ -31,6 +35,11 @@ public:
     input_access(core::service& core,
         gameinput_runtime& runtime,
         focus::observer& focus,
+        std::chrono::milliseconds discovery_budget = catalogue_discovery::default_budget);
+    input_access(core::service& core,
+        gameinput_runtime& runtime,
+        focus::observer& focus,
+        std::unique_ptr<force_feedback::service> feedback,
         std::chrono::milliseconds discovery_budget = catalogue_discovery::default_budget);
     ~input_access();
     input_access(const input_access&) = delete;
@@ -53,6 +62,7 @@ public:
         [[nodiscard]] focus::observer& focus() const noexcept;
         [[nodiscard]] buffered_input& buffers() const noexcept;
         [[nodiscard]] exclusive_input& exclusives() const noexcept;
+        [[nodiscard]] force_feedback::service* feedback() const noexcept;
 
     private:
         friend class input_access;
@@ -78,6 +88,7 @@ private:
     catalogue_discovery discovery_;
     std::unique_ptr<buffered_input> buffers_;
     std::unique_ptr<exclusive_input> exclusives_;
+    std::unique_ptr<force_feedback::service> feedback_;
 };
 
 } // namespace inputnext::dinput

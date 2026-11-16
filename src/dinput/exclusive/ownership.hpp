@@ -63,6 +63,7 @@ private:
         proof_clock now,
         std::shared_ptr<const void> context) noexcept;
 
+    struct actor;
     struct implementation;
     std::unique_ptr<implementation> implementation_;
 };

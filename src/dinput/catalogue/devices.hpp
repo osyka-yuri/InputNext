@@ -40,5 +40,4 @@ struct catalogue_projection final {
 [[nodiscard]] bool is_game_controller_request(DWORD device_type) noexcept;
 [[nodiscard]] bool instance_matches_type(const DIDEVICEINSTANCEW& instance,
     DWORD device_type) noexcept;
-[[nodiscard]] bool instance_matches_flags(const DIDEVICEINSTANCEW& instance, DWORD flags) noexcept;
 } // namespace inputnext::dinput

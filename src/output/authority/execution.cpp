@@ -268,7 +268,8 @@ execution_result<logical_snapshot> authority_execution_access::observe(authority
 
 execution_result<bool> authority_execution_access::qualifies(authority& owner,
     const execution_owner expected_owner,
-    const represented_projection& expected) {
+    const represented_projection& expected,
+    const std::optional<backend_handle> backend) {
     std::scoped_lock lock{owner.implementation_->gate};
     auto& state = *owner.implementation_;
 
@@ -279,7 +280,9 @@ execution_result<bool> authority_execution_access::qualifies(authority& owner,
     }
     if (!expected.target.valid() || expected.target.runtime != state.runtime ||
         expected.incarnation != expected_owner.authority || expected.channels == 0U ||
-        (expected.channels & ~supported_channel_mask) != 0U) {
+        (expected.channels & ~supported_channel_mask) != 0U ||
+        (backend.has_value() && (!backend->valid() || backend->target != expected.target ||
+                                    backend->incarnation.owner != expected_owner))) {
         return std::unexpected{execution_error::invalid_argument};
     }
 
@@ -291,7 +294,26 @@ execution_result<bool> authority_execution_access::qualifies(authority& owner,
     if (!projected.has_value()) {
         return std::unexpected{projected.error()};
     }
-    return *projected == expected;
+    if (*projected != expected) {
+        return false;
+    }
+
+    if (projected->rumble.has_value()) {
+        auto* const rumble_owner = state.find_open(projected->rumble->provenance.identity);
+        if (rumble_owner != nullptr && rumble_owner->window_binding &&
+            rumble_owner->backend_binding.has_value()) {
+            if (!backend.has_value()) {
+                return false;
+            }
+            if (rumble_owner->backend_binding != backend) {
+                // Revoke only the exact stale window-bound winner. Process-scoped grants and
+                // sibling DirectInput contexts remain eligible for the next projection.
+                static_cast<void>(state.close_record(*rumble_owner, close_reason::explicit_close));
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 execution_result<bool> authority_execution_access::qualifies_route(authority& owner,
@@ -428,11 +450,17 @@ authority_execution_access::admit_current_body_render(authority& owner,
         .permit = std::move(current.permit)}};
 }
 
-void authority_execution_access::retire_body_backend(authority& owner,
+void authority_execution_access::retire_backend(authority& owner,
     const backend_handle backend) noexcept {
     auto& state = *owner.implementation_;
     std::scoped_lock lock{state.gate};
     static_cast<void>(state.playback_bank.retire_backend(backend));
+    for (auto& entry : state.records) {
+        if (entry.state == authority::implementation::phase::open && entry.window_binding &&
+            entry.backend_binding == backend) {
+            static_cast<void>(state.close_record(entry, close_reason::explicit_close));
+        }
+    }
 }
 
 } // namespace inputnext::output::detail

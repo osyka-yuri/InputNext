@@ -49,8 +49,10 @@ execution_engine::implementation::drive_action execution_engine::implementation:
         return {.kind = drive_action_kind::progressed};
     }
 
-    const auto qualifies =
-        authority_execution_access::qualifies(owner, execution, *backend->projection);
+    const auto qualifies = authority_execution_access::qualifies(owner,
+        execution,
+        *backend->projection,
+        backend->handle);
     if (!apply_qualification_result(*backend, qualifies)) {
         return {.kind = drive_action_kind::progressed};
     }
@@ -192,8 +194,10 @@ void execution_engine::implementation::finish_attempt(const native_command& comm
         return;
     }
 
-    const auto qualified =
-        authority_execution_access::qualifies(owner, execution, *backend->projection);
+    const auto qualified = authority_execution_access::qualifies(owner,
+        execution,
+        *backend->projection,
+        backend->handle);
     if (!apply_qualification_result(*backend, qualified)) {
         return;
     }

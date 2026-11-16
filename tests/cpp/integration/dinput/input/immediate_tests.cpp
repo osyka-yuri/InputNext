@@ -166,11 +166,13 @@ TEST_CASE("dinput.device_returns_standard_state_and_projects_object_properties",
             DI_OK);
     CHECK(vendor_product.dwData == 0x054c0ce6U);
     auto gain = device_dword_property(7500U);
-    CHECK(inputnext_dinput_get_property_w(device.get(), &DIPROP_FFGAIN, &gain.diph) ==
-          DIERR_UNSUPPORTED);
+    CHECK(inputnext_dinput_get_property_w(device.get(), &DIPROP_FFGAIN, &gain.diph) == DI_OK);
+    CHECK(gain.dwData == DI_FFNOMINALMAX);
+    gain.dwData = 7500U;
+    CHECK(inputnext_dinput_set_property_w(device.get(), &DIPROP_FFGAIN, &gain.diph) == DI_OK);
+    gain.dwData = 0U;
+    CHECK(inputnext_dinput_get_property_w(device.get(), &DIPROP_FFGAIN, &gain.diph) == DI_OK);
     CHECK(gain.dwData == 7500U);
-    CHECK(inputnext_dinput_set_property_w(device.get(), &DIPROP_FFGAIN, &gain.diph) ==
-          DIERR_UNSUPPORTED);
 
     const auto changed_range = x_range_property();
     auto configured_range = changed_range;

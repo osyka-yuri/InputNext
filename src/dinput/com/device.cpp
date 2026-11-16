@@ -4,15 +4,20 @@
 #include "dinput/device_info.hpp"
 #include "dinput/device_input.hpp"
 #include "dinput/exclusive/ownership.hpp"
+#include "dinput/force_feedback/effect.hpp"
+#include "dinput/force_feedback/parameters.hpp"
 #include "dinput/input_access.hpp"
 #include "dinput/native_types.hpp"
 #include "dinput/profile.hpp"
 #include "factory.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <memory>
 #include <new>
+#include <string>
+#include <type_traits>
 #include <utility>
 
 namespace inputnext::dinput {
@@ -98,6 +103,71 @@ void write_info(Info* output, Info value, DWORD size) noexcept {
            (type <= DIEFT_CUSTOMFORCE || type == DIEFT_HARDWARE);
 }
 
+[[nodiscard]] bool matches_effect_filter(const force_feedback::effect_descriptor& descriptor,
+    DWORD flags) noexcept {
+    const DWORD requested_type = flags & 0xffU;
+    const DWORD effect_type = descriptor.type & 0xffU;
+    if (requested_type != DIEFT_ALL && requested_type != DIEFT_HARDWARE &&
+        requested_type != effect_type) {
+        return false;
+    }
+    if (requested_type == DIEFT_HARDWARE) {
+        return false;
+    }
+    constexpr DWORD attributes = DIEFT_FFATTACK | DIEFT_FFFADE | DIEFT_SATURATION |
+                                 DIEFT_POSNEGCOEFFICIENTS | DIEFT_POSNEGSATURATION |
+                                 DIEFT_DEADBAND | DIEFT_STARTDELAY;
+    const DWORD requested_attributes = flags & attributes;
+    return (descriptor.type & requested_attributes) == requested_attributes;
+}
+
+[[nodiscard]] bool is_feedback_actuator(const object_descriptor& object) noexcept {
+    return object.kind == object_kind::axis && force_feedback::actuator(object.source_index);
+}
+
+template <typename Projection>
+[[nodiscard]] auto describe_for_device(const object_descriptor& object,
+    Projection projection,
+    bool feedback) noexcept {
+    auto result = projection(object);
+    if (feedback && is_feedback_actuator(object)) {
+        result.dwType |= DIDFT_FFACTUATOR;
+        result.dwFlags |= DIDOI_FFACTUATOR;
+    }
+    return result;
+}
+
+[[nodiscard]] bool
+matches_device_object(const object_descriptor& object, DWORD flags, bool feedback) noexcept {
+    const bool requires_actuator = (flags & DIDFT_FFACTUATOR) != 0U;
+    if (requires_actuator && (!feedback || !is_feedback_actuator(object))) {
+        return false;
+    }
+    const auto remaining = flags & ~static_cast<DWORD>(DIDFT_FFACTUATOR);
+    return remaining == 0U || matches_object_filter(object, remaining);
+}
+
+template <typename EffectInfo>
+void fill_effect_info(EffectInfo& value,
+    const force_feedback::effect_descriptor& descriptor) noexcept {
+    value.dwSize = sizeof(value);
+    value.guid = *descriptor.id;
+    value.dwEffType = descriptor.type;
+    value.dwStaticParams = descriptor.static_params;
+    value.dwDynamicParams = descriptor.dynamic_params;
+    using character = std::remove_extent_t<decltype(value.tszName)>;
+    const auto* const name = [&] {
+        if constexpr (std::is_same_v<character, char>) {
+            return descriptor.name;
+        } else {
+            return descriptor.wide_name;
+        }
+    }();
+    const auto length =
+        std::min<std::size_t>(std::char_traits<character>::length(name), MAX_PATH - 1U);
+    std::copy_n(name, length, value.tszName);
+}
+
 class device final : public IDirectInputDevice8A, public IDirectInputDevice8W {
 public:
     device(const device_identity& identity,
@@ -107,7 +177,8 @@ public:
         : identity_(identity),
           access_(std::move(access)),
           lifetime_(parent),
-          input_(identity_, access_, std::move(factory)) {}
+          input_(identity_, access_, std::move(factory)),
+          effects_(*static_cast<IDirectInputDevice8A*>(this), access_, input_) {}
 
     ~device() = default;
 
@@ -161,6 +232,11 @@ public:
             }
             DIDEVCAPS value{};
             value.dwFlags = DIDC_EMULATED | (attached ? DIDC_ATTACHED : 0U);
+            if (input_.feedback_capable(call)) {
+                value.dwFlags |= DIDC_FORCEFEEDBACK | DIDC_FFATTACK | DIDC_FFFADE | DIDC_STARTDELAY;
+                value.dwFFSamplePeriod = 4000U;
+                value.dwFFMinTimeResolution = 4000U;
+            }
             value.dwDevType = identity_.instance.dwDevType;
             value.dwAxes = static_cast<DWORD>(axis_count);
             value.dwButtons = static_cast<DWORD>(button_count);
@@ -184,12 +260,16 @@ public:
 
     HRESULT STDMETHODCALLTYPE GetProperty(REFGUID property,
         DIPROPHEADER* header) noexcept override {
-        return input_.get_property(property_token(&property), header);
+        const auto* const token = property_token(&property);
+        return token == &DIPROP_FFGAIN ? effects_.get_gain(token, header)
+                                       : input_.get_property(token, header);
     }
 
     HRESULT STDMETHODCALLTYPE SetProperty(REFGUID property,
         const DIPROPHEADER* header) noexcept override {
-        return input_.set_property(property_token(&property), header);
+        const auto* const token = property_token(&property);
+        return token == &DIPROP_FFGAIN ? effects_.set_gain(token, header)
+                                       : input_.set_property(token, header);
     }
 
     HRESULT STDMETHODCALLTYPE Acquire() noexcept override {
@@ -280,55 +360,46 @@ public:
         return DIERR_ALREADYINITIALIZED;
     }
 
-    HRESULT STDMETHODCALLTYPE CreateEffect([[maybe_unused]] REFGUID guid,
-        [[maybe_unused]] const DIEFFECT* effect,
+    HRESULT STDMETHODCALLTYPE CreateEffect(REFGUID guid,
+        const DIEFFECT* parameters,
         IDirectInputEffect** out,
         IUnknown* outer) noexcept override {
-        if (out == nullptr) {
-            return E_POINTER;
-        }
-        *out = nullptr;
-        return outer != nullptr ? CLASS_E_NOAGGREGATION : DIERR_UNSUPPORTED;
+        return effects_.create(guid, parameters, out, outer);
     }
 
     HRESULT STDMETHODCALLTYPE EnumEffects(LPDIENUMEFFECTSCALLBACKA callback,
-        [[maybe_unused]] void* context,
+        void* context,
         DWORD flags) noexcept override {
-        return callback == nullptr || !valid_effect_filter(flags) ? DIERR_INVALIDPARAM : DI_OK;
+        return enumerate_effects<DIEFFECTINFOA>(callback, context, flags);
     }
 
     HRESULT STDMETHODCALLTYPE EnumEffects(LPDIENUMEFFECTSCALLBACKW callback,
-        [[maybe_unused]] void* context,
+        void* context,
         DWORD flags) noexcept override {
-        return callback == nullptr || !valid_effect_filter(flags) ? DIERR_INVALIDPARAM : DI_OK;
+        return enumerate_effects<DIEFFECTINFOW>(callback, context, flags);
     }
 
-    HRESULT STDMETHODCALLTYPE GetEffectInfo(DIEFFECTINFOA* out,
-        [[maybe_unused]] REFGUID guid) noexcept override {
-        return out == nullptr || out->dwSize != sizeof(*out) ? DIERR_INVALIDPARAM
-                                                             : DIERR_UNSUPPORTED;
+    HRESULT STDMETHODCALLTYPE GetEffectInfo(DIEFFECTINFOA* out, REFGUID guid) noexcept override {
+        return get_effect_info(out, guid);
     }
 
-    HRESULT STDMETHODCALLTYPE GetEffectInfo(DIEFFECTINFOW* out,
-        [[maybe_unused]] REFGUID guid) noexcept override {
-        return out == nullptr || out->dwSize != sizeof(*out) ? DIERR_INVALIDPARAM
-                                                             : DIERR_UNSUPPORTED;
+    HRESULT STDMETHODCALLTYPE GetEffectInfo(DIEFFECTINFOW* out, REFGUID guid) noexcept override {
+        return get_effect_info(out, guid);
     }
 
     HRESULT STDMETHODCALLTYPE GetForceFeedbackState(DWORD* out) noexcept override {
-        return out == nullptr ? DIERR_INVALIDPARAM : DIERR_UNSUPPORTED;
+        return effects_.get_state(out);
     }
 
-    HRESULT STDMETHODCALLTYPE SendForceFeedbackCommand(
-        [[maybe_unused]] DWORD flags) noexcept override {
-        return DIERR_UNSUPPORTED;
+    HRESULT STDMETHODCALLTYPE SendForceFeedbackCommand(DWORD flags) noexcept override {
+        return effects_.command(flags);
     }
 
     HRESULT STDMETHODCALLTYPE EnumCreatedEffectObjects(
         LPDIENUMCREATEDEFFECTOBJECTSCALLBACK callback,
-        [[maybe_unused]] void* context,
+        void* context,
         DWORD flags) noexcept override {
-        return callback == nullptr || flags != 0U ? DIERR_INVALIDPARAM : DI_OK;
+        return effects_.enumerate_created(callback, context, flags);
     }
 
     HRESULT STDMETHODCALLTYPE Escape(DIEFFESCAPE* value) noexcept override {
@@ -427,9 +498,17 @@ private:
         }
         return guarded([&] -> HRESULT {
             const callback_reference retained{*static_cast<IDirectInputDevice8A*>(this)};
+            bool feedback{};
+            {
+                const auto call = access_->enter();
+                if (!call) {
+                    return DIERR_INPUTLOST;
+                }
+                feedback = input_.feedback_capable(call);
+            }
             for (const auto& object : objects()) {
-                if (matches_object_filter(object, flags)) {
-                    const auto info = projection(object);
+                if (matches_device_object(object, flags, feedback)) {
+                    const auto info = describe_for_device(object, projection, feedback);
                     if (callback(&info, context) == DIENUM_STOP) {
                         break;
                     }
@@ -449,11 +528,82 @@ private:
             if (!access_->open()) {
                 return DIERR_INPUTLOST;
             }
-            const auto selected = input_.select_object(object, how);
+            bool feedback{};
+            {
+                const auto call = access_->enter();
+                if (!call) {
+                    return DIERR_INPUTLOST;
+                }
+                feedback = input_.feedback_capable(call);
+            }
+            const bool requires_actuator = how == DIPH_BYID && (object & DIDFT_FFACTUATOR) != 0U;
+            const DWORD selector =
+                requires_actuator ? object & ~static_cast<DWORD>(DIDFT_FFACTUATOR) : object;
+            const auto selected = input_.select_object(selector, how);
             if (!selected.has_value()) {
                 return DIERR_OBJECTNOTFOUND;
             }
-            write_info(out, projection(objects()[*selected]), size);
+            const auto& selected_object = objects()[*selected];
+            if (requires_actuator && (!feedback || !is_feedback_actuator(selected_object))) {
+                return DIERR_OBJECTNOTFOUND;
+            }
+            write_info(out, describe_for_device(selected_object, projection, feedback), size);
+            return DI_OK;
+        });
+    }
+
+    template <typename Info, typename Callback>
+    HRESULT enumerate_effects(Callback callback, void* context, DWORD flags) noexcept {
+        if (callback == nullptr || !valid_effect_filter(flags)) {
+            return DIERR_INVALIDPARAM;
+        }
+        return guarded([&] -> HRESULT {
+            bool feedback{};
+            {
+                const auto call = access_->enter();
+                if (!call) {
+                    return DIERR_INPUTLOST;
+                }
+                feedback = input_.feedback_capable(call);
+            }
+            if (!feedback) {
+                return DI_OK;
+            }
+            const callback_reference retained{*static_cast<IDirectInputDevice8A*>(this)};
+            for (const auto& descriptor : force_feedback::effects()) {
+                if (!matches_effect_filter(descriptor, flags)) {
+                    continue;
+                }
+                Info info{};
+                fill_effect_info(info, descriptor);
+                if (callback(&info, context) == DIENUM_STOP) {
+                    break;
+                }
+            }
+            return DI_OK;
+        });
+    }
+
+    template <typename Info>
+    HRESULT get_effect_info(Info* out, REFGUID guid) noexcept {
+        if (out == nullptr || out->dwSize != sizeof(*out)) {
+            return DIERR_INVALIDPARAM;
+        }
+        return guarded([&] -> HRESULT {
+            const auto call = access_->enter();
+            if (!call) {
+                return DIERR_INPUTLOST;
+            }
+            if (!input_.feedback_capable(call)) {
+                return DIERR_UNSUPPORTED;
+            }
+            const auto* const descriptor = force_feedback::find_effect(guid);
+            if (descriptor == nullptr) {
+                return DIERR_UNSUPPORTED;
+            }
+            Info value{};
+            fill_effect_info(value, *descriptor);
+            *out = value;
             return DI_OK;
         });
     }
@@ -464,6 +614,7 @@ private:
     const device_lifetime lifetime_;
     std::atomic<ULONG> references_{1U};
     device_input input_;
+    force_feedback::device_effects effects_;
 };
 
 } // namespace

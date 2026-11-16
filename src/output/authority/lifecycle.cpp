@@ -146,7 +146,6 @@ result<public_context> authority::open(connection_target target) {
     if (!new_identity.has_value()) {
         return std::unexpected{new_identity.error()};
     }
-
     free->state = implementation::phase::open;
     free->identity = context_identity{
         .target = target,
@@ -164,62 +163,59 @@ result<public_context> authority::open(connection_target target) {
 }
 
 result<internal_context> authority::open_internal(connection_target target,
-    const internal_context_options& options) {
+    const detail::internal_grant& grant) {
+    const auto& options = grant.options;
     if (!target.valid()) {
         return std::unexpected{error::invalid_argument};
     }
     if (target.runtime != implementation_->runtime) {
         return std::unexpected{error::not_connected};
     }
+    if (grant.window && grant.window->target() != target) {
+        return std::unexpected{error::not_connected};
+    }
+    if (grant.backend &&
+        (!grant.window || !grant.backend->valid() || grant.backend->target != target)) {
+        return std::unexpected{error::invalid_argument};
+    }
     const auto valid_options = policy_detail::validate_internal_context_options(options);
     if (!valid_options.has_value()) {
         return std::unexpected{valid_options.error()};
     }
+    if (grant.window && (options.priority != internal_priority::game_semantic ||
+                            options.ttl != ttl_permission::finite_only ||
+                            options.foreground != foreground_policy::foreground_bound)) {
+        return std::unexpected{error::invalid_argument};
+    }
 
     const auto entry_time = implementation_->now();
     std::scoped_lock lock{implementation_->gate};
-    if (implementation_->existing_internal_grant_conflicts(target, options)) {
-        return std::unexpected{error::invalid_argument};
+    if (grant.backend &&
+        (!implementation_->attached_execution.has_value() ||
+            grant.backend->incarnation.owner != *implementation_->attached_execution)) {
+        return std::unexpected{error::not_connected};
+    }
+    const auto existing = implementation_->find_internal_context(target, grant);
+    if (!existing.has_value()) {
+        return std::unexpected{existing.error()};
+    }
+    const auto before = implementation_->prepare_internal_open(target, grant);
+    if (!before.has_value()) {
+        return std::unexpected{before.error()};
     }
     const auto evaluation_time = implementation_->effective_time(entry_time);
     static_cast<void>(implementation_->expire_target(target, evaluation_time));
-
-    std::optional<focus::foreground_epoch> before;
-    if (options.foreground == foreground_policy::foreground_bound) {
-        before = implementation_->fresh_epoch();
-        static_cast<void>(implementation_->close_bound_mismatches(target,
-            before,
-            close_reason::foreground_revocation));
-        if (!before.has_value()) {
-            return std::unexpected{error::revoked};
-        }
-    }
     auto captured = capture_target(*implementation_, target);
     if (!captured.has_value()) {
         return std::unexpected{captured.error()};
     }
-    if (options.foreground == foreground_policy::foreground_bound) {
-        const auto after = implementation_->fresh_epoch();
-        if (after != before) {
-            static_cast<void>(implementation_->close_bound_mismatches(target,
-                std::nullopt,
-                close_reason::foreground_revocation));
-            return std::unexpected{error::revoked};
-        }
+    const auto revalidated = implementation_->revalidate_internal_open(target, grant, *before);
+    if (!revalidated.has_value()) {
+        return std::unexpected{revalidated.error()};
     }
-
-    for (auto const& entry : implementation_->records) {
-        if (entry.state != implementation::phase::open ||
-            entry.identity.kind != owner_class::trusted_internal ||
-            entry.xinput_rumble.has_value() || entry.identity.target != target ||
-            entry.identity.internal_owner != options.owner) {
-            continue;
-        }
-        if (entry.priority != options.priority || entry.ttl != options.ttl ||
-            entry.foreground != options.foreground) {
-            return std::unexpected{error::invalid_argument};
-        }
-        return internal_context{entry.identity};
+    if (existing->has_value() &&
+        implementation_->find_open(existing->value_or(internal_context{}).identity) != nullptr) {
+        return **existing;
     }
 
     auto* free = implementation_->find_free(owner_class::trusted_internal);
@@ -234,6 +230,9 @@ result<internal_context> authority::open_internal(connection_target target,
     if (!new_identity.has_value()) {
         return std::unexpected{new_identity.error()};
     }
+    if (grant.window && !implementation_->window_qualifies(grant.window)) {
+        return std::unexpected{error::revoked};
+    }
 
     free->state = implementation::phase::open;
     free->identity = context_identity{
@@ -246,7 +245,9 @@ result<internal_context> authority::open_internal(connection_target target,
     free->priority = options.priority;
     free->ttl = options.ttl;
     free->foreground = options.foreground;
-    free->opening_epoch = before;
+    free->opening_epoch = *before;
+    free->window_binding = grant.window;
+    free->backend_binding = grant.backend;
     ++implementation_->logical_version;
     return internal_context{free->identity};
 }
@@ -279,12 +280,12 @@ result<context_info> authority::inspect(public_context context) {
 result<close_receipt> authority::implementation::close_with_retry(context_identity identity,
     owner_class expected_class,
     std::uint64_t close_request_id,
-    const internal_context_options* options) {
+    const detail::internal_grant* grant) {
     if (!valid_context_identity(identity, expected_class)) {
         return std::unexpected{error::stale_context};
     }
     if (expected_class == owner_class::trusted_internal &&
-        (options == nullptr || identity.internal_owner != options->owner)) {
+        (grant == nullptr || identity.internal_owner != grant->options.owner)) {
         return std::unexpected{error::stale_context};
     }
     if (close_request_id != identity.id.value) {
@@ -299,8 +300,11 @@ result<close_receipt> authority::implementation::close_with_retry(context_identi
     if (entry == nullptr) {
         return std::unexpected{error::stale_context};
     }
-    if (expected_class == owner_class::trusted_internal && !matches_grant(*entry, *options)) {
+    if (expected_class == owner_class::trusted_internal && !matches_grant(*entry, *grant)) {
         return std::unexpected{error::stale_context};
+    }
+    if (expected_class == owner_class::trusted_internal && test_internal_close_error.has_value()) {
+        return std::unexpected{*test_internal_close_error};
     }
     if (entry->state == phase::closed_retained && entry->receipt.has_value()) {
         return entry->receipt.value_or(close_receipt{});
@@ -323,11 +327,11 @@ result<close_receipt> authority::close(public_context context, std::uint64_t clo
 
 result<close_receipt> authority::close_internal(internal_context context,
     std::uint64_t close_request_id,
-    const internal_context_options& options) {
+    const detail::internal_grant& grant) {
     return implementation_->close_with_retry(context.identity,
         owner_class::trusted_internal,
         close_request_id,
-        &options);
+        &grant);
 }
 
 result<void> authority::acknowledge(const close_receipt& receipt) {
@@ -346,20 +350,43 @@ result<void> authority::acknowledge(const close_receipt& receipt) {
 }
 
 result<void> authority::acknowledge_internal(const close_receipt& receipt,
-    const internal_context_options& options) {
+    const detail::internal_grant& grant) {
     const auto& identity = receipt.identity;
     if (!implementation_->valid_context_identity(identity, owner_class::trusted_internal) ||
-        identity.internal_owner != options.owner || receipt.close_request_id != identity.id) {
+        identity.internal_owner != grant.options.owner || receipt.close_request_id != identity.id) {
         return std::unexpected{error::stale_context};
     }
     std::scoped_lock lock{implementation_->gate};
     auto* const entry = implementation_->find_retained(identity);
-    if (entry == nullptr || !implementation::matches_grant(*entry, options) ||
+    if (entry == nullptr || !implementation::matches_grant(*entry, grant) ||
         !entry->receipt.has_value() || *entry->receipt != receipt) {
         return std::unexpected{error::stale_context};
     }
+    if (implementation_->test_internal_acknowledge_error.has_value()) {
+        return std::unexpected{*implementation_->test_internal_acknowledge_error};
+    }
     entry->reset();
     return {};
+}
+
+void authority::retire_window_context(context_identity identity,
+    const detail::internal_grant& grant) noexcept {
+    if (!grant.window || grant.options.priority != internal_priority::game_semantic ||
+        grant.options.ttl != ttl_permission::finite_only ||
+        grant.options.foreground != foreground_policy::foreground_bound ||
+        !implementation_->valid_context_identity(identity, owner_class::trusted_internal)) {
+        return;
+    }
+    std::scoped_lock lock{implementation_->gate};
+    auto* entry = implementation_->find_open(identity);
+    if (entry == nullptr) {
+        entry = implementation_->find_retained(identity);
+    }
+    if (entry == nullptr || !implementation::matches_grant(*entry, grant)) {
+        return;
+    }
+    static_cast<void>(implementation_->close_record(*entry, close_reason::explicit_close));
+    entry->reset();
 }
 
 result<maintenance_report> authority::maintain(connection_target target) {
@@ -382,6 +409,8 @@ result<maintenance_report> authority::maintain(connection_target target) {
     report.closed_contexts = implementation_->close_bound_mismatches(target,
         implementation_->fresh_epoch(),
         close_reason::foreground_revocation);
+    report.closed_contexts +=
+        implementation_->close_window_mismatches(target, close_reason::foreground_revocation);
 
     auto pin = implementation_->capture(target);
     if (!pin.has_value()) {

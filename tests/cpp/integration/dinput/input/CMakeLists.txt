@@ -8,6 +8,7 @@ add_executable(inputnext_dinput_input_tests
     buffered_handoff_tests.cpp
     device_info_tests.cpp
     focus_tests.cpp
+    feedback_lease_tests.cpp
     lifecycle_tests.cpp
     catalogue_tests.cpp
     discovery_tests.cpp
