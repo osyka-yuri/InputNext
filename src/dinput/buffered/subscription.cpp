@@ -64,20 +64,13 @@ namespace {
     return DIERR_GENERIC;
 }
 
-[[nodiscard]] bool is_guide_object(const data_binding& binding) noexcept {
-    const auto descriptors = objects();
-    return binding.kind == object_kind::button &&
-           binding.profile_object_index < descriptors.size() &&
-           descriptors[binding.profile_object_index].source_index == 10U;
+[[nodiscard]] bool is_guide_object(const object_descriptor& object) noexcept {
+    return object.kind == object_kind::button && object.source_index == 10U;
 }
 
-[[nodiscard]] DWORD value_for(const data_binding& binding, const profile_values& values) noexcept {
-    const auto descriptors = objects();
-    if (binding.profile_object_index >= descriptors.size()) {
-        return 0U;
-    }
-    const auto& descriptor = descriptors[binding.profile_object_index];
-    switch (binding.kind) {
+[[nodiscard]] DWORD value_for(const object_descriptor& descriptor,
+    const profile_values& values) noexcept {
+    switch (descriptor.kind) {
     case object_kind::axis:
         if (descriptor.source_index < values.axes.size()) {
             return static_cast<DWORD>(values.axes[descriptor.source_index]);
@@ -208,21 +201,24 @@ struct buffered_subscription::implementation final {
 
     void remember(const history_sample& sample) noexcept {
         last_sample = sample;
-        last_values = project(sample.state, configuration.axes);
+        last_values = configuration.model.project(sample.state, configuration.axes);
         has_predecessor = true;
     }
 
     void emit_changes(const history_sample& sample, DWORD sequence) noexcept {
-        const auto next = project(sample.state, configuration.axes);
+        const auto next = configuration.model.project(sample.state, configuration.axes);
+        const auto descriptors = configuration.model.objects();
         for (DWORD index = 0U; index < configuration.format.binding_count; ++index) {
             const auto& binding = configuration.format.bindings[index];
-            if (binding.profile_object_index == no_profile_object ||
-                binding.profile_object_index >= objects().size() ||
-                (is_guide_object(binding) && !sample.guide_known)) {
+            if (binding.profile_object_index >= descriptors.size()) {
                 continue;
             }
-            const auto value = value_for(binding, next);
-            if (value == value_for(binding, last_values)) {
+            const auto& descriptor = descriptors[binding.profile_object_index];
+            if (!sample.guide_known && is_guide_object(descriptor)) {
+                continue;
+            }
+            const auto value = value_for(descriptor, next);
+            if (value == value_for(descriptor, last_values)) {
                 continue;
             }
             const auto elapsed_ms = (sample.source_timestamp_us - cut.clock.timestamp_us) / 1000U;

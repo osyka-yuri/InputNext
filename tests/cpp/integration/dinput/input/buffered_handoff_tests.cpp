@@ -47,7 +47,7 @@ TEST_CASE("dinput.prepared_notification_is_dispatched_after_activation_with_a_bl
     std::array<DIOBJECTDATAFORMAT, 22U> descriptions{};
     std::array<GUID, 22U> guids{};
     const auto format = compact_format(descriptions, guids);
-    REQUIRE(dinput::compile_format(format, configuration.format) == DI_OK);
+    REQUIRE(dinput::compile_format(format, configuration.format, configuration.model) == DI_OK);
 
     const auto script = owners.scripts[0U];
     script->block_next();

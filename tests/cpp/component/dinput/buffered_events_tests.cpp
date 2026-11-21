@@ -52,7 +52,7 @@ constexpr auto pressed = static_cast<button_mask>(gamepad_button::south);
         .dwNumObjs = 1U,
         .rgodf = &object};
     buffer_configuration result{.target = target(), .requested_size = capacity};
-    REQUIRE(compile_format(source, result.format) == DI_OK);
+    REQUIRE(compile_format(source, result.format, result.model) == DI_OK);
     return result;
 }
 

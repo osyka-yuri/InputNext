@@ -4,9 +4,12 @@
 #include "cpp/integration/gameinput/runtime/runtime_history_test_support.hpp"
 #include "cpp/integration/gameinput/runtime/runtime_test_support.hpp"
 #include "dinput/input_access.hpp"
+#include "profiles/parser.hpp"
 #include "runtime/session/native_session.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+
+#include <inputnext/gamepad_state.hpp>
 
 #include <array>
 #include <atomic>
@@ -185,6 +188,26 @@ TEST_CASE("runtime.session.directinput_discovery_close_wakes_retained_waiter_aft
 
     wait_worker.join();
     waiter.reset();
+}
+
+TEST_CASE("runtime.session.directinput_configures_device_model_from_profile_settings",
+    "[integration][runtime][session][dinput]") {
+    const auto parsed = profiles::parse_profile(
+        "[directinput]\ndigital_triggers = true\ntrigger_threshold = 0.42\n");
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->diagnostics.empty());
+    session_fixture fixture{nullptr, nullptr, nullptr, {}, {}, parsed->settings};
+    REQUIRE(fixture.session != nullptr);
+
+    const auto access = fixture.session->directinput();
+    REQUIRE(access != nullptr);
+    CHECK(access->model().button_count() == 17U);
+    const auto state =
+        access->model().project(gamepad_state{.left_trigger = 0.42F, .right_trigger = 0.419F}, {});
+    CHECK(state.buttons[15U] == 0x80U);
+    CHECK(state.buttons[16U] == 0U);
+
+    fixture.session->shutdown();
 }
 
 } // namespace inputnext::runtime_session_test_support

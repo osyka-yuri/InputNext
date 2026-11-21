@@ -5,6 +5,7 @@
 #include "core/core.hpp"
 #include "dinput/force_feedback/service.hpp"
 #include "dinput/input_access.hpp"
+#include "dinput/profile.hpp"
 #include "effects/effects.hpp"
 #include "effects/identity.hpp"
 #include "gameinput/native/native_gameinput.hpp"
@@ -178,10 +179,14 @@ std::unique_ptr<native_session> native_session::implementation::prepare(
         *state->output_executor,
         state->connections.get(),
         &query_directinput_motors);
+    const auto& directinput_settings = dependencies.profile_settings.directinput;
+    const dinput::device_model directinput_model{directinput_settings.digital_triggers,
+        directinput_settings.trigger_threshold};
     state->directinput_access = std::make_shared<dinput::input_access>(*state->core_service,
         *state->runtime,
         *state->focus_observer,
-        std::move(feedback));
+        std::move(feedback),
+        directinput_model);
 
     state->audio_routes = std::make_unique<output::detail::audio_route_control>(
         state->output_composition->audio_routes());

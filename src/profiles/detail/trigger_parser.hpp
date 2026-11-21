@@ -6,7 +6,6 @@
 #include <toml++/toml.hpp>
 
 #include <optional>
-#include <string>
 #include <string_view>
 #include <vector>
 
@@ -17,7 +16,6 @@ struct trigger_parse_result final {
     std::vector<diagnostic> diagnostics;
 };
 
-[[nodiscard]] diagnostic located_diagnostic(const toml::node& source, std::string message);
 [[nodiscard]] trigger_parse_result parse_trigger(const toml::node& source, std::string_view name);
 
 } // namespace inputnext::profiles::detail

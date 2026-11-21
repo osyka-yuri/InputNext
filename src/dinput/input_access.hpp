@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dinput/catalogue/discovery.hpp"
+#include "profile.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -35,11 +36,13 @@ public:
     input_access(core::service& core,
         gameinput_runtime& runtime,
         focus::observer& focus,
+        device_model model = {},
         std::chrono::milliseconds discovery_budget = catalogue_discovery::default_budget);
     input_access(core::service& core,
         gameinput_runtime& runtime,
         focus::observer& focus,
         std::unique_ptr<force_feedback::service> feedback,
+        device_model model = {},
         std::chrono::milliseconds discovery_budget = catalogue_discovery::default_budget);
     ~input_access();
     input_access(const input_access&) = delete;
@@ -78,9 +81,12 @@ public:
     void refresh_eligibility() noexcept;
     [[nodiscard]] bool open() const noexcept;
 
+    [[nodiscard]] const device_model& model() const noexcept { return model_; }
+
 private:
     void leave() noexcept;
     static constexpr std::uint64_t closed_bit = std::uint64_t{1} << 63U;
+    const device_model model_;
     std::atomic<std::uint64_t> admission_;
     core::service& core_;
     gameinput_runtime& runtime_;

@@ -470,11 +470,14 @@ private:
     std::unique_ptr<focus::observer> observer_;
 };
 
-[[nodiscard]] inline std::shared_ptr<dinput::input_access>
-make_access(core_test_support::fixture& owners, focus::observer& focus_observer) {
+[[nodiscard]] inline std::shared_ptr<dinput::input_access> make_access(
+    core_test_support::fixture& owners,
+    focus::observer& focus_observer,
+    dinput::device_model model = {}) {
     return std::make_shared<dinput::input_access>(*owners.core,
         *owners.gameinput.runtime,
-        focus_observer);
+        focus_observer,
+        model);
 }
 
 [[nodiscard]] inline bool wait_for_sample(core::service& core_service,

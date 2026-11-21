@@ -149,7 +149,7 @@ remap = [
 )");
     REQUIRE(parsed.has_value());
     REQUIRE(parsed->diagnostics.empty());
-    session_fixture fixture{nullptr, nullptr, nullptr, {}, {}, parsed->settings.input};
+    session_fixture fixture{nullptr, nullptr, nullptr, {}, {}, parsed->settings};
     REQUIRE(fixture.session != nullptr);
     const auto history = std::make_shared<native_history_script>();
     const gamepad_state physical{
@@ -184,7 +184,7 @@ remap = [
     CHECK(latest->sample.state.right_trigger == physical.right_trigger);
 
     const std::array<dinput::axis_properties, dinput::axis_count> properties{};
-    const auto directinput = dinput::project(latest->sample.state, properties);
+    const auto directinput = dinput::device_model{}.project(latest->sample.state, properties);
     CHECK(directinput.buttons[0U] == 0U);
     CHECK(directinput.buttons[1U] == 0x80U);
     CHECK(directinput.buttons[4U] == 0x80U);

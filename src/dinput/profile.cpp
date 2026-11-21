@@ -6,9 +6,11 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 namespace inputnext::dinput {
@@ -17,6 +19,8 @@ namespace {
 constexpr WORD generic_desktop_page = 0x01U;
 constexpr WORD button_page = 0x09U;
 constexpr DWORD max_property_percent = 10000U;
+constexpr auto left_trigger_button = standard_button_count;
+constexpr auto right_trigger_button = left_trigger_button + 1U;
 
 [[nodiscard]] constexpr GUID object_guid(DWORD data1) noexcept {
     return GUID{.Data1 = data1,
@@ -106,8 +110,36 @@ constexpr std::array profile_objects{
         .name = L"POV",
         .kind = object_kind::pov,
         .source_index = 0U},
+    button_descriptor(left_trigger_button, L"LT"),
+    button_descriptor(right_trigger_button, L"RT"),
 };
-static_assert(profile_objects.size() == normalized_object_count);
+static_assert(profile_objects.size() == max_object_count);
+
+[[nodiscard]] float normalize_trigger_threshold(double threshold) noexcept {
+    static_assert(std::numeric_limits<double>::is_iec559 && std::numeric_limits<float>::is_iec559);
+    constexpr auto minimum = std::numeric_limits<float>::min();
+    const auto bits = std::bit_cast<std::uint64_t>(threshold);
+    if (bits == 0U || bits > std::bit_cast<std::uint64_t>(1.0)) {
+        return 0.5F;
+    }
+    // Use a normal float so DAZ cannot treat the threshold as zero.
+    if (bits < std::bit_cast<std::uint64_t>(static_cast<double>(minimum))) {
+        return minimum;
+    }
+
+    // Round the significand to float precision (nearest, ties to even).
+    // The final cast is exact in every rounding mode.
+    constexpr auto extra_precision = static_cast<unsigned int>(
+        std::numeric_limits<double>::digits - std::numeric_limits<float>::digits);
+    constexpr auto unit = std::uint64_t{1U} << extra_precision;
+    constexpr auto halfway = unit / 2U;
+    const auto remainder = bits % unit;
+    auto rounded = bits / unit;
+    if (remainder > halfway || (remainder == halfway && (rounded & 1U) != 0U)) {
+        ++rounded;
+    }
+    return static_cast<float>(std::bit_cast<double>(rounded * unit));
+}
 
 [[nodiscard]] constexpr LONG neutral_stick(const axis_properties& properties) noexcept {
     if (properties.maximum <= properties.minimum) {
@@ -220,11 +252,20 @@ struct axis_range final {
 } // namespace
 
 std::span<const object_descriptor> objects() noexcept {
-    return profile_objects;
+    return device_model{}.objects();
 }
 
-profile_values project(const gamepad_state& source,
-    const std::array<axis_properties, axis_count>& properties) noexcept {
+device_model::device_model(bool digital_triggers, double trigger_threshold) noexcept
+    : digital_triggers_(digital_triggers),
+      trigger_threshold_(normalize_trigger_threshold(trigger_threshold)) {
+}
+
+std::span<const object_descriptor> device_model::objects() const noexcept {
+    return std::span{profile_objects}.first(axis_count + button_count() + pov_count);
+}
+
+profile_values device_model::project(const gamepad_state& source,
+    const std::array<axis_properties, axis_count>& properties) const noexcept {
     profile_values result{};
     for (std::size_t index = 0U; index < result.axes.size(); ++index) {
         result.axes[index] = index == 2U || index == 5U ? properties[index].minimum
@@ -234,7 +275,7 @@ profile_values project(const gamepad_state& source,
         return result;
     }
 
-    const std::array<float, 6> source_axes{source.left_stick.x,
+    const std::array<float, axis_count> source_axes{source.left_stick.x,
         -source.left_stick.y,
         source.left_trigger,
         source.right_stick.x,
@@ -246,7 +287,7 @@ profile_values project(const gamepad_state& source,
                                  : project_stick(source_axes[index], properties[index]);
     }
 
-    constexpr std::array<gamepad_button, 15> button_order{gamepad_button::south,
+    constexpr std::array<gamepad_button, standard_button_count> button_order{gamepad_button::south,
         gamepad_button::east,
         gamepad_button::west,
         gamepad_button::north,
@@ -263,6 +304,12 @@ profile_values project(const gamepad_state& source,
         gamepad_button::dpad_right};
     for (std::size_t index = 0U; index < button_order.size(); ++index) {
         result.buttons[index] = pressed(source, button_order[index]) ? 0x80U : 0U;
+    }
+    if (digital_triggers_) {
+        result.buttons[left_trigger_button] =
+            source.left_trigger >= trigger_threshold_ ? 0x80U : 0U;
+        result.buttons[right_trigger_button] =
+            source.right_trigger >= trigger_threshold_ ? 0x80U : 0U;
     }
     result.pov = project_pov(source);
     return result;

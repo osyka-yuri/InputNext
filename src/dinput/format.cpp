@@ -74,7 +74,8 @@ struct staged_binding final {
 }
 
 [[nodiscard]] HRESULT validate_compiled_binding(const compiled_format& format,
-    const data_binding& binding) noexcept {
+    const data_binding& binding,
+    std::span<const object_descriptor> profile) noexcept {
     const auto width = object_width(binding.kind);
     if (width == 0U || binding.data_offset > format.data_size ||
         width > format.data_size - binding.data_offset) {
@@ -88,7 +89,6 @@ struct staged_binding final {
         return DI_OK;
     }
 
-    const auto profile = objects();
     if (binding.profile_object_index >= profile.size()) {
         return DIERR_INVALIDPARAM;
     }
@@ -100,7 +100,7 @@ struct staged_binding final {
     case object_kind::axis:
         return descriptor.source_index < axis_count ? DI_OK : DIERR_INVALIDPARAM;
     case object_kind::button:
-        return descriptor.source_index < button_count ? DI_OK : DIERR_INVALIDPARAM;
+        return descriptor.source_index < max_button_count ? DI_OK : DIERR_INVALIDPARAM;
     case object_kind::pov:
         return descriptor.source_index == 0U ? DI_OK : DIERR_INVALIDPARAM;
     }
@@ -266,7 +266,7 @@ struct staged_binding final {
 [[nodiscard]] HRESULT bind_explicit_instances(DWORD count,
     std::array<staged_binding, max_format_objects>& staged,
     std::span<const object_descriptor> profile,
-    std::array<bool, normalized_object_count>& assigned) noexcept {
+    std::array<bool, max_object_count>& assigned) noexcept {
     for (DWORD index = 0U; index < count; ++index) {
         auto& entry = staged[index];
         if (entry.wildcard || entry.neutral_only) {
@@ -295,7 +295,7 @@ struct wildcard_match final {
 
 [[nodiscard]] wildcard_match find_wildcard_match(const staged_binding& entry,
     std::span<const object_descriptor> profile,
-    const std::array<bool, normalized_object_count>& assigned) noexcept {
+    const std::array<bool, max_object_count>& assigned) noexcept {
     for (std::size_t index = 0U; index < profile.size(); ++index) {
         if (!matches_profile_object(entry, profile[index])) {
             continue;
@@ -312,7 +312,7 @@ struct wildcard_match final {
 [[nodiscard]] HRESULT bind_wildcard_instances(DWORD count,
     std::array<staged_binding, max_format_objects>& staged,
     std::span<const object_descriptor> profile,
-    std::array<bool, normalized_object_count>& assigned) noexcept {
+    std::array<bool, max_object_count>& assigned) noexcept {
     for (DWORD index = 0U; index < count; ++index) {
         auto& entry = staged[index];
         if (!entry.wildcard || entry.neutral_only) {
@@ -332,9 +332,9 @@ struct wildcard_match final {
 }
 
 [[nodiscard]] HRESULT bind_objects(DWORD count,
-    std::array<staged_binding, max_format_objects>& staged) noexcept {
-    const auto profile = objects();
-    std::array<bool, normalized_object_count> assigned{};
+    std::array<staged_binding, max_format_objects>& staged,
+    std::span<const object_descriptor> profile) noexcept {
+    std::array<bool, max_object_count> assigned{};
     const auto explicit_result = bind_explicit_instances(count, staged, profile, assigned);
     if (FAILED(explicit_result)) {
         return explicit_result;
@@ -346,6 +346,7 @@ struct wildcard_match final {
 
 HRESULT compile_format(const DIDATAFORMAT& source,
     compiled_format& destination,
+    const device_model& model,
     const bool force_feedback) noexcept {
     const auto header_result = validate_format_header(source);
     if (FAILED(header_result)) {
@@ -357,7 +358,7 @@ HRESULT compile_format(const DIDATAFORMAT& source,
     if (FAILED(result)) {
         return result;
     }
-    result = bind_objects(source.dwNumObjs, staged);
+    result = bind_objects(source.dwNumObjs, staged, model.objects());
     if (FAILED(result)) {
         return result;
     }
@@ -379,20 +380,21 @@ HRESULT compile_format(const DIDATAFORMAT& source,
 
 HRESULT write_state(const compiled_format& format,
     const profile_values& values,
-    std::span<std::byte> destination) noexcept {
+    std::span<std::byte> destination,
+    const device_model& model) noexcept {
     if (format.data_size == 0U || format.data_size > max_format_data_size ||
         format.binding_count > max_format_objects || destination.size() < format.data_size) {
         return DIERR_INVALIDPARAM;
     }
+    const auto profile = model.objects();
     for (DWORD index = 0U; index < format.binding_count; ++index) {
-        const auto result = validate_compiled_binding(format, format.bindings[index]);
+        const auto result = validate_compiled_binding(format, format.bindings[index], profile);
         if (FAILED(result)) {
             return result;
         }
     }
 
     std::memset(destination.data(), 0, format.data_size);
-    const auto profile = objects();
     for (DWORD index = 0U; index < format.binding_count; ++index) {
         const auto& binding = format.bindings[index];
         const auto offset = static_cast<std::size_t>(binding.data_offset);
@@ -424,6 +426,8 @@ HRESULT write_state(const compiled_format& format,
     return DI_OK;
 }
 
+namespace {
+
 [[nodiscard]] bool matches_object_id(const object_descriptor& descriptor, DWORD value) noexcept {
     const auto known_type_bits = format_type_mask | format_instance_mask | DIDFT_FFACTUATOR;
     if ((value & ~known_type_bits) != 0U ||
@@ -446,11 +450,16 @@ HRESULT write_state(const compiled_format& format,
     return false;
 }
 
+} // namespace
+
 // Win32 DIPH lookup order is object value followed by selector mode.
-[[nodiscard]] std::optional<std::size_t>
+std::optional<std::size_t>
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): preserve Win32 selector argument order.
-find_object(DWORD value, DWORD how, const compiled_format* format) noexcept {
-    const auto profile = objects();
+find_object(DWORD value,
+    DWORD how,
+    const compiled_format* format,
+    const device_model& model) noexcept {
+    const auto profile = model.objects();
     if (how == DIPH_BYID) {
         for (std::size_t index = 0U; index < profile.size(); ++index) {
             if (matches_object_id(profile[index], value)) {
@@ -479,7 +488,7 @@ find_object(DWORD value, DWORD how, const compiled_format* format) noexcept {
         if (binding.data_offset != value || binding.profile_object_index == no_profile_object) {
             continue;
         }
-        if (validate_compiled_binding(*format, binding) != DI_OK || result.has_value()) {
+        if (validate_compiled_binding(*format, binding, profile) != DI_OK || result.has_value()) {
             return std::nullopt;
         }
         result = binding.profile_object_index;

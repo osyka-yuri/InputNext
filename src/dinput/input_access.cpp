@@ -3,6 +3,7 @@
 #include "dinput/buffered/service.hpp"
 #include "dinput/exclusive/ownership.hpp"
 #include "dinput/force_feedback/service.hpp"
+#include "profile.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -14,16 +15,19 @@ namespace inputnext::dinput {
 input_access::input_access(core::service& core,
     gameinput_runtime& runtime,
     focus::observer& focus,
+    device_model model,
     const std::chrono::milliseconds discovery_budget)
-    : input_access(core, runtime, focus, nullptr, discovery_budget) {
+    : input_access(core, runtime, focus, nullptr, model, discovery_budget) {
 }
 
 input_access::input_access(core::service& core,
     gameinput_runtime& runtime,
     focus::observer& focus,
     std::unique_ptr<force_feedback::service> feedback,
+    device_model model,
     const std::chrono::milliseconds discovery_budget)
-    : core_(core),
+    : model_(model),
+      core_(core),
       runtime_(runtime),
       focus_(focus),
       discovery_(discovery_budget),
