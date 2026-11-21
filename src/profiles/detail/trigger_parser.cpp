@@ -1,5 +1,6 @@
 #include "trigger_parser.hpp"
 
+#include "located_diagnostic.hpp"
 #include "profiles/parser.hpp"
 #include <inputnext/output.hpp>
 
@@ -11,7 +12,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 namespace inputnext::profiles::detail {
@@ -479,15 +479,6 @@ void append_unknown_fields(const toml::table& table,
 }
 
 } // namespace
-
-diagnostic located_diagnostic(const toml::node& source, std::string message) {
-    const auto position = source.source().begin;
-    return diagnostic{
-        .message = std::move(message),
-        .line = position.line,
-        .column = position.column,
-    };
-}
 
 trigger_parse_result parse_trigger(const toml::node& source, const std::string_view name) {
     trigger_parse_result result{};

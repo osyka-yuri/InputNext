@@ -239,8 +239,8 @@ public:
             }
             value.dwDevType = identity_.instance.dwDevType;
             value.dwAxes = static_cast<DWORD>(axis_count);
-            value.dwButtons = static_cast<DWORD>(button_count);
-            value.dwPOVs = 1U;
+            value.dwButtons = static_cast<DWORD>(access_->model().button_count());
+            value.dwPOVs = static_cast<DWORD>(pov_count);
             write_info(out, value, size);
             return DI_OK;
         });
@@ -506,7 +506,7 @@ private:
                 }
                 feedback = input_.feedback_capable(call);
             }
-            for (const auto& object : objects()) {
+            for (const auto& object : access_->model().objects()) {
                 if (matches_device_object(object, flags, feedback)) {
                     const auto info = describe_for_device(object, projection, feedback);
                     if (callback(&info, context) == DIENUM_STOP) {
@@ -543,7 +543,7 @@ private:
             if (!selected.has_value()) {
                 return DIERR_OBJECTNOTFOUND;
             }
-            const auto& selected_object = objects()[*selected];
+            const auto& selected_object = access_->model().objects()[*selected];
             if (requires_actuator && (!feedback || !is_feedback_actuator(selected_object))) {
                 return DIERR_OBJECTNOTFOUND;
             }

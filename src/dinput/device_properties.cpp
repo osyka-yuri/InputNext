@@ -28,24 +28,27 @@ void write_property(DIPROPHEADER* header, const Property& value) noexcept {
 }
 
 [[nodiscard]] std::optional<std::size_t> find_axis(const DIPROPHEADER& header,
-    const compiled_format* format) noexcept {
-    const auto selected = find_object(header.dwObj, header.dwHow, format);
-    if (!selected.has_value() || objects()[*selected].kind != object_kind::axis) {
+    const compiled_format* format,
+    const device_model& model) noexcept {
+    const auto selected = find_object(header.dwObj, header.dwHow, format, model);
+    if (!selected.has_value()) {
         return std::nullopt;
     }
-    return objects()[*selected].source_index;
+    const auto& object = model.objects()[*selected];
+    return object.kind == object_kind::axis ? std::optional{object.source_index} : std::nullopt;
 }
 
 [[nodiscard]] HRESULT read_axis_property(const GUID* token,
     DIPROPHEADER* header,
     const compiled_format* format,
-    const axis_configuration& axes) noexcept {
+    const axis_configuration& axes,
+    const device_model& model) noexcept {
     const bool range = token == &DIPROP_RANGE;
     if (header->dwHow == DIPH_DEVICE ||
         header->dwSize != (range ? sizeof(DIPROPRANGE) : sizeof(DIPROPDWORD))) {
         return DIERR_INVALIDPARAM;
     }
-    const auto axis = find_axis(*header, format);
+    const auto axis = find_axis(*header, format, model);
     if (!axis.has_value()) {
         return DIERR_OBJECTNOTFOUND;
     }
@@ -167,10 +170,11 @@ HRESULT read_device_property(const GUID* token,
     const device_identity& identity,
     const compiled_format* format,
     const axis_configuration& axes,
-    DWORD requested_buffer_size) noexcept {
+    DWORD requested_buffer_size,
+    const device_model& model) noexcept {
     if (token == &DIPROP_RANGE || token == &DIPROP_DEADZONE || token == &DIPROP_SATURATION ||
         token == &DIPROP_GRANULARITY) {
-        return read_axis_property(token, header, format, axes);
+        return read_axis_property(token, header, format, axes, model);
     }
     if (token == &DIPROP_AXISMODE || token == &DIPROP_BUFFERSIZE || token == &DIPROP_VIDPID) {
         return read_device_dword(token, header, identity, requested_buffer_size);
@@ -210,7 +214,8 @@ HRESULT decode_property_change(const GUID* token,
 HRESULT apply_property_change(const property_change& change,
     const DIPROPHEADER& header,
     const compiled_format* format,
-    axis_configuration& candidate) noexcept {
+    axis_configuration& candidate,
+    const device_model& model) noexcept {
     if (!change.affects_axes()) {
         return change.kind == setting::buffer_size || change.value == DIPROPAXISMODE_ABS
                    ? DI_OK
@@ -222,7 +227,7 @@ HRESULT apply_property_change(const property_change& change,
         }
         return DI_OK;
     }
-    const auto axis = find_axis(header, format);
+    const auto axis = find_axis(header, format, model);
     if (!axis.has_value()) {
         return DIERR_OBJECTNOTFOUND;
     }

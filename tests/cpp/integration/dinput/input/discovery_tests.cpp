@@ -8,6 +8,7 @@
 #include "dinput/com/factory.hpp"
 #include "dinput/control_wait.hpp"
 #include "dinput/native_types.hpp"
+#include "dinput/profile.hpp"
 #include "gameinput/native/native_gameinput.hpp"
 
 #include <inputnext/device_metadata.hpp>
@@ -89,6 +90,7 @@ void set_budget(environment& fixture, std::chrono::milliseconds budget) {
     fixture.context.access = std::make_shared<dinput::input_access>(*fixture.owners->core,
         *fixture.owners->gameinput.runtime,
         *fixture.owners->focus_observer,
+        dinput::device_model{},
         budget);
 }
 

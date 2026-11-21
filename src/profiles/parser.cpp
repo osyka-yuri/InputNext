@@ -1,10 +1,14 @@
 #include "parser.hpp"
 
+#include "detail/directinput_parser.hpp"
 #include "detail/input_parser.hpp"
+#include "detail/located_diagnostic.hpp"
 #include "detail/trigger_parser.hpp"
 #include <inputnext/output.hpp>
 
 #include <toml++/toml.hpp>
+
+#include <xmmintrin.h>
 
 #include <expected>
 #include <iterator>
@@ -12,6 +16,27 @@
 #include <string_view>
 
 namespace inputnext::profiles {
+namespace {
+
+class toml_float_environment final {
+public:
+    toml_float_environment() noexcept : previous_(_mm_getcsr()) {
+        // The default MXCSR preserves subnormals when toml++ multiplies by the sign.
+        _mm_setcsr(_MM_MASK_MASK | _MM_ROUND_NEAREST);
+    }
+
+    ~toml_float_environment() { _mm_setcsr(previous_); }
+
+    toml_float_environment(const toml_float_environment&) = delete;
+    toml_float_environment& operator=(const toml_float_environment&) = delete;
+    toml_float_environment(toml_float_environment&&) = delete;
+    toml_float_environment& operator=(toml_float_environment&&) = delete;
+
+private:
+    unsigned int previous_;
+};
+
+} // namespace
 
 parse_result parse_profile(const std::string_view content) {
     if (content.size() > maximum_profile_bytes) {
@@ -20,7 +45,10 @@ parse_result parse_profile(const std::string_view content) {
         });
     }
 
-    auto document = toml::parse(content);
+    auto document = [content] {
+        const toml_float_environment environment;
+        return toml::parse(content);
+    }();
     if (!document) {
         const auto& error = document.error();
         const auto position = error.source().begin;
@@ -34,6 +62,12 @@ parse_result parse_profile(const std::string_view content) {
     parsed_profile result{};
     if (const auto* input_node = document.table().get("input"); input_node != nullptr) {
         result.settings.input = detail::parse_input(*input_node, result.diagnostics);
+    }
+
+    if (const auto* directinput_node = document.table().get("directinput");
+        directinput_node != nullptr) {
+        result.settings.directinput =
+            detail::parse_directinput(*directinput_node, result.diagnostics);
     }
 
     const auto* effects_node = document.table().get("effects");

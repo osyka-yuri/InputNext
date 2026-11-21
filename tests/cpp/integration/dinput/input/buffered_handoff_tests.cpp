@@ -42,12 +42,13 @@ TEST_CASE("dinput.prepared_notification_is_dispatched_after_activation_with_a_bl
     REQUIRE(notification.has_value());
 
     dinput::buffer_configuration configuration{.target = target,
+        .model = dinput::device_model{},
         .requested_size = 8U,
         .notification = notification.value()};
     std::array<DIOBJECTDATAFORMAT, 22U> descriptions{};
     std::array<GUID, 22U> guids{};
     const auto format = compact_format(descriptions, guids);
-    REQUIRE(dinput::compile_format(format, configuration.format) == DI_OK);
+    REQUIRE(dinput::compile_format(format, configuration.format, configuration.model) == DI_OK);
 
     const auto script = owners.scripts[0U];
     script->block_next();
@@ -131,7 +132,8 @@ TEST_CASE("dinput.failed_reacquire_retires_prior_notification_before_unacquire",
     REQUIRE(static_cast<bool>(call));
     std::array<std::shared_ptr<dinput::buffered_subscription>, 63U> pending{};
     for (auto& subscription : pending) {
-        const auto subscribed = call.buffers().subscribe({.target = target});
+        const auto subscribed =
+            call.buffers().subscribe({.target = target, .model = dinput::device_model{}});
         REQUIRE(subscribed.has_value());
         subscription = subscribed.value();
     }

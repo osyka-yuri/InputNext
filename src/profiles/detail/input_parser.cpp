@@ -3,8 +3,8 @@
 #include "input/program.hpp"
 #include "input/remappable_buttons.hpp"
 #include "input_control_names.hpp"
+#include "located_diagnostic.hpp"
 #include "profiles/parser.hpp"
-#include "trigger_parser.hpp"
 
 #include <array>
 #include <cmath>

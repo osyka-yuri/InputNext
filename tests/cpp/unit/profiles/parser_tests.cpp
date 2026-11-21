@@ -1,15 +1,21 @@
 #include "profiles/parser.hpp"
 
+#include "profiles/model.hpp"
 #include "values/required_value.hpp"
+#include "values/scoped_mxcsr.hpp"
 #include <inputnext/output.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <pmmintrin.h>
+#include <xmmintrin.h>
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 
 using namespace inputnext::profiles;
 using inputnext::test::required_value;
@@ -423,4 +429,117 @@ TEST_CASE("profiles.non_table_effect_nodes_are_located_and_neutralized", "[unit]
     REQUIRE(parsed.has_value());
     CHECK(left(*parsed) == inputnext::output::trigger_value{});
     CHECK(parsed->diagnostics.front().line == 1U);
+}
+
+TEST_CASE("profiles.directinput_parses_defaults_and_explicit_options", "[unit][profiles]") {
+    auto parsed = parse_profile("");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->diagnostics.empty());
+    CHECK_FALSE(parsed->settings.directinput.digital_triggers);
+    CHECK(parsed->settings.directinput.trigger_threshold == 0.5);
+
+    parsed = parse_profile(R"(
+[directinput]
+digital_triggers = true
+trigger_threshold = 0.75
+)");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->diagnostics.empty());
+    CHECK(parsed->settings.directinput.digital_triggers);
+    CHECK(parsed->settings.directinput.trigger_threshold == 0.75);
+
+    parsed = parse_profile(R"(
+[directinput]
+digital_triggers = true
+)");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->diagnostics.empty());
+    CHECK(parsed->settings.directinput.digital_triggers);
+    CHECK(parsed->settings.directinput.trigger_threshold == 0.5);
+
+    parsed = parse_profile(R"(
+[directinput]
+digital_triggers = true
+trigger_threshold = 1e-100
+)");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->diagnostics.empty());
+    CHECK(parsed->settings.directinput.digital_triggers);
+    CHECK(parsed->settings.directinput.trigger_threshold == 1e-100);
+
+    parsed = parse_profile(R"(
+[directinput]
+digital_triggers = false
+trigger_threshold = 1
+)");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->diagnostics.empty());
+    CHECK_FALSE(parsed->settings.directinput.digital_triggers);
+    CHECK(parsed->settings.directinput.trigger_threshold == 1.0);
+}
+
+TEST_CASE("profiles.directinput_diagnoses_errors_and_falls_back_to_defaults", "[unit][profiles]") {
+    struct invalid_case final {
+        std::string_view document;
+        std::string_view message;
+    };
+
+    constexpr auto range_error = "directinput.trigger_threshold must be finite and in (0, 1]";
+    constexpr auto type_error = "directinput.trigger_threshold must be a TOML number";
+    constexpr auto cases = std::array{
+        invalid_case{.document = "directinput = true\n",
+            .message = "directinput must be a TOML table"},
+        invalid_case{.document = "[directinput]\ndigital_triggers = 1\n",
+            .message = "directinput.digital_triggers must be a TOML boolean"},
+        invalid_case{.document = "[directinput]\ntrigger_threshold = 0.0\n",
+            .message = range_error},
+        invalid_case{.document = "[directinput]\ntrigger_threshold = -0.0\n",
+            .message = range_error},
+        invalid_case{.document = "[directinput]\ntrigger_threshold = 1.001\n",
+            .message = range_error},
+        invalid_case{.document = "[directinput]\ntrigger_threshold = -0.5\n",
+            .message = range_error},
+        invalid_case{.document = "[directinput]\ntrigger_threshold = inf\n",
+            .message = range_error},
+        invalid_case{.document = "[directinput]\ntrigger_threshold = nan\n",
+            .message = range_error},
+        invalid_case{.document = "[directinput]\ntrigger_threshold = 'half'\n",
+            .message = type_error},
+        invalid_case{.document = "[directinput]\ntrigger_threshold = true\n",
+            .message = type_error},
+        invalid_case{.document = "[directinput]\ndigital_triggers = true\nunknown = true\n",
+            .message = "Unknown directinput field: 'unknown'"},
+    };
+    for (const auto& scenario : cases) {
+        const auto parsed = parse_profile(scenario.document);
+        REQUIRE(parsed.has_value());
+        CHECK(has_diagnostic(*parsed, scenario.message));
+        CHECK(parsed->settings.directinput == directinput_profile{});
+    }
+}
+
+TEST_CASE("profiles.directinput_survives_diagnostics_in_other_sections", "[unit][profiles]") {
+    const auto parsed =
+        parse_profile("[input]\nlayout = 'unknown'\n[directinput]\ndigital_triggers = true\n");
+    REQUIRE(parsed.has_value());
+    CHECK(has_diagnostic(*parsed, "Unknown input layout"));
+    CHECK(parsed->settings.directinput.digital_triggers);
+}
+
+TEST_CASE("profiles.directinput_accepts_positive_subnormal_threshold_with_daz",
+    "[unit][profiles]") {
+    constexpr auto caller_mxcsr =
+        _MM_MASK_MASK | _MM_DENORMALS_ZERO_ON | _MM_FLUSH_ZERO_ON | _MM_ROUND_UP;
+    const auto [parsed, restored_mxcsr] = [] {
+        const inputnext::test::scoped_mxcsr control{caller_mxcsr};
+        auto result =
+            parse_profile("[directinput]\ndigital_triggers = true\ntrigger_threshold = 1e-310\n");
+        return std::pair{std::move(result), _mm_getcsr()};
+    }();
+    CHECK(restored_mxcsr == caller_mxcsr);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->diagnostics.empty());
+    CHECK(parsed->settings.directinput.digital_triggers);
+    CHECK(std::bit_cast<std::uint64_t>(parsed->settings.directinput.trigger_threshold) ==
+          std::bit_cast<std::uint64_t>(1e-310));
 }

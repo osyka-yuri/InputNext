@@ -32,7 +32,8 @@ struct property_change final {
     const device_identity& identity,
     const compiled_format* format,
     const axis_configuration& axes,
-    DWORD requested_buffer_size) noexcept;
+    DWORD requested_buffer_size,
+    const device_model& model) noexcept;
 
 // Decode the request before acquisition gating. Apply it to a candidate under
 // the device's gate, then let the device publish it with a new generation.
@@ -42,6 +43,7 @@ struct property_change final {
 [[nodiscard]] HRESULT apply_property_change(const property_change& change,
     const DIPROPHEADER& header,
     const compiled_format* format,
-    axis_configuration& candidate) noexcept;
+    axis_configuration& candidate,
+    const device_model& model) noexcept;
 
 } // namespace inputnext::dinput

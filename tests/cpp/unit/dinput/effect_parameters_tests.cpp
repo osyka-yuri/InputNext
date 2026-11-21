@@ -244,7 +244,7 @@ TEST_CASE("dinput.effects.partial_updates_are_transactional_and_preserve_other_f
 
 TEST_CASE("dinput.effects.axis_selectors_resolve_through_the_selected_format", "[unit][dinput]") {
     compiled_format format{};
-    REQUIRE(compile_format(c_dfDIJoystick, format) == DI_OK);
+    REQUIRE(compile_format(c_dfDIJoystick, format, device_model{true}) == DI_OK);
     effect_parameters parameters{};
     constant_parameters input{};
     input.effect.dwFlags = DIEFF_OBJECTOFFSETS | DIEFF_CARTESIAN;

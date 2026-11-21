@@ -289,8 +289,10 @@ private:
         .dwDataSize = static_cast<DWORD>(sizeof(DWORD)),
         .dwNumObjs = 1U,
         .rgodf = &object};
-    buffer_configuration result{.target = test_target(), .requested_size = 8U};
-    if (compile_format(source, result.format) != DI_OK) {
+    buffer_configuration result{.target = test_target(),
+        .model = device_model{},
+        .requested_size = 8U};
+    if (compile_format(source, result.format, result.model) != DI_OK) {
         throw std::runtime_error{"failed to compile exclusive wait test format"};
     }
     return result;

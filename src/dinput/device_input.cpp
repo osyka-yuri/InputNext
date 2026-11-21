@@ -51,7 +51,7 @@ device_input::~device_input() {
 
 std::optional<std::size_t> device_input::select_object(DWORD object, DWORD how) const noexcept {
     std::scoped_lock lock{gate_};
-    return find_object(object, how, active_format());
+    return find_object(object, how, active_format(), access_->model());
 }
 
 HRESULT device_input::get_property(const GUID* property, DIPROPHEADER* header) noexcept {
@@ -68,7 +68,8 @@ HRESULT device_input::get_property(const GUID* property, DIPROPHEADER* header) n
             identity_,
             active_format(),
             axes_,
-            requested_buffer_size_);
+            requested_buffer_size_,
+            access_->model());
     });
 }
 
@@ -88,7 +89,8 @@ HRESULT device_input::set_property(const GUID* property, const DIPROPHEADER* hea
             return allowed;
         }
         auto candidate = axes_;
-        const auto updated = apply_property_change(change, *header, active_format(), candidate);
+        const auto updated =
+            apply_property_change(change, *header, active_format(), candidate, access_->model());
         if (FAILED(updated)) {
             return updated;
         }
@@ -161,9 +163,11 @@ HRESULT device_input::get_state(DWORD size, void* out) noexcept {
             return lose(captured.generation);
         }
         std::array<std::byte, max_format_data_size> projected{};
+        const auto& model = access_->model();
         const auto written = write_state(captured.format,
-            project(latest->sample.state, captured.axes),
-            std::span{projected}.first(size));
+            model.project(latest->sample.state, captured.axes),
+            std::span{projected}.first(size),
+            model);
         if (FAILED(written)) {
             return written;
         }
@@ -218,7 +222,8 @@ HRESULT device_input::set_format(const DIDATAFORMAT* format) noexcept {
         if (!call) {
             return DIERR_INPUTLOST;
         }
-        const auto outcome = compile_format(*format, compiled, feedback_capable(call));
+        const auto outcome =
+            compile_format(*format, compiled, access_->model(), feedback_capable(call));
         if (FAILED(outcome)) {
             return outcome;
         }

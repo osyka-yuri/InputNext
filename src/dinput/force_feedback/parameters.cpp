@@ -2,6 +2,7 @@
 
 #include "dinput/format.hpp"
 #include "dinput/native_types.hpp"
+#include "dinput/profile.hpp"
 #include "parameters.hpp"
 
 #include <algorithm>
@@ -118,7 +119,8 @@ constexpr std::array<effect_descriptor, 7U> effect_catalogue{{
     std::size_t& profile_index) noexcept {
     const DWORD how = mode == selector_mode::object_ids ? static_cast<DWORD>(DIPH_BYID)
                                                         : static_cast<DWORD>(DIPH_BYOFFSET);
-    const auto resolved = find_object(selector, how, format);
+    // X and Y are the only actuators and have the same indices in both models.
+    const auto resolved = find_object(selector, how, format, device_model{});
     if (!resolved.has_value() || !actuator(*resolved)) {
         return DIERR_OBJECTNOTFOUND;
     }

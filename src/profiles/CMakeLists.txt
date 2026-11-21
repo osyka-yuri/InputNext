@@ -4,6 +4,7 @@ add_library(inputnext_profiles STATIC
     detail/profile_stream.cpp
     detail/trigger_parser.cpp
     detail/input_parser.cpp
+    detail/directinput_parser.cpp
     loader.cpp
     parser.cpp
     toml_implementation.cpp

@@ -1,6 +1,8 @@
 # Per-game profiles
 
-Place `inputnext.toml` beside the game executable to configure remapping or adaptive-trigger effects. InputNext reads the file at startup. Restart the game after editing.
+Place `inputnext.toml` beside the game executable to configure remapping, DirectInput
+trigger buttons or adaptive-trigger effects. InputNext reads it when the session starts.
+Restart the game after editing.
 
 Without a readable file, buttons and triggers keep their usual assignments, supported touchpads use the defaults below, and trigger effects are off. Remapping applies inside the game through InputNext's XInput, DirectInput and Core interfaces.
 
@@ -56,6 +58,22 @@ Touch mappings respond to a mechanical click. The side comes from the finger pos
 
 Touchpad mapping currently supports the standard DualSense over USB with GameInput `4.0.306.0` and a matching device descriptor. InputNext checks the descriptor on each connection. On unsupported connections, touchpad rules have no effect and ordinary remapping still applies. If a supported connection loses reliable click data, InputNext releases the touchpad's contribution and waits for a valid physical release before accepting another click. [Qualification details](input-qualification.md#supervised-usb-qualification)
 
+## DirectInput configuration
+
+```toml
+[directinput]
+digital_triggers = true
+trigger_threshold = 0.5
+```
+
+- `digital_triggers` is a boolean that defaults to `false`. Set it to `true` to
+  expose LT and RT as buttons.
+- `trigger_threshold` sets the travel required to press either button. It accepts
+  a fraction of full travel in `(0, 1]` and defaults to `0.5`.
+
+See [DirectInput objects and formats](directinput.md#objects-and-formats) for
+button IDs and threshold rounding.
+
 ## Trigger effects
 
 The [example profile](../examples/inputnext.toml) enables the two trigger effects below. Effects apply to the physical triggers of all [assigned XInput controllers](xinput.md#positions-and-state) with a [supported output backend](gameinput-output.md#backend-selection). Higher-priority effects take precedence until cleared or expired. InputNext reapplies the profile after foreground restoration or controller reassignment.
@@ -106,13 +124,18 @@ An all-zero curve or slope becomes `off`. Feedback and vibration with a strength
 
 ## Validation and errors
 
-Profiles use UTF-8 TOML 1.0. Limits are 64 KiB per file, 32 levels of nesting and 128 tables, including implicit tables and the root. Invalid TOML, duplicate keys or tables, and document limit violations restore default input and turn off trigger effects.
+Profiles use UTF-8 TOML 1.0. Limits are 64 KiB per file, 32 nesting levels and
+128 tables, including the root and implicit tables. InputNext uses all profile
+defaults when a file exceeds a limit or contains invalid TOML, such as duplicate
+keys or tables.
 
 The loader denies shared write access while reading. An open writer makes loading fail; finish saving before starting the game.
 
-An invalid rule or field under `input` restores the default input settings for the whole section. Valid trigger effects still apply.
+An invalid `input` or `directinput` section uses its defaults. An invalid trigger
+policy disables that trigger's effect. Other valid settings still apply.
 
-An invalid trigger policy disables that trigger's effect. Other top-level sections are ignored. InputNext reports configuration errors through Windows debugger output.
+InputNext ignores unknown top-level sections and reports configuration errors through
+Windows debugger output.
 
 Build the optional validator from an x64 Visual Studio Developer PowerShell. It uses the runtime's configuration parser.
 

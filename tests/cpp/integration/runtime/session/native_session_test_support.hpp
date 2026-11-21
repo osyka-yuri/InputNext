@@ -9,9 +9,9 @@
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/native/native_history.hpp"
 #include "gameinput/reading_parts.hpp"
-#include "input/program.hpp"
 #include "metadata/policy.hpp"
 #include "metadata/provider.hpp"
+#include "profiles/model.hpp"
 #include "runtime/session/native_session.hpp"
 #include "runtime/session/native_session_dependencies.hpp"
 #include "support/focus/controlled_source.hpp"
@@ -215,7 +215,7 @@ public:
         effects::identity_source* effects_identities = nullptr,
         std::unique_ptr<audio_detail::native_port_factory> audio_factory = {},
         std::unique_ptr<metadata_provider> metadata = {},
-        input::program mappings = input::program::defaults())
+        const profiles::profile& profile_settings = {})
         : destruction_counts(std::make_shared<dependency_destruction_counts>()),
           initialize_calls(std::make_shared<std::atomic<std::size_t>>(0U)) {
         auto port = std::make_unique<counted_native_port>(initialize_calls, destruction_counts);
@@ -233,7 +233,7 @@ public:
         rumble_controls = native->fake->rumble_script();
 
         native_session_dependencies options{};
-        options.profile_settings.input = mappings;
+        options.profile_settings = profile_settings;
         options.audio_factory = audio_factory != nullptr
                                     ? std::move(audio_factory)
                                     : test::audio::make_unavailable_native_port_factory();

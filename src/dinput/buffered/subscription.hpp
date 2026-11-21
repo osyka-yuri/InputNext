@@ -26,6 +26,7 @@ struct buffer_configuration final {
     connection_target target{};
     compiled_format format{};
     axis_configuration axes{};
+    device_model model;
     DWORD requested_size{};
     std::shared_ptr<event_registration> notification{nullptr};
     std::optional<focus::window_epoch> window{std::nullopt};

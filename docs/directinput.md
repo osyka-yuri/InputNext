@@ -76,7 +76,7 @@ instance GUID is unchanged. System devices retain the system implementation's li
 
 ## Objects and formats
 
-The profile exposes six absolute axes, fifteen buttons and one POV:
+By default, the virtual device exposes six absolute axes, fifteen buttons and one POV.
 
 | Object | Source |
 | --- | --- |
@@ -89,6 +89,18 @@ The profile exposes six absolute axes, fifteen buttons and one POV:
 | Buttons 8–10 | Left stick, right stick, Guide |
 | Buttons 11–14 | D-pad Up, Down, Left, Right |
 | POV 0 | D-pad direction; opposing directions cancel |
+
+Set `digital_triggers = true` in the [per-game profile](profiles.md#directinput-configuration)
+to append Button 15 (LT) and Button 16 (RT). Both SDK joystick formats include
+these buttons, and custom absolute-position formats can bind them.
+
+The buttons use remapped trigger travel independently of DirectInput axis properties.
+For a bound trigger button, `GetDeviceState` writes `0x80` at or above the effective
+threshold and `0x00` below it. `GetDeviceData` reports changes to that value.
+
+InputNext rounds `trigger_threshold` to the nearest `float`, ties to even, and
+clamps it to at least the smallest positive normal `float`. Zero travel counts
+as released.
 
 `c_dfDIJoystick`, `c_dfDIJoystick2` and custom absolute-position formats use the same
 semantic compiler. Object descriptions are copied; caller-owned format memory is not

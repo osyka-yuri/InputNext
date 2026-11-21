@@ -30,11 +30,15 @@ static_assert(std::is_trivially_copyable_v<compiled_format>);
 
 [[nodiscard]] HRESULT compile_format(const DIDATAFORMAT& source,
     compiled_format& destination,
+    const device_model& model,
     bool force_feedback = false) noexcept;
 [[nodiscard]] HRESULT write_state(const compiled_format& format,
     const profile_values& values,
-    std::span<std::byte> destination) noexcept;
-[[nodiscard]] std::optional<std::size_t>
-find_object(DWORD value, DWORD how, const compiled_format* format) noexcept;
+    std::span<std::byte> destination,
+    const device_model& model) noexcept;
+[[nodiscard]] std::optional<std::size_t> find_object(DWORD value,
+    DWORD how,
+    const compiled_format* format,
+    const device_model& model) noexcept;
 
 } // namespace inputnext::dinput
