@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0]
+
+### Added
+
+- DirectInput 8 support for x86 and x64 games through `dinput8.dll`, including immediate and buffered gamepad input, event notifications, and foreground and background exclusive acquisition on supported devices.
+- Software force feedback in foreground exclusive mode. Supported gamepads render constant, ramp, and periodic effects as rumble.
+- Optional digital trigger buttons. Set `digital_triggers = true` in `inputnext.toml` to expose LT and RT as buttons alongside their analog axes.
+
+### Changed
+
+- Updated GameInput to 4.1.314. On supported DualSense USB connections, InputNext now uses native touch coordinates to determine which side of the touchpad was clicked.
+
 ## [1.1.0]
 
 ### Added
