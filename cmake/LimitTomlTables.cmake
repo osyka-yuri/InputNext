@@ -1,9 +1,9 @@
-# Bound implicit dotted tables as well as explicit and inline tables. Upstream's
-# TOML_MAX_NESTED_VALUES limits recursive values but does not limit dotted keys.
+# Bound the total table count, including implicit tables created by dotted keys.
+# TOML_MAX_NESTED_VALUES bounds depth and still permits many shallow tables.
 set(parser_path "${SOURCE_DIR}/include/toml++/impl/parser.inl")
 file(SHA256 "${parser_path}" actual_hash)
-set(original_hash "147519f449768891a343309c1ab4c31b593e3c222d3fc3ec752b0ba8050b14ca")
-set(patched_hash "975ca6a66b7f97d97d4c718558078ec08d380bbd9d34f746e7db1476295ccc9a")
+set(original_hash "aa6c61a9e303046fd5240772152f1f2b8a7345752325a60cc04a5fbb4c58e256")
+set(patched_hash "63e5a91049d22c7698303d2313c57605cfa41412b27bfa5f462d5f41ff378506")
 if(actual_hash STREQUAL patched_hash)
     return()
 endif()

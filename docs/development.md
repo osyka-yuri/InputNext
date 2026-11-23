@@ -5,8 +5,8 @@
 - Windows with Visual Studio C++ Build Tools and a Windows SDK.
 - CMake 4.4.4 or newer and Ninja on `PATH`.
 - PowerShell 7.6 or newer for the scripts.
-- clang-format and clang-tidy 23.1.5 on `PATH` for quality checks.
-- clang-cl 23.1.5 on `PATH` for the Undefined native profile.
+- clang-format and clang-tidy 23.1.6 on `PATH` for quality checks.
+- clang-cl 23.1.6 on `PATH` for the Undefined native profile.
 - PSScriptAnalyzer 1.25.0 or newer for PowerShell analysis and formatting.
 
 CI and release tooling additionally use the Rust version pinned in `rust-toolchain.toml`. Rust is not required to build the native runtime directly. See [continuous integration](ci.md) for automated checks and the release process.
@@ -17,7 +17,7 @@ Project targets define `NOMINMAX`; dependency targets retain their own compile d
 
 MSVC also enables additional conversion, enum-switch and virtual-destructor warnings, `/sdl` security checks, and `/options:strict`. Compiler-specific options are excluded from clang-cl builds.
 
-Catch2 3.16.1 is downloaded and SHA-256 verified during the first test-enabled configure. It builds as C++23 to match the test executables and their standard-library support. Native GameInput builds also download and verify Microsoft GameInput 4.1.314. The profile parser uses toml++ 3.4.0, downloaded with an exact SHA-256 and compiled once with a private TOML 1.0 interface. Subsequent builds reuse dependencies in their build directory. Ordinary tests require no controller hardware. Dependencies are pinned; builds do not silently follow upstream releases.
+Catch2 3.16.1 is downloaded and SHA-256 verified during the first test-enabled configure. It builds as C++23 to match the test executables and their standard-library support. Native GameInput builds also download and verify Microsoft GameInput 4.1.314. The profile parser uses toml++ 3.5.1, downloaded with an exact SHA-256 and compiled once with a private TOML 1.0 interface. Subsequent builds reuse dependencies in their build directory. Ordinary tests require no controller hardware. Dependencies are pinned; builds do not silently follow upstream releases.
 
 The scripts declare PowerShell 7.6 through `#Requires` and run in the process used to invoke them. Use `pwsh -NoProfile -File ./tools/verify.ps1` from an appropriate Developer shell when selecting an installed PowerShell executable explicitly.
 
@@ -71,7 +71,7 @@ Profiles use separate build directories with `-analyze`, `-asan`, or `-ubsan` su
 
 The Address profile requires the MSVC AddressSanitizer component. It disables incompatible runtime checks and incremental linking. Undefined uses the static release CRT and checks C++ sanitizer runtime linkage during configuration. Pure C targets use the C sanitizer runtime; C++ links also require vptr support. These profiles instrument project targets and Catch2; prebuilt SDK binaries are unchanged.
 
-Undefined pins clang-cl 23.1.5 and verifies both compiler-rt library hashes. Its isolated overflow probe must produce the expected UBSan report and terminate with recovery disabled. An uninstrumented or recovering probe fails this check.
+Undefined pins clang-cl 23.1.6 and verifies both compiler-rt library hashes. Its isolated overflow probe must produce the expected UBSan report and terminate with recovery disabled. An uninstrumented or recovering probe fails this check.
 
 The XInput export test checks the complete PE export tables. Default, Release and Address require only the established InputNext exports. Undefined additionally requires the exact compiler-rt name set in `tests/support/abi/ubsan_runtime_exports.hpp`, independently of its ordinal assignment. Prefix masks and unknown symbols are rejected. Review this list and the runtime hashes in `cmake/Sanitizers.cmake` together when updating LLVM.
 
@@ -161,7 +161,7 @@ ordinary verification and diagnostic profiles.
 
 The C++ style starts from LLVM with four-space indentation, a 100-column limit, left-aligned pointers and references, and LF line endings. Wrapped parameter and argument lists use one item per line. Includes are sorted within existing blocks; comment text is preserved.
 
-Use the repository's `.clang-format` with clang-format 23.1.5. Check C/C++ source without changing it:
+Use the repository's `.clang-format` with clang-format 23.1.6. Check C/C++ source without changing it:
 
 ```powershell
 clang-format --dry-run --Werror tests/harness/runner_checks.cpp

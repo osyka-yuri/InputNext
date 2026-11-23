@@ -342,7 +342,7 @@ impl Runner for MockGh {
             .collect::<Vec<_>>();
         self.calls.push(args.clone());
         let (code, stdout, stderr) = if args.as_slice() == ["--version"] {
-            (0, b"gh version 2.104.0 (mock)\n".to_vec(), Vec::new())
+            (0, b"gh version 2.105.0 (mock)\n".to_vec(), Vec::new())
         } else if args.first().is_some_and(|arg| arg == "attestation") {
             (0, self.attestation_output(&args)?, Vec::new())
         } else if args.first().is_some_and(|arg| arg == "api") {

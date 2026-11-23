@@ -27,8 +27,8 @@ foreach ($file in $scriptFiles) {
 $formatter = (Get-Command -Name 'clang-format' -CommandType Application -ErrorAction Stop |
         Select-Object -First 1).Source
 $version = & $formatter --version
-if ($version -notmatch '^clang-format version 23\.1\.5(\s|$)') {
-    throw 'InputNext requires clang-format 23.1.5.'
+if ($version -notmatch '^clang-format version 23\.1\.6(\s|$)') {
+    throw 'InputNext requires clang-format 23.1.6.'
 }
 
 $cppFiles = foreach ($root in 'src', 'include', 'sdk', 'tests', 'tools', 'examples') {

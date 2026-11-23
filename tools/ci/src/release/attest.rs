@@ -19,7 +19,7 @@ use super::identity::{
 };
 use super::package::{regular_file, source_pins};
 
-const EXPECTED_GH_VERSION: &str = "2.104.0";
+const EXPECTED_GH_VERSION: &str = "2.105.0";
 const MAX_GH_OUTPUT_BYTES: usize = 32 * 1024 * 1024;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 const SLSA_PROVENANCE_PREDICATE: &str = "https://slsa.dev/provenance/v1";

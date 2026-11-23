@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "tools": {
     "cmake": {
-      "version": "4.5.0",
+      "version": "4.5.1",
       "platforms": {
         "windows-x64": {
-          "url": "https://github.com/Kitware/CMake/releases/download/v4.5.0/cmake-4.5.0-windows-x86_64.zip",
-          "sha256": "301b1728317ccd84e984b02e366a8293735bc5ac618757d3d8f58b578f062411",
+          "url": "https://github.com/Kitware/CMake/releases/download/v4.5.1/cmake-4.5.1-windows-x86_64.zip",
+          "sha256": "bfe6eadb245dc8213e0d3feea316b520cb2aae92f5667ffd76059ba6b05c430c",
           "archive": "zip",
-          "executable": "cmake-4.5.0-windows-x86_64/bin/cmake.exe",
+          "executable": "cmake-4.5.1-windows-x86_64/bin/cmake.exe",
           "probeArguments": [
             "--version"
           ],
-          "versionRegex": "(?m)^cmake version (?<version>4\\.5\\.0)$"
+          "versionRegex": "(?m)^cmake version (?<version>4\\.5\\.1)$"
         }
       }
     },
@@ -57,42 +57,42 @@
       }
     },
     "llvm": {
-      "version": "23.1.5",
+      "version": "23.1.6",
       "platforms": {
         "windows-x64": {
-          "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.5/clang%2Bllvm-23.1.5-x86_64-pc-windows-msvc.tar.xz",
-          "sha256": "62fdada7f6fa2b73856486dfbbdba3d2c1882991621615bcb55c60207611c6d4",
+          "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.6/clang%2Bllvm-23.1.6-x86_64-pc-windows-msvc.tar.xz",
+          "sha256": "16af05919cf36958dfb4ddaa4fc4d9d4ff577f5daeb76bc112ea49cd8ced82b2",
           "archive": "tar.xz",
-          "executable": "clang+llvm-23.1.5-x86_64-pc-windows-msvc/bin/clang-tidy.exe",
+          "executable": "clang+llvm-23.1.6-x86_64-pc-windows-msvc/bin/clang-tidy.exe",
           "probeArguments": [
             "--version"
           ],
-          "versionRegex": "(?<version>23\\.1\\.5)"
+          "versionRegex": "(?<version>23\\.1\\.6)"
         }
       }
     },
     "gh": {
-      "version": "2.104.0",
+      "version": "2.105.0",
       "platforms": {
         "windows-x64": {
-          "url": "https://github.com/cli/cli/releases/download/v2.104.0/gh_2.104.0_windows_amd64.zip",
-          "sha256": "08c06d10482f12c478018cd259f64acbd5f625712cadf331aad19ba973c879e5",
+          "url": "https://github.com/cli/cli/releases/download/v2.105.0/gh_2.105.0_windows_amd64.zip",
+          "sha256": "8813a72c899900afaa10e3fec8fbc64b908c89dbfe837e95ed2fa500fc140627",
           "archive": "zip",
           "executable": "bin/gh.exe",
           "probeArguments": [
             "--version"
           ],
-          "versionRegex": "(?m)^gh version (?<version>2\\.104\\.0)(?:\\s|$)"
+          "versionRegex": "(?m)^gh version (?<version>2\\.105\\.0)(?:\\s|$)"
         },
         "linux-x64": {
-          "url": "https://github.com/cli/cli/releases/download/v2.104.0/gh_2.104.0_linux_amd64.tar.gz",
-          "sha256": "98cb101ad87dbbd3f6b2f2bfcbd43197ccd07643140121d8a9cfaa91eadbc24e",
+          "url": "https://github.com/cli/cli/releases/download/v2.105.0/gh_2.105.0_linux_amd64.tar.gz",
+          "sha256": "79e7ab5db738c48777b696e374f8b428f0647debfb424f44d2f426370407fe2f",
           "archive": "tar.gz",
-          "executable": "gh_2.104.0_linux_amd64/bin/gh",
+          "executable": "gh_2.105.0_linux_amd64/bin/gh",
           "probeArguments": [
             "--version"
           ],
-          "versionRegex": "(?m)^gh version (?<version>2\\.104\\.0)(?:\\s|$)"
+          "versionRegex": "(?m)^gh version (?<version>2\\.105\\.0)(?:\\s|$)"
         }
       }
     },
@@ -200,19 +200,19 @@
       "archive": "zip"
     },
     "tomlplusplus": {
-      "sha256": "8517f65938a4faae9ccf8ebb36631a38c1cadfb5efa85d9a72e15b9e97d25155",
+      "sha256": "4821c769370a6489b6a37814f16f3769eee0f2e733a5c129d5d99e2515a95c2b",
       "expectedPaths": [
         "include/toml++/toml.hpp"
       ],
-      "url": "https://codeload.github.com/marzer/tomlplusplus/tar.gz/refs/tags/v3.4.0",
-      "extractRoot": "tomlplusplus-3.4.0",
-      "version": "3.4.0",
+      "url": "https://codeload.github.com/marzer/tomlplusplus/tar.gz/refs/tags/v3.5.1",
+      "extractRoot": "tomlplusplus-3.5.1",
+      "version": "3.5.1",
       "archive": "tar.gz"
     },
     "codeqlBundle": {
-      "version": "2.27.4",
-      "url": "https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.27.4/codeql-bundle-win64.tar.gz",
-      "sha256": "d67fead75936c55a241d26c25342747b07f94664b104f719dfe291b665508c4d",
+      "version": "2.27.5",
+      "url": "https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.27.5/codeql-bundle-win64.tar.gz",
+      "sha256": "6d0befdb4a1d60906b05610e16ac9d00b3d083ab885bb005d934a3a43fae69b4",
       "archive": "tar.gz",
       "extractRoot": ".",
       "expectedPaths": []
@@ -224,10 +224,10 @@
       "vcvarsVersion": "14.52.37025",
       "clFileVersionRegex": "^19\\.52\\.37029\\.0$",
       "bootstrapper": {
-        "url": "https://download.visualstudio.microsoft.com/download/pr/4aa37a90-1dc9-4507-9e7b-49134341b6c4/5e7c32e82c89b3d69a2c818f3b06679909729b05e94609e3367bbb554d627f55/vs_BuildTools.exe",
-        "sha256": "5e7c32e82c89b3d69a2c818f3b06679909729b05e94609e3367bbb554d627f55",
-        "channelUri": "https://download.visualstudio.microsoft.com/download/pr/4aa37a90-1dc9-4507-9e7b-49134341b6c4/2276071a9d7bbaebb23d94a1de6e829568c3a969d0a29b69f5fbeb092a55853c/VisualStudio.18.Release.chman",
-        "installChannelUri": "https://download.visualstudio.microsoft.com/download/pr/4aa37a90-1dc9-4507-9e7b-49134341b6c4/2276071a9d7bbaebb23d94a1de6e829568c3a969d0a29b69f5fbeb092a55853c/VisualStudio.18.Release.chman"
+        "url": "https://download.visualstudio.microsoft.com/download/pr/646c5a89-4d3a-4f43-985e-9c4c6771f304/6a3058c089e2564cac188178cf918d4cca106ea007f04c9f8bc52d7f5d7fe20f/vs_BuildTools.exe",
+        "sha256": "6a3058c089e2564cac188178cf918d4cca106ea007f04c9f8bc52d7f5d7fe20f",
+        "channelUri": "https://download.visualstudio.microsoft.com/download/pr/646c5a89-4d3a-4f43-985e-9c4c6771f304/43d701483efafe057301cc5ab9567ab82967689fe70ef3c2a9917118251f6497/VisualStudio.18.Release.chman",
+        "installChannelUri": "https://download.visualstudio.microsoft.com/download/pr/646c5a89-4d3a-4f43-985e-9c4c6771f304/43d701483efafe057301cc5ab9567ab82967689fe70ef3c2a9917118251f6497/VisualStudio.18.Release.chman"
       },
       "components": [
         "Microsoft.VisualStudio.Component.VC.14.52.x86.x64"

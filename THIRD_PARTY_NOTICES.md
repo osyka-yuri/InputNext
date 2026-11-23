@@ -11,8 +11,8 @@ The upstream archive contains the complete license in `LICENSE.txt`. The archive
 
 ## toml++
 
-- Version: 3.4.0
-- Source: https://github.com/marzer/tomlplusplus/tree/v3.4.0
+- Version: 3.5.1
+- Source: https://github.com/marzer/tomlplusplus/tree/v3.5.1
 - License: [MIT License](licenses/third-party/MIT-tomlplusplus.txt)
 - Use: statically compiled TOML 1.0 parser for per-game profiles.
 

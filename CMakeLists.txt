@@ -56,7 +56,7 @@ inputnext_prepare_production_configuration()
 
 set(inputnext_gameinput_architecture "${inputnext_compiler_architecture}")
 set(INPUTNEXT_GAMEINPUT_VERSION "4.1.314")
-set(INPUTNEXT_TOML_VERSION "3.4.0")
+set(INPUTNEXT_TOML_VERSION "3.5.1")
 option(INPUTNEXT_BUILD_GAMEINPUT "Build the native GameInput runtime" ON)
 option(INPUTNEXT_BUILD_DIAGNOSTICS "Build the interactive GameInput diagnostic" OFF)
 option(INPUTNEXT_BUILD_PROFILE_VALIDATOR "Build the command-line profile validator" OFF)
