@@ -8,7 +8,7 @@
 #include <optional>
 #include <span>
 
-namespace inputnext::gameinput_detail {
+namespace inputnext::input_qualification::diagnostic {
 
 inline constexpr std::uint32_t dualsense_usb_input_report_id = 1U;
 inline constexpr std::size_t dualsense_usb_input_report_size = 64U;
@@ -26,4 +26,4 @@ struct dualsense_usb_touch_contacts final {
 [[nodiscard]] std::optional<dualsense_usb_touch_contacts>
 decode_dualsense_usb_touch(std::span<const std::uint8_t> packet, bool observed_click) noexcept;
 
-} // namespace inputnext::gameinput_detail
+} // namespace inputnext::input_qualification::diagnostic

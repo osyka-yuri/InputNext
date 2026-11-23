@@ -20,6 +20,10 @@ struct IGameInputReading;
 
 namespace inputnext::input_qualification {
 
+namespace diagnostic {
+struct device_report;
+}
+
 enum class bootstrap_attempt_result : std::uint8_t {
     not_requested,
     invalid_click_index,
@@ -42,7 +46,7 @@ public:
     bootstrap_measurement(bootstrap_measurement&&) = delete;
     bootstrap_measurement& operator=(bootstrap_measurement&&) = delete;
 
-    void configure(std::uint32_t observed_button_count, bool dualsense_usb_raw = false) noexcept;
+    void configure(const diagnostic::device_report& device) noexcept;
     void observe_reading(GameInput::v4::IGameInputReading* reading) noexcept;
     [[nodiscard]] bootstrap_attempt_result try_attempt(GameInput::v4::IGameInput* game_input,
         GameInput::v4::IGameInputDevice* device);

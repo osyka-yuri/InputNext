@@ -18,9 +18,15 @@ struct input_version final {
     friend constexpr bool operator==(const input_version&, const input_version&) noexcept = default;
 };
 
-struct input_report_shape final {
-    std::uint32_t id{};
-    std::uint32_t size{};
+inline constexpr std::uint32_t gameinput_touchpad_button_label = 125U;
+
+struct touchpad_surface_shape final {
+    std::uint32_t width{};
+    std::uint32_t height{};
+    std::uint32_t max_contacts{};
+
+    friend constexpr bool operator==(const touchpad_surface_shape&,
+        const touchpad_surface_shape&) noexcept = default;
 };
 
 struct input_qualification_facts final {
@@ -37,12 +43,11 @@ struct input_qualification_facts final {
     bool button_labels_complete{};
     std::span<const std::uint32_t> button_labels;
     std::uint32_t touch_surface_count{};
+    std::optional<touchpad_surface_shape> touchpad_surface = std::nullopt;
     metadata_field<transport_metadata> transport{};
-    std::optional<input_report_shape> single_input_report = std::nullopt;
 };
 
-// Returns a conservative connection profile. Unknown or unqualified combinations stay on
-// ordinary gamepad history; only a source-owned compile-time policy row can enable touch.
+// Enable touch and composite history only for the qualified USB DualSense descriptor.
 [[nodiscard]] native_input_profile qualify_native_input(
     const input_qualification_facts& facts) noexcept;
 

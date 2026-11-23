@@ -1,5 +1,5 @@
 #include "dualsense_usb_touch_reading.hpp"
-#include "gameinput/dualsense/usb_touch_report.hpp"
+#include "usb_touch_report.hpp"
 
 #include <GameInput.h>
 
@@ -9,7 +9,7 @@
 #include <optional>
 #include <span>
 
-namespace inputnext::gameinput_detail {
+namespace inputnext::input_qualification::diagnostic {
 namespace {
 
 namespace gameinput = GameInput::v4;
@@ -50,4 +50,4 @@ std::optional<dualsense_usb_touch_contacts> read_dualsense_usb_touch(
     return decode_dualsense_usb_touch(std::span<const std::uint8_t>{packet}, observed_click);
 }
 
-} // namespace inputnext::gameinput_detail
+} // namespace inputnext::input_qualification::diagnostic

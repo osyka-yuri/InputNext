@@ -441,8 +441,8 @@ void write_bootstrap_measurement_json(std::ostream& output,
         summary.attempts.end(),
         [](const bootstrap_attempt_summary& attempt) { return attempt.fallback; });
     output << R"({"requested":)" << (summary.requested ? "true" : "false") << R"(,"mode":")"
-           << (summary.raw_usb_coordinates
-                      ? "experimental_unqualified_composite_with_raw_usb_coordinates"
+           << (summary.native_surface_coordinates
+                      ? "experimental_unqualified_composite_with_native_touch_coordinates"
                       : "experimental_unqualified_composite_without_coordinates")
            << R"(","status":)";
     write_json_string(output, summary.status);

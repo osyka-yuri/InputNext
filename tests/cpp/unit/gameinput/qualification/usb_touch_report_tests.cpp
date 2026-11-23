@@ -1,7 +1,7 @@
 #include "../../../../support/values/required_value.hpp"
-#include "gameinput/dualsense/usb_touch_report.hpp"
 #include "input/program.hpp"
 #include "input/touch_resolver.hpp"
+#include "input_qualification/usb_touch_report.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,7 +14,7 @@
 
 namespace {
 
-using namespace inputnext::gameinput_detail;
+using namespace inputnext::input_qualification::diagnostic;
 using inputnext::test::required_value;
 
 using packet_type = std::array<std::uint8_t, dualsense_usb_input_report_size>;

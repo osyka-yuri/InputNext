@@ -123,7 +123,7 @@ struct bootstrap_attempt_summary final {
 struct bootstrap_measurement_summary final {
     bool requested{};
     bool click_index_valid{};
-    bool raw_usb_coordinates{};
+    bool native_surface_coordinates{};
     bool source_baseline_observed{};
     std::uint32_t click_button{};
     std::uint32_t observed_button_count{};

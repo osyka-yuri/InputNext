@@ -19,6 +19,18 @@ pub(super) const RUN_ID: &str = "321";
 pub(super) const RUN_ATTEMPT: &str = "2";
 pub(super) const NOTES: &str = "## [1.0.0] — Test release\n\nDeterministic release fixture.";
 
+pub(super) fn dependency_versions() -> Result<(String, String)> {
+    let lock: serde_json::Value =
+        serde_json::from_str(include_str!("../../../../.github/ci/toolchain-lock.json"))?;
+    let gameinput = lock["dependencies"]["gameInput"]["version"]
+        .as_str()
+        .context("fixture lock does not pin GameInput")?;
+    let tomlplusplus = lock["dependencies"]["tomlplusplus"]["version"]
+        .as_str()
+        .context("fixture lock does not pin toml++")?;
+    Ok((gameinput.to_owned(), tomlplusplus.to_owned()))
+}
+
 pub(super) fn different_version(version: &str) -> Result<String> {
     let mut parsed = semver::Version::parse(version)?;
     parsed.patch += 1;
@@ -187,13 +199,14 @@ pub(super) fn write_runtime_zip(
     architecture: &str,
     extra_files: &[(String, Vec<u8>)],
 ) -> Result<()> {
+    let (gameinput, tomlplusplus) = dependency_versions()?;
     write_runtime_zip_with_pins(
         path,
         version,
         source_sha,
         architecture,
-        "4.0.306",
-        "3.4.0",
+        &gameinput,
+        &tomlplusplus,
         extra_files,
     )
 }
@@ -207,43 +220,16 @@ pub(super) fn write_runtime_zip_with_pins(
     tomlplusplus_version: &str,
     extra_files: &[(String, Vec<u8>)],
 ) -> Result<()> {
-    let mut files = BTreeMap::new();
-    for name in runtime_required_files() {
-        let bytes = if *name == "licenses/third-party/Microsoft-GameInput.txt" {
-            b"MICROSOFT SOFTWARE LICENSE TERMS\nFixture license text.\n".to_vec()
-        } else if *name == "LICENSE" {
-            b"MIT License\nInputNext fixture.\n".to_vec()
-        } else {
-            format!("release fixture file: {name}\n").into_bytes()
-        };
-        files.insert((*name).to_owned(), bytes);
-    }
-    files.insert(
-        "docs/release.md".to_owned(),
-        b"Release documentation fixture.\n".to_vec(),
-    );
-    for (name, bytes) in extra_files {
-        files.insert(name.clone(), bytes.clone());
-    }
-    let build_info = json!({
-        "name": "InputNext",
-        "version": version,
-        "architecture": architecture,
-        "compiler": "MSVC 19.50.0",
-        "configuration": "Release",
-        "optimization": "LTCG",
-        "pgo": "Off",
-        "gameinput": gameinput_version,
-        "tomlplusplus": tomlplusplus_version,
-        "source_revision": source_sha,
-        "source_modified": false
-    });
-    files.insert(
-        "build-info.json".to_owned(),
-        serde_json::to_vec(&build_info)?,
-    );
+    let files = runtime_files(
+        version,
+        source_sha,
+        architecture,
+        gameinput_version,
+        tomlplusplus_version,
+        extra_files,
+    )?;
     let manifest = manifest_bytes(&files)?;
-    write_zip(path, &files, &[], &manifest)
+    write_zip(path, &files, &manifest)
 }
 
 pub(super) fn write_runtime_zip_with_symlink(
@@ -252,7 +238,15 @@ pub(super) fn write_runtime_zip_with_symlink(
     source_sha: &str,
     architecture: &str,
 ) -> Result<()> {
-    let files = runtime_files(version, source_sha, architecture)?;
+    let (gameinput, tomlplusplus) = dependency_versions()?;
+    let files = runtime_files(
+        version,
+        source_sha,
+        architecture,
+        &gameinput,
+        &tomlplusplus,
+        &[],
+    )?;
     let manifest = manifest_bytes(&files)?;
     let options = SimpleFileOptions::default();
     let mut archive = ZipWriter::new(fs::File::create(path)?);
@@ -295,6 +289,7 @@ pub(super) fn write_symbols_zip(
             b"fixture dinput8 pdb".to_vec(),
         ),
     ]);
+    let (gameinput, tomlplusplus) = dependency_versions()?;
     let info = json!({
         "name": "InputNext",
         "version": version,
@@ -303,14 +298,14 @@ pub(super) fn write_symbols_zip(
         "configuration": "Release",
         "optimization": "LTCG",
         "pgo": "Off",
-        "gameinput": "4.0.306",
-        "tomlplusplus": "3.4.0",
+        "gameinput": gameinput,
+        "tomlplusplus": tomlplusplus,
         "source_revision": source_sha,
         "source_modified": false
     });
     files.insert("build-info.json".to_owned(), serde_json::to_vec(&info)?);
     let manifest = manifest_bytes(&files)?;
-    write_zip(path, &files, &[], &manifest)
+    write_zip(path, &files, &manifest)
 }
 
 pub(super) fn add_duplicate_central_entry(path: &Path, duplicate_name: &str) -> Result<()> {
@@ -411,6 +406,9 @@ fn runtime_files(
     version: &str,
     source_sha: &str,
     architecture: &str,
+    gameinput_version: &str,
+    tomlplusplus_version: &str,
+    extra_files: &[(String, Vec<u8>)],
 ) -> Result<BTreeMap<String, Vec<u8>>> {
     let mut files = BTreeMap::new();
     for name in runtime_required_files() {
@@ -427,6 +425,9 @@ fn runtime_files(
         "docs/release.md".to_owned(),
         b"Release documentation fixture.\n".to_vec(),
     );
+    for (name, bytes) in extra_files {
+        files.insert(name.clone(), bytes.clone());
+    }
     let build_info = json!({
         "name": "InputNext",
         "version": version,
@@ -435,8 +436,8 @@ fn runtime_files(
         "configuration": "Release",
         "optimization": "LTCG",
         "pgo": "Off",
-        "gameinput": "4.0.306",
-        "tomlplusplus": "3.4.0",
+        "gameinput": gameinput_version,
+        "tomlplusplus": tomlplusplus_version,
         "source_revision": source_sha,
         "source_modified": false
     });
@@ -447,12 +448,7 @@ fn runtime_files(
     Ok(files)
 }
 
-fn write_zip(
-    path: &Path,
-    files: &BTreeMap<String, Vec<u8>>,
-    extra_files: &[(String, Vec<u8>)],
-    manifest: &[u8],
-) -> Result<()> {
+fn write_zip(path: &Path, files: &BTreeMap<String, Vec<u8>>, manifest: &[u8]) -> Result<()> {
     let file = fs::File::create(path)?;
     let mut archive = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
@@ -462,10 +458,6 @@ fn write_zip(
     }
     archive.start_file("manifest.json", options)?;
     archive.write_all(manifest)?;
-    for (name, bytes) in extra_files {
-        archive.start_file(name, options)?;
-        archive.write_all(bytes)?;
-    }
     archive.finish()?;
     Ok(())
 }

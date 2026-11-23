@@ -1,6 +1,8 @@
 # GameInput
 
-The x86 and x64 GameInput runtimes discover physical controllers and provide latest state through the [device registry](input.md) and independent readers through [input history](history.md). They use Microsoft GameInput 4.0.306, API version 4, loaded from an absolute app-local path. The build copies the matching `GameInputRedist.dll` and `GameInputRawInputProxy.exe` beside each executable or runtime DLL that needs them.
+The x86 and x64 GameInput runtimes discover physical controllers and provide latest state through the [device registry](input.md) and independent readers through [input history](history.md). They use Microsoft GameInput 4.1.314, API version 4, loaded from an absolute app-local path. The build copies the matching `GameInputRedist.dll` and `GameInputRawInputProxy.exe` beside each executable or runtime DLL that needs them.
+
+The bundled GameInput runtime version is part of the DualSense USB qualification for composite input history and touchpad mapping. [Supervised USB qualification](input-qualification.md#supervised-usb-qualification)
 
 For DualSense and DualSense Edge, InputNext supports Bluetooth input in basic report mode and sends no Bluetooth feedback. If another application enables enhanced mode, input availability through GameInput can change; powering the controller off and on restores basic mode. USB feedback is described in [GameInput output](gameinput-output.md).
 

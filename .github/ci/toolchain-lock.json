@@ -188,15 +188,15 @@
   },
   "dependencies": {
     "gameInput": {
-      "sha256": "b7facb296fd0eaed20b3d60dca5345a5fcfa674398b34d6f0dbc2793d502e3c1",
+      "sha256": "3c5d5700a210de289e9f02e2a1cb98848f32b981a5c22f7687a692f762a6cd26",
       "expectedPaths": [
         "native/include/GameInput.h",
         "native/bin/x64/GameInputRedist.dll",
         "native/bin/x86/GameInputRedist.dll"
       ],
-      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.gameinput/4.0.306/microsoft.gameinput.4.0.306.nupkg",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.gameinput/4.1.314/microsoft.gameinput.4.1.314.nupkg",
       "extractRoot": ".",
-      "version": "4.0.306",
+      "version": "4.1.314",
       "archive": "zip"
     },
     "tomlplusplus": {

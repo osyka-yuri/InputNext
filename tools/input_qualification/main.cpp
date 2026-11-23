@@ -465,8 +465,7 @@ void process_device_events(runtime_api& runtime, capture_iteration_state& state)
         device->AddRef();
         state.selected_device.reset(device);
         auto descriptor = diagnostic::inspect_device(*device, state.raw_usb_mode_requested);
-        state.bootstrap_measurements.configure(descriptor.button_count,
-            descriptor.raw_usb_mode_enabled);
+        state.bootstrap_measurements.configure(descriptor);
         if (state.bootstrap_measurements.requested()) {
             state.bootstrap_status = state.bootstrap_measurements.click_index_valid()
                                          ? "waiting_for_source_baseline"

@@ -24,6 +24,9 @@ namespace {
 
 namespace gameinput = GameInput::v4;
 
+static_assert(static_cast<std::uint32_t>(gameinput::GameInputLabelTouchpadButton) ==
+              gameinput_touchpad_button_label);
+
 template <typename T>
 [[nodiscard]] metadata_field<T> available(T value) noexcept {
     return {.availability = metadata_availability::available, .value = value};
@@ -36,14 +39,18 @@ template <typename T>
         .revision = version.revision};
 }
 
-[[nodiscard]] std::optional<input_report_shape> read_single_input_report(
-    gameinput::IGameInputDevice& device) noexcept {
-    gameinput::GameInputRawDeviceReportInfo report{};
-    if (device.GetInputReportCount() != 1U || device.GetInputReportInfo(1U, &report) != 1U ||
-        report.kind != gameinput::GameInputRawInputReport) {
+[[nodiscard]] std::optional<touchpad_surface_shape>
+read_single_touchpad(gameinput::IGameInputDevice& device, std::uint32_t surface_count) noexcept {
+    gameinput::GameInputTouchSurfaceInfo surface{};
+    if (surface_count != 1U || FAILED(device.GetTouchSurfaceInfo(0U, &surface)) ||
+        surface.type != gameinput::GameInputTouchSurfaceTypeTouchpad) {
         return std::nullopt;
     }
-    return input_report_shape{.id = report.id, .size = report.size};
+    return touchpad_surface_shape{
+        .width = surface.padWidth,
+        .height = surface.padHeight,
+        .max_contacts = surface.maxContactCount,
+    };
 }
 
 [[nodiscard]] input_qualification_facts device_facts(gameinput::IGameInputDevice& device,
@@ -53,6 +60,7 @@ template <typename T>
     device.GetHardwareVersion(&hardware);
     device.GetFirmwareVersion(&firmware);
     const auto supported = device.GetSupportedInput();
+    const auto touch_surface_count = device.GetTouchSurfaceCount();
     return {.runtime_version = runtime_version,
         .hardware_version = available(copy_version(hardware)),
         .firmware_version = available(copy_version(firmware)),
@@ -64,10 +72,8 @@ template <typename T>
         .controller_button_supported = (supported & gameinput::GameInputKindControllerButton) != 0U,
         .button_count = device.GetControllerButtonCount(),
         .button_labels = {},
-        .touch_surface_count = device.GetTouchSurfaceCount(),
-        .single_input_report = (supported & gameinput::GameInputKindRawDeviceReport) != 0U
-                                   ? read_single_input_report(device)
-                                   : std::nullopt};
+        .touch_surface_count = touch_surface_count,
+        .touchpad_surface = read_single_touchpad(device, touch_surface_count)};
 }
 
 } // namespace

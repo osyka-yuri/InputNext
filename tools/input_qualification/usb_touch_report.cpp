@@ -6,7 +6,7 @@
 #include <optional>
 #include <span>
 
-namespace inputnext::gameinput_detail {
+namespace inputnext::input_qualification::diagnostic {
 namespace {
 
 constexpr std::size_t click_offset = 10U;
@@ -71,4 +71,4 @@ std::optional<dualsense_usb_touch_contacts> decode_dualsense_usb_touch(
     return result;
 }
 
-} // namespace inputnext::gameinput_detail
+} // namespace inputnext::input_qualification::diagnostic

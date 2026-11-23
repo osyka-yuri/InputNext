@@ -12,18 +12,18 @@ cmake --build --preset windows-x64-analyze --parallel 16 --target inputnext_inpu
 
 $report = Join-Path (Get-Location) 'dualsense-usb-qualification.json'
 ./build/windows-x64-analyze/tools/input_qualification/inputnext_input_qualification.exe `
-  --seconds 20 --dualsense-usb-raw --bootstrap-click-index 13 --output $report
+  --seconds 20 --output $report
 ```
 
 Connect one DualSense before starting the probe. It selects the first device with VID `054C` and PID `0CE6`. Capture duration ranges from 1 to 60 seconds. The output path must be absolute, and its parent directory must exist. Confirm USB using Windows device properties for the recorded PnP interface.
 
-After capture starts, swipe without clicking, click and release each half, and move a finger across the midpoint during a held click. Test Create and the mechanical click separately, then overlap their presses and releases. Include a hold of at least one second when measuring bootstrap.
+After capture starts, swipe without clicking, click and release each half, and move a finger across the midpoint during a held click. Test Create and the mechanical click separately, then overlap their presses and releases. To measure bootstrap, pass `--bootstrap-click-index N` with the observed click button index and hold a click for at least one second. Use `--dualsense-usb-raw` to include USB report coordinates for comparison.
 
 | Option | What it records |
 | --- | --- |
 | Default capture | Gamepad state, controller buttons and touch surfaces from each reading. The report marks fields that exceed its limits. |
 | `--dualsense-usb-raw` | Coordinates from the same reading's 64-byte input report with ID `0x01`. The decoder checks the 15-button layout and requires agreement between the raw click bit and button 13. |
-| `--bootstrap-click-index N` | Starts the production native history cursor about every 100 ms while the selected button is held and the resolver has a usable baseline. `N` is a zero-based index below the advertised count, up to 63. Raw coordinates are included when raw capture is enabled and `N` is 13. The report records attempt timing, transition counts and fallback reasons. |
+| `--bootstrap-click-index N` | Starts the native history cursor about every 100 ms while the selected button is held and the resolver has a usable baseline. `N` is a zero-based index below the advertised count, up to 63. The cursor uses native coordinates when the device reports one usable touchpad. The report records attempt timing, transition counts and fallback reasons. |
 
 ## Reading the report
 
@@ -45,6 +45,14 @@ The `qualification` field summarizes the capture. Exit code `0` confirms the rep
 
 ## Supervised USB qualification
 
+### GameInput 4.1.314.0
+
+A standard DualSense reported a 1920 × 1080 touchpad with room for two contacts on x64 and x86. The left and right click onsets carried native contact coordinates in the same reading as button 13. Swiping without clicking produced contacts without a button press.
+
+The x86 runtime labeled button 13 as `GameInputLabelTouchpadButton`. The x64 runtime left it unlabeled in both the gesture capture and a separate metadata check. The callback and forward native captures matched for all 7,230 readings on x64 and 7,226 on x86, with no callback drops. Production checks the USB device and touch-surface descriptor before enabling this profile.
+
+### Earlier measurements with GameInput 4.0.306.0
+
 The same standard DualSense was tested on x64 and x86 with app-local GameInput `4.0.306.0`. It exposed 15 controller buttons and zero typed touch surfaces. The unlabeled button at index 13 tracked the mechanical click. The 64-byte report with ID `0x01` supplied two contact slots on a 1920 × 1080 surface through `GetRawReport()`. [DualSense driver layout](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-playstation.c)
 
 | Capture | Architecture | Matching callback/native readings | Successful native starts | Attempts reaching 256 transitions | Total attempt time, p50 / p95 / max |
@@ -54,4 +62,4 @@ The same standard DualSense was tested on x64 and x86 with app-local GameInput `
 | Raw coordinates | x64 | 4,727 | 12/35 | 23 | 705 / 1,257 / 1,514 µs |
 | Raw coordinates | x86 | 4,727 | 12/35 | 23 | 939 / 1,903 / 2,310 µs |
 
-Every callback reading matched a forward native reading with the same payload. The raw capture matched decoded contacts and resolved sides, including left and right click onsets. Swiping across the midpoint without clicking produced no mapped press. These results describe the tested USB device and runtime. Production split mapping also checks the report shape at connection time. See [touchpad mapping](profiles.md#touchpad-clicks) for the defaults and [history recovery](history.md#acquisition-and-recovery) for the callback path used after budget exhaustion.
+Every callback reading matched a forward native reading with the same payload. The raw capture matched decoded contacts and resolved sides at left and right click onsets. Swiping across the midpoint without clicking produced no mapped press.

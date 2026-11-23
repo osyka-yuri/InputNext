@@ -385,7 +385,7 @@ TEST_CASE("reading overlap requires the same payload and exact descriptor counts
 TEST_CASE("bootstrap measurement report serializes an empty bounded run") {
     const bootstrap_measurement_summary summary{.requested = true,
         .click_index_valid = true,
-        .raw_usb_coordinates = false,
+        .native_surface_coordinates = false,
         .source_baseline_observed = false,
         .click_button = 13U,
         .observed_button_count = 15U,
@@ -400,12 +400,12 @@ TEST_CASE("bootstrap measurement report serializes an empty bounded run") {
         json.str() ==
         R"({"requested":true,"mode":"experimental_unqualified_composite_without_coordinates","status":"waiting_for_source_baseline","click_button":13,"observed_button_count":15,"click_index_valid":true,"source_baseline_observed":false,"time_source":"QueryPerformanceCounter","qpc_frequency":10000000,"capacity":1024,"attempt_count":0,"truncated":false,"succeeded":0,"fallback_or_failed":0,"timing_includes":["factory","start","destruction"],"timing_summary":{"factory_us":{"count":0,"p50":null,"p95":null,"p99":null,"max":null},"start_us":{"count":0,"p50":null,"p95":null,"p99":null,"max":null},"destruction_us":{"count":0,"p50":null,"p95":null,"p99":null,"max":null},"total_us":{"count":0,"p50":null,"p95":null,"p99":null,"max":null}},"fallback_by_reason":{},"attempts":[]})");
 
-    auto raw_summary = summary;
-    raw_summary.raw_usb_coordinates = true;
-    std::ostringstream raw_json;
-    write_bootstrap_measurement_json(raw_json, raw_summary);
-    REQUIRE(raw_json.str().contains(
-        R"("mode":"experimental_unqualified_composite_with_raw_usb_coordinates")"));
+    auto surface_summary = summary;
+    surface_summary.native_surface_coordinates = true;
+    std::ostringstream surface_json;
+    write_bootstrap_measurement_json(surface_json, surface_summary);
+    REQUIRE(surface_json.str().contains(
+        R"("mode":"experimental_unqualified_composite_with_native_touch_coordinates")"));
 }
 
 TEST_CASE("bootstrap measurement report summarizes timing and fallback causes") {
@@ -478,7 +478,7 @@ TEST_CASE("bootstrap measurement report summarizes timing and fallback causes") 
             .context_first_timestamp = 100U}};
     const bootstrap_measurement_summary summary{.requested = true,
         .click_index_valid = true,
-        .raw_usb_coordinates = false,
+        .native_surface_coordinates = false,
         .source_baseline_observed = true,
         .click_button = 13U,
         .observed_button_count = 15U,

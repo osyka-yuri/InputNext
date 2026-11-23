@@ -1,7 +1,4 @@
-add_library(inputnext_gameinput_input_policy STATIC
-    input_qualification.cpp
-    dualsense/usb_touch_report.cpp
-)
+add_library(inputnext_gameinput_input_policy STATIC input_qualification.cpp)
 target_include_directories(inputnext_gameinput_input_policy PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(inputnext_gameinput_input_policy PUBLIC inputnext_input)
 inputnext_configure_target(inputnext_gameinput_input_policy)
@@ -54,7 +51,6 @@ add_subdirectory(dualsense)
 if(INPUTNEXT_BUILD_GAMEINPUT)
     include("${PROJECT_SOURCE_DIR}/cmake/GameInput.cmake")
     add_library(inputnext_gameinput_native STATIC
-        native/dualsense_usb_touch_reading.cpp
         native/windows_gameinput.cpp
         native/windows_raw_output_report.cpp
         native/windows_history_cursor.cpp

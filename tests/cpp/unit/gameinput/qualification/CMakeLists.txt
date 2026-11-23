@@ -1,12 +1,14 @@
 add_executable(inputnext_gameinput_input_qualification_tests
     qualification_tests.cpp
     usb_touch_report_tests.cpp
+    "${PROJECT_SOURCE_DIR}/tools/input_qualification/usb_touch_report.cpp"
 )
 target_link_libraries(inputnext_gameinput_input_qualification_tests PRIVATE
     inputnext_gameinput_input_policy Catch2::Catch2WithMain
 )
 target_include_directories(inputnext_gameinput_input_qualification_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/src"
+    "${PROJECT_SOURCE_DIR}/tools"
 )
 inputnext_configure_target(inputnext_gameinput_input_qualification_tests)
 

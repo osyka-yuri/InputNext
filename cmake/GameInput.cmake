@@ -2,7 +2,7 @@ include(FetchContent)
 
 FetchContent_Declare(microsoft_gameinput
     URL https://api.nuget.org/v3-flatcontainer/microsoft.gameinput/${INPUTNEXT_GAMEINPUT_VERSION}/microsoft.gameinput.${INPUTNEXT_GAMEINPUT_VERSION}.nupkg
-    URL_HASH SHA256=b7facb296fd0eaed20b3d60dca5345a5fcfa674398b34d6f0dbc2793d502e3c1
+    URL_HASH SHA256=3c5d5700a210de289e9f02e2a1cb98848f32b981a5c22f7687a692f762a6cd26
     SYSTEM
     EXCLUDE_FROM_ALL
 )

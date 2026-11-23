@@ -141,6 +141,7 @@ fn rejects_unknown_zip_members_even_with_a_matching_manifest() -> Result<()> {
 #[test]
 fn rejects_runtime_build_metadata_that_disagrees_with_source_dependency_pins() -> Result<()> {
     let fixture = Fixture::new()?;
+    let (gameinput, _) = fixtures::dependency_versions()?;
     fixtures::write_runtime_zip_with_pins(
         &fixture
             .packages
@@ -148,10 +149,16 @@ fn rejects_runtime_build_metadata_that_disagrees_with_source_dependency_pins() -
         VERSION,
         SOURCE_SHA,
         "x64",
-        "4.0.306",
+        &gameinput,
         "9.9.9",
         &[],
     )?;
-    assert!(prepare(&fixture).is_err());
+    let error = prepare(&fixture)
+        .err()
+        .context("mismatched dependency versions were accepted")?;
+    assert!(
+        format!("{error:#}")
+            .contains("package dependency versions differ from the source CMake pins")
+    );
     Ok(())
 }

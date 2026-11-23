@@ -3,11 +3,11 @@
 
 #include "gameinput_observation.hpp"
 
-#include "gameinput/dualsense/usb_touch_report.hpp"
-#include "gameinput/native/dualsense_usb_touch_reading.hpp"
+#include "dualsense_usb_touch_reading.hpp"
 #include "input/program.hpp"
 #include "input/touch_resolver.hpp"
 #include "report.hpp"
+#include "usb_touch_report.hpp"
 
 #include <algorithm>
 #include <array>
@@ -66,8 +66,8 @@ void inspect_raw_report_shape(gameinput::IGameInputDevice& device, device_report
     for (std::uint32_t index = 0U; index < report.returned_input_report_count; ++index) {
         const auto& descriptor = report.input_reports[index];
         const bool matches = descriptor.kind == gameinput::GameInputRawInputReport &&
-                             descriptor.id == gameinput_detail::dualsense_usb_input_report_id &&
-                             descriptor.size == gameinput_detail::dualsense_usb_input_report_size;
+                             descriptor.id == dualsense_usb_input_report_id &&
+                             descriptor.size == dualsense_usb_input_report_size;
         report.matching_raw_input_descriptor_count += matches ? 1U : 0U;
     }
     report.raw_usb_mode_enabled =
@@ -130,8 +130,7 @@ void inspect_raw_touch(gameinput::IGameInputReading& reading, reading_sample& sa
     }
     raw_touch.click_pressed =
         (sample.button_bits & (std::uint64_t{1U} << dualsense_usb_click_button)) != 0U;
-    const auto decoded =
-        gameinput_detail::read_dualsense_usb_touch(reading, raw_touch.click_pressed);
+    const auto decoded = read_dualsense_usb_touch(reading, raw_touch.click_pressed);
     if (!decoded.has_value()) {
         return;
     }
@@ -169,8 +168,8 @@ void inspect_raw_touch(gameinput::IGameInputReading& reading, reading_sample& sa
     }
     observation.contacts_status = input::observation_status::observed;
     observation.contacts_complete = true;
-    observation.surface_width = gameinput_detail::dualsense_usb_touch_width;
-    observation.surface_height = gameinput_detail::dualsense_usb_touch_height;
+    observation.surface_width = dualsense_usb_touch_width;
+    observation.surface_height = dualsense_usb_touch_height;
     observation.contact_count = raw_touch.contact_count;
     for (std::size_t index = 0U; index < raw_touch.contact_count; ++index) {
         const auto& contact = raw_touch.contacts[index];

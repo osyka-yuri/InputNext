@@ -1,49 +1,36 @@
 #include "input_qualification.hpp"
-#include "gameinput/dualsense/usb_touch_report.hpp"
 #include "gameinput/input_profile.hpp"
 
 #include <inputnext/device_metadata.hpp>
 
 #include <array>
-#include <cstddef>
 #include <cstdint>
 #include <span>
 
 namespace inputnext::gameinput_detail {
 namespace {
 
-struct qualification_policy_row final {
-    input_version runtime{};
-    input_version hardware{};
-    input_version firmware{};
-    std::uint16_t vendor_id{};
-    std::uint16_t product_id{};
-    std::uint16_t revision{};
-    std::uint32_t supported_input_bits{};
-    bool gamepad_supported{};
-    bool controller_button_supported{};
-    std::uint32_t button_count{};
-    std::array<std::uint32_t, 15U> labels{};
-    std::uint32_t touch_surface_count{};
-    input_history_path history{};
-};
+constexpr input_version qualified_runtime{.major = 4U, .minor = 1U, .build = 314U, .revision = 0U};
+constexpr touchpad_surface_shape qualified_touchpad{.width = 1920U,
+    .height = 1080U,
+    .max_contacts = 2U};
 
-constexpr qualification_policy_row dualsense_usb_runtime_4_0_306_0{
-    .runtime = {.major = 4U, .minor = 0U, .build = 306U, .revision = 0U},
-    .hardware = {.major = 0U, .minor = 0U, .build = 0U, .revision = 0U},
-    .firmware = {.major = 0U, .minor = 0U, .build = 0U, .revision = 0U},
-    .vendor_id = 0x054CU,
-    .product_id = 0x0CE6U,
-    .revision = 100U,
-    .supported_input_bits = 18'088'015U,
-    .gamepad_supported = true,
-    .controller_button_supported = true,
-    .button_count = 15U,
-    .labels = {80U, 78U, 79U, 81U, 112U, 118U, 0U, 0U, 100U, 99U, 114U, 120U, 0U, 0U, 0U},
-    .touch_surface_count = 0U,
-    .history = input_history_path::composite,
-};
-
+constexpr std::array<std::uint32_t, 15U> dualsense_usb_button_labels{80U,
+    78U,
+    79U,
+    81U,
+    112U,
+    118U,
+    0U,
+    0U,
+    100U,
+    99U,
+    114U,
+    120U,
+    0U,
+    0U,
+    0U};
+constexpr std::uint32_t dualsense_usb_click_button = 13U;
 constexpr std::uint32_t maximum_controller_buttons = 64U;
 
 [[nodiscard]] bool matches_transport(const metadata_field<transport_metadata>& transport) noexcept {
@@ -60,31 +47,27 @@ constexpr std::uint32_t maximum_controller_buttons = 64U;
            facts.button_labels.size() == facts.button_count;
 }
 
-[[nodiscard]] bool matches_policy(const input_qualification_facts& facts,
-    const qualification_policy_row& policy) noexcept {
-    if (!facts.runtime_version.has_value() || !facts.hardware_version.has_value() ||
-        !facts.firmware_version.has_value() || !facts.vendor_id.has_value() ||
-        !facts.product_id.has_value() || !facts.revision.has_value()) {
-        return false;
-    }
+[[nodiscard]] bool matches_dualsense_usb(const input_qualification_facts& facts) noexcept {
+    return facts.runtime_version.has_value() && facts.runtime_version.value == qualified_runtime &&
+           facts.hardware_version.has_value() && facts.hardware_version.value == input_version{} &&
+           facts.firmware_version.has_value() && facts.firmware_version.value == input_version{} &&
+           facts.vendor_id.has_value() && facts.vendor_id.value == 0x054CU &&
+           facts.product_id.has_value() && facts.product_id.value == 0x0CE6U &&
+           facts.revision.has_value() && facts.revision.value == 256U &&
+           facts.supported_input_bits == 22'282'319U && facts.touch_surface_count == 1U &&
+           facts.touchpad_surface == qualified_touchpad && matches_transport(facts.transport);
+}
 
-    const auto& expected = policy;
-    if (facts.runtime_version.value != expected.runtime ||
-        facts.hardware_version.value != expected.hardware ||
-        facts.firmware_version.value != expected.firmware ||
-        facts.vendor_id.value != expected.vendor_id ||
-        facts.product_id.value != expected.product_id ||
-        facts.revision.value != expected.revision ||
-        facts.supported_input_bits != expected.supported_input_bits ||
-        facts.gamepad_supported != expected.gamepad_supported ||
-        facts.controller_button_supported != expected.controller_button_supported ||
-        facts.button_count != expected.button_count ||
-        facts.touch_surface_count != expected.touch_surface_count ||
-        !matches_transport(facts.transport)) {
+[[nodiscard]] bool matches_button_layout(std::span<const std::uint32_t> labels) noexcept {
+    if (labels.size() != dualsense_usb_button_labels.size()) {
         return false;
     }
-    for (std::size_t index = 0U; index < expected.labels.size(); ++index) {
-        if (facts.button_labels[index] != expected.labels[index]) {
+    for (std::uint32_t index = 0U; index < labels.size(); ++index) {
+        if (index == dualsense_usb_click_button &&
+            labels[index] == gameinput_touchpad_button_label) {
+            continue;
+        }
+        if (labels[index] != dualsense_usb_button_labels[index]) {
             return false;
         }
     }
@@ -110,22 +93,18 @@ native_input_profile qualify_native_input(const input_qualification_facts& facts
         profile.reason = input_fallback_reason::incoherent_reading;
         return profile;
     }
-    if (!matches_policy(facts, dualsense_usb_runtime_4_0_306_0)) {
-        profile.reason = input_fallback_reason::unsupported_capability;
+    if (!matches_dualsense_usb(facts) || !matches_button_layout(facts.button_labels)) {
         return profile;
     }
 
-    profile.history = dualsense_usb_runtime_4_0_306_0.history;
+    profile.history = input_history_path::composite;
     profile.reason = input_fallback_reason::none;
     profile.callback_coherent = true;
-    profile.button_count = dualsense_usb_runtime_4_0_306_0.button_count;
-    profile.click_button = 13U;
-    // The supervised USB captures verified this report shape in both observation streams.
-    if (facts.single_input_report.has_value() &&
-        facts.single_input_report->id == dualsense_usb_input_report_id &&
-        facts.single_input_report->size == dualsense_usb_input_report_size) {
-        profile.coordinates = touch_coordinate_source::dualsense_usb_report;
-    }
+    profile.coordinates = touch_coordinate_source::surface;
+    profile.button_count = facts.button_count;
+    profile.click_button = dualsense_usb_click_button;
+    profile.surface_width = qualified_touchpad.width;
+    profile.surface_height = qualified_touchpad.height;
     return profile;
 }
 

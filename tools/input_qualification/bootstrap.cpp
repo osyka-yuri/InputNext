@@ -5,11 +5,11 @@
 #include "gameinput/native/native_gameinput.hpp"
 #include "gameinput/native/touch_reading.hpp"
 #include "gameinput/native/windows_history_cursor.hpp"
+#include "gameinput_observation.hpp"
 #include "input/program.hpp"
 #include "input/touch_resolver.hpp"
 #include "report.hpp"
 
-#include <inputnext/device_metadata.hpp>
 #include <inputnext/gamepad_state.hpp>
 
 #include <GameInput.h>
@@ -28,7 +28,6 @@ namespace {
 
 namespace gameinput = GameInput::v4;
 namespace production_input = inputnext::gameinput_detail;
-constexpr std::uint32_t dualsense_usb_click_button = 13U;
 
 [[nodiscard]] std::optional<std::uint64_t> qpc_now() noexcept {
     LARGE_INTEGER counter{};
@@ -216,27 +215,30 @@ bootstrap_measurement::bootstrap_measurement(std::optional<std::uint32_t> click_
     }
 }
 
-void bootstrap_measurement::configure(const std::uint32_t observed_button_count,
-    const bool dualsense_usb_raw) noexcept {
+void bootstrap_measurement::configure(const diagnostic::device_report& device) noexcept {
     profile_.reset();
-    if (!click_button_.has_value() || observed_button_count == 0U || observed_button_count > 64U ||
-        *click_button_ >= observed_button_count) {
+    if (!click_button_.has_value() || device.button_count_truncated ||
+        *click_button_ >= device.button_count) {
         return;
     }
-    profile_ = production_input::native_input_profile{
+    production_input::native_input_profile profile{
         .history = production_input::input_history_path::composite,
         .reason = production_input::input_fallback_reason::none,
         .callback_coherent = true,
-        .coordinates = dualsense_usb_raw && click_button_ == dualsense_usb_click_button
-                           ? production_input::touch_coordinate_source::dualsense_usb_report
-                           : production_input::touch_coordinate_source::none,
-        .button_count = observed_button_count,
+        .button_count = device.button_count,
         .click_button = *click_button_,
-        .surface_index = 0U,
-        .surface_width = 0U,
-        .surface_height = 0U,
-        .runtime_version = {},
-        .transport = inputnext::physical_transport::unknown};
+    };
+    if (device.surface_count == 1U && device.surface_info_available.front()) {
+        const auto& surface = device.surfaces.front();
+        if (surface.type == gameinput::GameInputTouchSurfaceTypeTouchpad &&
+            surface.padWidth != 0U && surface.padHeight != 0U && surface.maxContactCount != 0U &&
+            surface.maxContactCount <= diagnostic::max_contacts_per_surface) {
+            profile.coordinates = production_input::touch_coordinate_source::surface;
+            profile.surface_width = surface.padWidth;
+            profile.surface_height = surface.padHeight;
+        }
+    }
+    profile_ = profile;
 }
 
 void bootstrap_measurement::observe_reading(gameinput::IGameInputReading* reading) noexcept {
@@ -305,9 +307,9 @@ bootstrap_measurement_summary bootstrap_measurement::summary(const std::string_v
     const std::uint32_t observed_button_count) const noexcept {
     return bootstrap_measurement_summary{.requested = click_button_.has_value(),
         .click_index_valid = profile_.has_value(),
-        .raw_usb_coordinates = profile_.has_value() &&
-                               profile_->coordinates ==
-                                   production_input::touch_coordinate_source::dualsense_usb_report,
+        .native_surface_coordinates =
+            profile_.has_value() &&
+            profile_->coordinates == production_input::touch_coordinate_source::surface,
         .source_baseline_observed = source_baseline_observed_,
         .click_button = click_button_.value_or(0U),
         .observed_button_count = observed_button_count,

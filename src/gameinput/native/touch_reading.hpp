@@ -1,7 +1,5 @@
 #pragma once
 
-#include "dualsense_usb_touch_reading.hpp"
-#include "gameinput/dualsense/usb_touch_report.hpp"
 #include "gameinput/input_profile.hpp"
 #include "input/touch_resolver.hpp"
 
@@ -55,22 +53,7 @@ inline void read_coordinates(GameInput::v4::IGameInputReading& reading,
         touch.contacts_status = input::observation_status::not_applicable;
         return;
     }
-    if (profile.coordinates == touch_coordinate_source::surface) {
-        read_surface_contacts(reading, profile, touch);
-        return;
-    }
-
-    if (profile.coordinates == touch_coordinate_source::dualsense_usb_report) {
-        const auto contacts = read_dualsense_usb_touch(reading, touch.click_pressed);
-        if (contacts.has_value()) {
-            touch.contacts_status = input::observation_status::observed;
-            touch.contacts_complete = true;
-            touch.surface_width = dualsense_usb_touch_width;
-            touch.surface_height = dualsense_usb_touch_height;
-            touch.contacts = contacts->contacts;
-            touch.contact_count = contacts->count;
-        }
-    }
+    read_surface_contacts(reading, profile, touch);
 }
 
 } // namespace touch_reading_detail

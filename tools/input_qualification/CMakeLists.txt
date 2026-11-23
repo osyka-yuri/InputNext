@@ -7,9 +7,11 @@ add_executable(inputnext_input_qualification
     bootstrap.cpp
     capture_analysis.cpp
     capture_report.cpp
+    dualsense_usb_touch_reading.cpp
     gameinput_observation.cpp
     native_capture.cpp
     report.cpp
+    usb_touch_report.cpp
 )
 target_link_libraries(inputnext_input_qualification PRIVATE
     inputnext_gameinput_native inputnext_gameinput_sdk ole32 version

@@ -23,7 +23,7 @@ enum class input_fallback_reason : std::uint8_t {
 };
 
 enum class input_touch_mode : std::uint8_t { disabled, click_fallback, split };
-enum class touch_coordinate_source : std::uint8_t { none, surface, dualsense_usb_report };
+enum class touch_coordinate_source : std::uint8_t { none, surface };
 
 [[nodiscard]] constexpr std::string_view input_history_path_name(input_history_path path) noexcept {
     switch (path) {
