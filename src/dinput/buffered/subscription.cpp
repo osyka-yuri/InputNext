@@ -567,7 +567,7 @@ void buffered_subscription::accept(const history_detail::observed_read& read,
 }
 
 HRESULT buffered_subscription::read(DWORD stride,
-    DIDEVICEOBJECTDATA* destination,
+    void* destination,
     DWORD requested,
     DWORD& returned,
     bool peek) noexcept {
@@ -592,12 +592,20 @@ HRESULT buffered_subscription::read(DWORD stride,
     const auto available = static_cast<DWORD>(state.queued);
     const auto count = requested == INFINITE ? available : std::min(requested, available);
     returned = count;
-    for (DWORD index = 0U; destination != nullptr && index < count; ++index) {
+    auto* const output = static_cast<std::byte*>(destination);
+    for (DWORD index = 0U; output != nullptr && index < count; ++index) {
         const auto queue_index = (state.head + index) % state.capacity;
-        std::memcpy(reinterpret_cast<std::byte*>(destination) +
-                        (static_cast<std::size_t>(index) * stride),
-            &state.queue[queue_index],
-            stride);
+        const auto& event = state.queue[queue_index];
+        auto* const target = output + (static_cast<std::size_t>(index) * stride);
+        if (stride == sizeof(DIDEVICEOBJECTDATA_DX3)) {
+            const DIDEVICEOBJECTDATA_DX3 legacy_event{.dwOfs = event.dwOfs,
+                .dwData = event.dwData,
+                .dwTimeStamp = event.dwTimeStamp,
+                .dwSequence = event.dwSequence};
+            std::memcpy(target, &legacy_event, sizeof(legacy_event));
+        } else {
+            std::memcpy(target, &event, sizeof(event));
+        }
     }
 
     if (!peek && count != 0U) {

@@ -55,11 +55,8 @@ public:
     [[nodiscard]] bool activate() noexcept;
     void accept(const history_detail::observed_read& read,
         const std::array<DWORD, history_batch_capacity>& sequences) noexcept;
-    [[nodiscard]] HRESULT read(DWORD stride,
-        DIDEVICEOBJECTDATA* destination,
-        DWORD requested,
-        DWORD& returned,
-        bool peek) noexcept;
+    [[nodiscard]] HRESULT
+    read(DWORD stride, void* destination, DWORD requested, DWORD& returned, bool peek) noexcept;
 
     void cancel() noexcept;
     void lose() noexcept;
