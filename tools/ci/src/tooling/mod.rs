@@ -9,6 +9,7 @@ pub mod compiler;
 mod download;
 mod lock;
 mod probe;
+mod publish;
 mod report;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -25,6 +26,7 @@ use crate::process::Runner;
 
 use self::archive::ArchiveFormat;
 use self::lock::{ToolAsset, ToolchainLock};
+use self::publish::publish_verified_directory;
 pub(crate) use self::report::write_json_report;
 use self::report::{ToolEntry, ToolKind, ToolchainReport};
 pub use self::report::{Toolset, load_toolset};
@@ -458,7 +460,7 @@ fn install_tool(
         ToolKind::Archive => anyhow::bail!("archive tools are not installed through tool archives"),
     }
 
-    replace_install_directory(&staging, &destination, base)?;
+    publish_verified_directory(&staging, &destination, base)?;
     let path = destination.join(&asset.executable);
     ensure!(
         path.is_absolute() && path.is_file(),
@@ -471,38 +473,6 @@ fn install_tool(
         archive: Some(archive),
         sha256: asset.sha256.clone(),
     })
-}
-
-fn replace_install_directory(staging: &TempDir, destination: &Path, base: &Path) -> Result<()> {
-    let base = dunce::canonicalize(base).context("could not resolve tool install root")?;
-    ensure!(
-        destination.starts_with(&base),
-        "tool destination escaped install root"
-    );
-    let parent = destination
-        .parent()
-        .context("tool destination has no parent")?;
-    fs::create_dir_all(parent).context("could not create tool destination parent")?;
-    let parent =
-        dunce::canonicalize(parent).context("could not resolve tool destination parent")?;
-    ensure!(
-        parent.starts_with(&base),
-        "tool destination parent escaped install root"
-    );
-    if let Ok(metadata) = fs::symlink_metadata(destination) {
-        ensure!(
-            !metadata.file_type().is_symlink(),
-            "existing tool destination must not be a symbolic link"
-        );
-        ensure!(
-            metadata.is_dir(),
-            "existing tool destination is not a directory"
-        );
-        fs::remove_dir_all(destination).context("could not replace previous tool installation")?;
-    }
-    fs::rename(staging.path(), destination)
-        .context("could not publish verified tool installation")?;
-    Ok(())
 }
 
 fn validate_locked_relative_path(value: &str) -> Result<()> {
